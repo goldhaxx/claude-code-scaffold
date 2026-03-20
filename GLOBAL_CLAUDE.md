@@ -22,3 +22,9 @@
 - When I say "checkpoint," write current progress and next steps to `docs/checkpoint.md`.
 - Before any large refactor, read the relevant test files first to understand expected behavior.
 - Use sub-agents for research tasks. Keep the main session focused on implementation.
+
+## Environment: Cloudflare WARP VPN
+- This machine runs Cloudflare WARP (1.1.1.1), which intercepts TLS and installs its own root CA.
+- When any tool fails with a TLS/SSL certificate error, read `.claude/rules/tls-troubleshooting.md` and auto-fix using the combined CA bundle at `~/.cloudflare-certs/combined-ca-bundle.pem`.
+- NEVER disable TLS verification (NODE_TLS_REJECT_UNAUTHORIZED=0, --insecure, sslVerify=false). Always use the proper CA bundle fix.
+- Run `/fix-certs` to diagnose and repair certificate issues on demand.
