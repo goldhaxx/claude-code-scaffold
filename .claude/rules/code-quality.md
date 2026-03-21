@@ -26,6 +26,10 @@
 - No circular dependencies. If module A imports B and B imports A, refactor.
 - Constants and configuration at the top of the file or in a dedicated config module.
 
+## Protected Files
+
+- `SCAFFOLD_FRAMEWORK.md` is research source material — never modify it without explicit user approval. It documents the foundational research (transformer attention, TDD evidence, context management) that justifies every scaffold design decision. Only update for paradigm shifts, new research findings, or major industry practice changes.
+
 ## Naming
 
 - Names should reveal intent. `getUserById` not `getData`. `isExpired` not `check`.
