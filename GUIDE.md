@@ -53,6 +53,11 @@ graph TB
         T3["docs/templates/checkpoint.md"]
     end
 
+    subgraph "Reference Documents (synced)"
+        GUIDE["GUIDE.md<br/><i>hub + node sections</i>"]
+        FRAMEWORK["SCAFFOLD_FRAMEWORK.md<br/><i>research — read-only</i>"]
+    end
+
     GM --> PM
     PM --> R1
     R1 --> S
@@ -81,6 +86,8 @@ graph TB
     style T1 fill:#f3e5f5
     style T2 fill:#f3e5f5
     style T3 fill:#f3e5f5
+    style GUIDE fill:#fff3e0
+    style FRAMEWORK fill:#e0e0e0
 ```
 
 **Why this layering matters:** Claude has ~150-200 effective instruction slots. The always-loaded layer (CLAUDE.md + rules) should stay under that budget. Everything else loads on-demand to avoid diluting attention. The `.claudeignore` file is the single biggest lever — file reads consume 80% of context.
@@ -313,6 +320,9 @@ graph TB
         H_SKILLS["skills/"]
         H_TEMPLATES["docs/templates/"]
         H_SCRIPTS["scripts/"]
+        H_GUIDE["GUIDE.md<br/><i>hub section</i>"]
+        H_CLAUDE["CLAUDE.md<br/><i>hub methodology</i>"]
+        H_FRAMEWORK["SCAFFOLD_FRAMEWORK.md<br/><i>research — read-only</i>"]
         CHANGELOG["SCAFFOLD_CHANGELOG.md"]
     end
 
@@ -323,6 +333,9 @@ graph TB
         N_SKILLS["skills/"]
         N_TEMPLATES["docs/templates/"]
         N_SCRIPTS["scripts/"]
+        N_GUIDE["GUIDE.md<br/><i>hub + node sections</i>"]
+        N_CLAUDE["CLAUDE.md<br/><i>node identity + hub methodology</i>"]
+        N_FRAMEWORK["SCAFFOLD_FRAMEWORK.md<br/><i>read-only copy</i>"]
         LOCK[".claude/scaffold.lock<br/><i>provenance manifest</i>"]
         SYNCLOG[".claude/scaffold-sync.log"]
     end
@@ -333,6 +346,9 @@ graph TB
     H_SKILLS <-->|"sync"| N_SKILLS
     H_TEMPLATES <-->|"sync"| N_TEMPLATES
     H_SCRIPTS <-->|"sync"| N_SCRIPTS
+    H_GUIDE -->|"section-merge"| N_GUIDE
+    H_CLAUDE -->|"section-merge"| N_CLAUDE
+    H_FRAMEWORK -->|"auto-update"| N_FRAMEWORK
 
     LOCK -.->|"tracks state"| N_RULES
     LOCK -.->|"tracks state"| N_CMD
@@ -342,6 +358,12 @@ graph TB
     style LOCK fill:#f3e5f5
     style CHANGELOG fill:#fff3e0
     style SYNCLOG fill:#fff3e0
+    style H_GUIDE fill:#fff3e0
+    style H_CLAUDE fill:#fff3e0
+    style H_FRAMEWORK fill:#e0e0e0
+    style N_GUIDE fill:#fff3e0
+    style N_CLAUDE fill:#fff3e0
+    style N_FRAMEWORK fill:#e0e0e0
 ```
 
 ### File Status Lifecycle
@@ -531,6 +553,53 @@ flowchart LR
     style Demote fill:#fff3e0
 ```
 
+### Document Inheritance (Section-Merge)
+
+Three root-level documents are tracked by the sync system with special merge behavior:
+
+| File | Sync behavior | Hub content | Node content |
+|------|--------------|-------------|--------------|
+| `SCAFFOLD_FRAMEWORK.md` | Standard auto-update | Entire file (research source material) | None — identical everywhere |
+| `GUIDE.md` | Section-merge | Documentation, diagrams, tables (above delimiter) | Project-specific features (below delimiter) |
+| `CLAUDE.md` | Section-merge | Workflow, conventions, reference docs, do-not rules (below delimiter) | Project name, tech stack, commands, architecture (above delimiter) |
+
+**How section-merge works:**
+
+Files with delimiters have a hub-managed section and a node-specific section. During `/scaffold-pull`, the hub section is updated from the scaffold while the node section is preserved intact.
+
+```mermaid
+flowchart LR
+    subgraph "GUIDE.md"
+        G_HUB["Hub documentation<br/><i>diagrams, tables, references</i>"]
+        G_DELIM["&lt;!-- NODE-SPECIFIC-START --&gt;"]
+        G_NODE["Node features<br/><i>local commands, rules, workflows</i>"]
+        G_HUB --> G_DELIM --> G_NODE
+    end
+
+    subgraph "CLAUDE.md"
+        C_NODE["Node identity<br/><i>name, stack, commands, architecture</i>"]
+        C_DELIM["&lt;!-- HUB-MANAGED-START --&gt;"]
+        C_HUB["Hub methodology<br/><i>workflow, conventions, do-not</i>"]
+        C_NODE --> C_DELIM --> C_HUB
+    end
+
+    style G_HUB fill:#e8f4e8
+    style G_NODE fill:#e3f2fd
+    style G_DELIM fill:#fffde7
+    style C_NODE fill:#e3f2fd
+    style C_HUB fill:#e8f4e8
+    style C_DELIM fill:#fffde7
+```
+
+**During `/scaffold-pull`:**
+- **GUIDE.md:** Hub section (above delimiter) is replaced with scaffold's version. Node section (below) is untouched.
+- **CLAUDE.md:** Node section (above delimiter) is untouched. Hub section (below) is replaced with scaffold's version.
+- **SCAFFOLD_FRAMEWORK.md:** Auto-updated as a whole file (no delimiter, no node content).
+
+**During `/scaffold-push`:** Node sections are always classified as project-specific and never pushed upstream.
+
+**Legacy projects without delimiters:** The `section-merge` command gracefully handles files that don't have a delimiter yet — it treats the entire local file as node content and adds the hub section from the scaffold.
+
 ---
 
 ## Command Reference
@@ -709,6 +778,8 @@ Every scaffold feature traces back to transformer architecture research. This ta
 | Progressive disclosure (`@path`) | Loading detailed docs on-demand prevents attention dilution. Every token competes; don't load what isn't needed now. |
 | Templates separate from active docs | Format guides persist as scaffold resources; active docs are overwritten freely. Agents always have the format reference available. |
 | Scaffold sync with lockfile | Configuration inheritance with provenance tracking. Enables knowledge reuse across projects while respecting local customization. |
+| Section-merge for CLAUDE.md/GUIDE.md | Hub methodology and documentation sync to nodes without overwriting project-specific identity and local features. |
+| SCAFFOLD_FRAMEWORK.md protection | Research source material is foundational — changes only under paradigm shifts, preserving the reasoning behind every design decision. |
 
 <!-- NODE-SPECIFIC-START -->
 <!-- Everything above is managed by the scaffold hub and updated via /scaffold-pull. -->
