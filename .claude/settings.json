@@ -23,8 +23,10 @@
     ],
     "deny": [
       "Bash(rm -rf /)*",
+      "Bash(rm -rf .)*",
       "Bash(sudo:*)",
-      "Bash(chmod 777:*)"
+      "Bash(chmod 777:*)",
+      "Bash(kill -9:*)"
     ]
   },
   "hooks": {
