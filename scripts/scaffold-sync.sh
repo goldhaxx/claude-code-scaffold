@@ -777,6 +777,15 @@ cmd_pull_apply() {
   scaffold_source=$(get_scaffold_source)
   local scaffold_file="$scaffold_source/$file"
 
+  # Guard: if PLAN_LOCAL_HASH is set, verify file hasn't changed since plan
+  if [[ -n "${PLAN_LOCAL_HASH:-}" && -f "$file" ]]; then
+    local current_hash
+    current_hash=$(file_hash "$file")
+    if [[ "$current_hash" != "$PLAN_LOCAL_HASH" ]]; then
+      guard_fail "cp" "$file" "file changed after plan (expected $PLAN_LOCAL_HASH, got $current_hash)"
+    fi
+  fi
+
   case "$action" in
     take-scaffold)
       [[ -f "$scaffold_file" ]] || die "Scaffold file not found: $scaffold_file"

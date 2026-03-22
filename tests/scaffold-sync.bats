@@ -966,6 +966,35 @@ EOF
   [ "$local_hash" = "$actual_hash" ]
 }
 
+# =========================================================================
+# Sync hardening: file overwrite guard (AC-1, AC-12)
+# =========================================================================
+
+@test "pull-apply guard: hash mismatch between plan and apply triggers guard_fail" {
+  cd "$NODE"
+  # Modify hub to create a plan entry for tdd.md
+  echo "# Hub update v2" > "$HUB/.claude/rules/tdd.md"
+  git -C "$HUB" add -A && git -C "$HUB" commit -q -m "update rule"
+
+  # Demote first so it becomes a conflict (modified status)
+  bash "$NODE/scripts/scaffold-sync.sh" demote ".claude/rules/tdd.md"
+  git -C "$NODE" add -A && git -C "$NODE" commit -q -m "demote"
+
+  # Get plan — captures local_hash at this point
+  local plan
+  plan=$(bash "$NODE/scripts/scaffold-sync.sh" pull-plan)
+  local plan_hash
+  plan_hash=$(echo "$plan" | jq -r '.[] | select(.file == ".claude/rules/tdd.md") | .local_hash')
+
+  # Now modify the local file AFTER plan was captured
+  echo "# Sneaky local change after plan" > "$NODE/.claude/rules/tdd.md"
+
+  # pull-apply should detect hash mismatch and guard_fail
+  run env PLAN_LOCAL_HASH="$plan_hash" bash "$NODE/scripts/scaffold-sync.sh" pull-apply ".claude/rules/tdd.md" take-scaffold
+  [ "$status" -eq 3 ]
+  echo "$output" | grep -q "GUARD_FAIL:"
+}
+
 @test "jq guard: invalid lockfile JSON triggers guard_fail before mv" {
   cd "$NODE"
   # Save original lockfile for comparison
