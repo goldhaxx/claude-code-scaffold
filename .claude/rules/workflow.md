@@ -3,7 +3,7 @@
 ## Session Discipline
 
 - Each session has ONE objective. State it explicitly at the start.
-- After completing the objective, commit and suggest `/clear` for the next task.
+- **Forward momentum:** After completing work, always close with an explicit directive — not just a summary. The user should never have to ask "what's next?" End with: one-line summary → clear next action (e.g., "Session complete. `/clear` → `/catchup` when ready for [next thing]."). If there's a choice, present options with a recommendation.
 - If a session exceeds ~30 minutes of complex work, proactively suggest checkpointing.
 
 ## Before Writing Code
@@ -30,7 +30,7 @@
   2. Walk through the determinism checklist (below) while you still have full session awareness
   3. Write the Determinism Review section with `operations_reviewed` and `candidates_found` counts
   4. Commit
-  5. Then suggest `/clear`
+  5. Close with forward directive: one-line summary + explicit next action + `/clear`
 - **Determinism checklist** (review before clearing context):
   - (a) Did I run manual `cp`, `jq`, `shasum`, or `git -C` commands that a script should handle?
   - (b) Did I improvise a multi-step sequence that could be a single script call?
