@@ -8,8 +8,6 @@
 #   scaffold-sync.sh hash <file>            Compute sha256 of a file
 #   scaffold-sync.sh lock-get <file>        Read a lockfile entry (JSON)
 #   scaffold-sync.sh lock-update <file> <field> <value>  Update a lockfile field
-#   scaffold-sync.sh log <message>          Append to project sync log
-#   scaffold-sync.sh changelog <message>    Append to scaffold changelog
 #   scaffold-sync.sh section-merge <s> <l>  Merge hub/node sections of a delimited file
 #   scaffold-sync.sh scan                   List all trackable files in the project
 
@@ -19,7 +17,6 @@ set -euo pipefail
 # Constants
 # ---------------------------------------------------------------------------
 LOCKFILE=".claude/scaffold.lock"
-SYNC_LOG=".claude/scaffold-sync.log"
 
 # Directories and patterns to track (relative to project root)
 TRACKED_PATTERNS=(
@@ -39,7 +36,6 @@ TRACKED_PATTERNS=(
 # Files to never track
 EXCLUDED_FILES=(
   ".claude/scaffold.lock"
-  ".claude/scaffold-sync.log"
 )
 
 # ---------------------------------------------------------------------------
@@ -74,9 +70,7 @@ timestamp() {
   date -u +"%Y-%m-%dT%H:%M:%SZ"
 }
 
-datestamp() {
-  date +"%Y-%m-%d %H:%M"
-}
+
 
 get_sync_field() {
   # Returns the sync field for a file, defaulting to "tracked" for backward compat
@@ -394,130 +388,6 @@ cmd_lock_set_version() {
   mv "$tmp" "$LOCKFILE"
 }
 
-cmd_log() {
-  local message="${1:?Usage: scaffold-sync.sh log <message>}"
-
-  # Prepend entry to sync log (newest first)
-  local entry
-  entry="## $(datestamp) — $message"
-
-  if [[ -f "$SYNC_LOG" ]]; then
-    local tmp
-    tmp=$(mktemp)
-    echo "$entry" > "$tmp"
-    echo "" >> "$tmp"
-    cat "$SYNC_LOG" >> "$tmp"
-    mv "$tmp" "$SYNC_LOG"
-  else
-    echo "$entry" > "$SYNC_LOG"
-    echo "" >> "$SYNC_LOG"
-  fi
-}
-
-cmd_log_detail() {
-  # Append a detail line to the most recent log entry
-  local detail="${1:?Usage: scaffold-sync.sh log-detail <detail>}"
-
-  if [[ -f "$SYNC_LOG" ]]; then
-    # Insert detail after the first line (the header)
-    local tmp
-    tmp=$(mktemp)
-    local header_done=false
-    local inserted=false
-    while IFS= read -r line; do
-      echo "$line" >> "$tmp"
-      if [[ "$header_done" == "false" && "$line" == "## "* ]]; then
-        header_done=true
-      elif [[ "$header_done" == "true" && "$inserted" == "false" ]]; then
-        # Insert before first empty line after header
-        if [[ -z "$line" ]]; then
-          echo "- $detail" >> "$tmp"
-          inserted=true
-        fi
-      fi
-    done < "$SYNC_LOG"
-    # If we never found an empty line, append
-    if [[ "$inserted" == "false" ]]; then
-      echo "- $detail" >> "$tmp"
-    fi
-    mv "$tmp" "$SYNC_LOG"
-  fi
-}
-
-cmd_changelog() {
-  require_lockfile
-  local message="${1:?Usage: scaffold-sync.sh changelog <message>}"
-
-  local scaffold_source
-  scaffold_source=$(get_scaffold_source)
-  local changelog="$scaffold_source/SCAFFOLD_CHANGELOG.md"
-
-  if [[ ! -f "$changelog" ]]; then
-    echo "# Scaffold Changelog" > "$changelog"
-    echo "" >> "$changelog"
-    echo "All CRUD operations on the scaffold are logged here, newest first." >> "$changelog"
-    echo "" >> "$changelog"
-  fi
-
-  # Insert new entry after the header (after "newest first." line)
-  local entry="## $(datestamp) — $message"
-  local tmp
-  tmp=$(mktemp)
-  local inserted=false
-  while IFS= read -r line; do
-    echo "$line" >> "$tmp"
-    if [[ "$inserted" == "false" && "$line" == "" ]]; then
-      # Check if previous content suggests we're past the header
-      if grep -q "newest first" "$changelog" 2>/dev/null; then
-        echo "$entry" >> "$tmp"
-        echo "" >> "$tmp"
-        inserted=true
-      fi
-    fi
-  done < "$changelog"
-  if [[ "$inserted" == "false" ]]; then
-    echo "" >> "$tmp"
-    echo "$entry" >> "$tmp"
-    echo "" >> "$tmp"
-  fi
-  mv "$tmp" "$changelog"
-}
-
-cmd_changelog_detail() {
-  require_lockfile
-  local detail="${1:?Usage: scaffold-sync.sh changelog-detail <detail>}"
-
-  local scaffold_source
-  scaffold_source=$(get_scaffold_source)
-  local changelog="$scaffold_source/SCAFFOLD_CHANGELOG.md"
-
-  [[ -f "$changelog" ]] || die "Changelog not found at: $changelog"
-
-  # Find the most recent entry and append detail
-  local tmp
-  tmp=$(mktemp)
-  local found_entry=false
-  local inserted=false
-  while IFS= read -r line; do
-    if [[ "$found_entry" == "false" && "$line" == "## "* ]]; then
-      found_entry=true
-      echo "$line" >> "$tmp"
-      continue
-    fi
-    if [[ "$found_entry" == "true" && "$inserted" == "false" && -z "$line" ]]; then
-      echo "- $detail" >> "$tmp"
-      echo "" >> "$tmp"
-      inserted=true
-      continue
-    fi
-    echo "$line" >> "$tmp"
-  done < "$changelog"
-  if [[ "$found_entry" == "true" && "$inserted" == "false" ]]; then
-    echo "- $detail" >> "$tmp"
-  fi
-  mv "$tmp" "$changelog"
-}
-
 cmd_section_merge() {
   local scaffold_file="${1:?Usage: scaffold-sync.sh section-merge <scaffold-file> <local-file>}"
   local local_file="${2:?Usage: scaffold-sync.sh section-merge <scaffold-file> <local-file>}"
@@ -603,8 +473,6 @@ cmd_node_only() {
   jq --arg f "$file" '.files[$f].sync = "node-only"' "$LOCKFILE" > "$tmp"
   mv "$tmp" "$LOCKFILE"
 
-  cmd_log "classify"
-  cmd_log_detail "NODE-ONLY $file — excluded from sync"
   echo "NODE-ONLY: $file (excluded from future pull/push)"
 }
 
@@ -627,8 +495,6 @@ cmd_track() {
   jq --arg f "$file" '.files[$f].sync = "tracked"' "$LOCKFILE" > "$tmp"
   mv "$tmp" "$LOCKFILE"
 
-  cmd_log "classify"
-  cmd_log_detail "TRACKED $file — re-included in sync"
   echo "TRACKED: $file (re-included in future pull/push)"
 }
 
@@ -861,7 +727,6 @@ cmd_pull_auto() {
     mv "$tmp" "$LOCKFILE"
 
     # Log
-    cmd_log_detail "AUTO-UPDATED $file"
     count=$((count + 1))
     echo "AUTO-UPDATED: $file"
   done
@@ -895,7 +760,6 @@ cmd_pull_apply() {
         '.files[$f].scaffold_hash = $h | .files[$f].local_hash = $h | .files[$f].status = "clean"' \
         "$LOCKFILE" > "$tmp"
       mv "$tmp" "$LOCKFILE"
-      cmd_log_detail "OVERWRITTEN $file — took scaffold version"
       echo "APPLIED: $file (took scaffold)"
       ;;
 
@@ -910,7 +774,6 @@ cmd_pull_apply() {
         '.files[$f].scaffold_hash = $sh | .files[$f].local_hash = $lh | .files[$f].status = "modified"' \
         "$LOCKFILE" > "$tmp"
       mv "$tmp" "$LOCKFILE"
-      cmd_log_detail "SKIPPED $file — kept local version"
       echo "APPLIED: $file (kept local)"
       ;;
 
@@ -929,7 +792,6 @@ cmd_pull_apply() {
         '.files[$f].scaffold_hash = $sh | .files[$f].local_hash = $lh | .files[$f].status = "clean"' \
         "$LOCKFILE" > "$tmp"
       mv "$tmp" "$LOCKFILE"
-      cmd_log_detail "SECTION-MERGED $file"
       echo "APPLIED: $file (section-merged)"
       ;;
 
@@ -942,7 +804,6 @@ cmd_pull_apply() {
       local new_hash
       new_hash=$(file_hash "$file")
       cmd_lock_add "$file" "scaffold" "$new_hash" "$new_hash" "clean"
-      cmd_log_detail "ADOPTED $file — took scaffold, tracked as clean"
       echo "APPLIED: $file (adopted — took scaffold)"
       ;;
 
@@ -958,7 +819,6 @@ cmd_pull_apply() {
       new_hash=$(file_hash "$file")
       # Add new lockfile entry
       cmd_lock_add "$file" "scaffold" "$new_hash" "$new_hash" "clean"
-      cmd_log_detail "ADDED $file"
       echo "APPLIED: $file (accepted new)"
       ;;
 
@@ -967,7 +827,6 @@ cmd_pull_apply() {
         rm "$file"
       fi
       cmd_lock_remove "$file"
-      cmd_log_detail "DELETED $file"
       echo "APPLIED: $file (deleted)"
       ;;
 
@@ -985,7 +844,6 @@ cmd_pull_apply() {
         '.files[$f].scaffold_hash = $sh | .files[$f].local_hash = $lh | .files[$f].status = "modified"' \
         "$LOCKFILE" > "$tmp"
       mv "$tmp" "$LOCKFILE"
-      cmd_log_detail "MERGED $file — Claude-proposed merge applied"
       echo "APPLIED: $file (merged)"
       ;;
 
@@ -1009,7 +867,6 @@ cmd_pull_finalize() {
   fi
 
   cmd_lock_set_version "$new_version"
-  cmd_log "pull from scaffold @ $new_version"
 
   # Build commit message from changed files
   if git rev-parse HEAD >/dev/null 2>&1; then
@@ -1121,22 +978,18 @@ cmd_push_apply() {
     jq --arg f "$file" --arg h "$new_hash" \
       '.files[$f].origin = "scaffold" | .files[$f].scaffold_hash = $h | .files[$f].local_hash = $h | .files[$f].status = "promoted"' \
       "$LOCKFILE" > "$tmp"
-    cmd_log_detail "PROMOTED $file"
-    cmd_changelog_detail "ADDED $file — $description"
   else
     # Modified → synced: update hashes and status
     jq --arg f "$file" --arg h "$new_hash" \
       '.files[$f].scaffold_hash = $h | .files[$f].local_hash = $h | .files[$f].status = "clean"' \
       "$LOCKFILE" > "$tmp"
-    cmd_log_detail "UPDATED $file"
-    cmd_changelog_detail "MODIFIED $file — $description"
   fi
   mv "$tmp" "$LOCKFILE"
 
   echo "PUSHED: $file ($status → pushed)"
 }
 
-# push-finalize: Commit in scaffold repo, update version, write logs
+# push-finalize: Commit in scaffold repo, update version
 # Usage: push-finalize <commit-message>
 cmd_push_finalize() {
   require_lockfile
@@ -1144,10 +997,6 @@ cmd_push_finalize() {
 
   local scaffold_source
   scaffold_source=$(get_scaffold_source)
-
-  # Get project name for logging
-  local project_name
-  project_name=$(basename "$(pwd)")
 
   # Stage and commit in scaffold
   git -C "$scaffold_source" add -A
@@ -1162,8 +1011,6 @@ cmd_push_finalize() {
   fi
 
   cmd_lock_set_version "$new_version"
-  cmd_log "push to scaffold @ $new_version"
-  cmd_changelog "push from $project_name"
 
   echo "Push finalized. Scaffold version: $new_version"
 }
@@ -1205,8 +1052,6 @@ cmd_promote() {
   mv "$tmp" "$LOCKFILE"
 
   # Log
-  cmd_log_detail "PROMOTED $file"
-  cmd_changelog_detail "ADDED $file — promoted from $(basename "$(pwd)")"
 
   # Commit in scaffold
   git -C "$scaffold_source" add -A
@@ -1216,8 +1061,6 @@ cmd_promote() {
   local new_version
   new_version=$(git -C "$scaffold_source" rev-parse --short HEAD 2>/dev/null || echo "unknown")
   cmd_lock_set_version "$new_version"
-  cmd_log "promote to scaffold @ $new_version"
-  cmd_changelog "promote from $(basename "$(pwd)")"
 
   echo "PROMOTED: $file → scaffold @ $new_version"
 }
@@ -1246,8 +1089,6 @@ cmd_demote() {
   mv "$tmp" "$LOCKFILE"
 
   # Log
-  cmd_log "demote"
-  cmd_log_detail "DEMOTED $file — marked as local override"
 
   echo "DEMOTED: $file (future pulls will show diff instead of auto-updating)"
 }
@@ -1286,10 +1127,6 @@ case "${1:-}" in
   lock-add)         shift; cmd_lock_add "$@" ;;
   lock-remove)      shift; cmd_lock_remove "$@" ;;
   lock-set-version) shift; cmd_lock_set_version "$@" ;;
-  log)              shift; cmd_log "$@" ;;
-  log-detail)       shift; cmd_log_detail "$@" ;;
-  changelog)        shift; cmd_changelog "$@" ;;
-  changelog-detail) shift; cmd_changelog_detail "$@" ;;
   section-merge)    shift; cmd_section_merge "$@" ;;
   scan)             cmd_scan ;;
 
@@ -1318,12 +1155,12 @@ case "${1:-}" in
     echo "  track <file>                          Mark file as tracked (re-include in sync)"
     echo "  classify                              List unclassified modified/local files as JSON"
     echo ""
-    echo "Compound commands (use these — they handle copy + lockfile + log in one call):"
-    echo "  pre-check                             Verify scaffold repo is clean"
+    echo "Compound commands (use these — they handle copy + lockfile + commit in one call):"
+    echo "  pre-check                             Verify both repos clean, bootstrap script"
     echo "  pull-plan                             Compute pull plan as JSON"
     echo "  pull-auto                             Execute all auto-updates in one pass"
     echo "  pull-apply <file> <action> [merged]   Apply a conflict resolution"
-    echo "  pull-finalize                         Update version and write log"
+    echo "  pull-finalize                         Commit all changes, update version"
     echo "  push-candidates [file]                List push-eligible files as JSON"
     echo "  push-apply <file> [description]       Push a file to scaffold"
     echo "  push-finalize <commit-message>        Commit in scaffold and update version"
@@ -1340,10 +1177,6 @@ case "${1:-}" in
     echo "  lock-add <file> <origin> <sh> <lh> <status>  Add a lockfile entry"
     echo "  lock-remove <file>                    Remove a lockfile entry"
     echo "  lock-set-version <version>            Update scaffold version in lockfile"
-    echo "  log <message>                         Append to project sync log"
-    echo "  log-detail <detail>                   Add detail to last log entry"
-    echo "  changelog <message>                   Append to scaffold changelog"
-    echo "  changelog-detail <detail>             Add detail to last changelog entry"
     echo "  section-merge <scaffold> <local>       Merge hub/node sections of delimited file"
     echo "  scan                                  List all trackable files"
     exit 1

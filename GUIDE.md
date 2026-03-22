@@ -324,7 +324,6 @@ graph TB
         H_GUIDE["GUIDE.md<br/><i>hub section</i>"]
         H_CLAUDE["CLAUDE.md<br/><i>hub methodology</i>"]
         H_FRAMEWORK["SCAFFOLD_FRAMEWORK.md<br/><i>research — read-only</i>"]
-        CHANGELOG["SCAFFOLD_CHANGELOG.md"]
     end
 
     subgraph NODE["Downstream Project (e.g. fucina)"]
@@ -338,7 +337,6 @@ graph TB
         N_CLAUDE["CLAUDE.md<br/><i>node identity + hub methodology</i>"]
         N_FRAMEWORK["SCAFFOLD_FRAMEWORK.md<br/><i>read-only copy</i>"]
         LOCK[".claude/scaffold.lock<br/><i>provenance manifest</i>"]
-        SYNCLOG[".claude/scaffold-sync.log"]
     end
 
     H_RULES <-->|"sync"| N_RULES
@@ -357,8 +355,6 @@ graph TB
     style HUB fill:#e8f4e8,stroke:#333,stroke-width:2px
     style NODE fill:#e3f2fd,stroke:#333,stroke-width:2px
     style LOCK fill:#f3e5f5
-    style CHANGELOG fill:#fff3e0
-    style SYNCLOG fill:#fff3e0
     style H_GUIDE fill:#fff3e0
     style H_CLAUDE fill:#fff3e0
     style H_FRAMEWORK fill:#e0e0e0

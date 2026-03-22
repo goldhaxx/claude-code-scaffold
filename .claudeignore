@@ -49,4 +49,3 @@ yarn.lock
 
 # Scaffold sync state (machine-managed, not useful in context)
 .claude/scaffold.lock
-.claude/scaffold-sync.log
