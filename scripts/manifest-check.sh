@@ -161,6 +161,92 @@ cmd_check_existence() {
 }
 
 # ---------------------------------------------------------------------------
+# file_hash — Compute sha256 of a file.
+# ---------------------------------------------------------------------------
+file_hash() {
+  shasum -a 256 "$1" | cut -d' ' -f1
+}
+
+# ---------------------------------------------------------------------------
+# cmd_init — Create .claude/manifest.lock from current README + file hashes.
+#
+# Input: path to README
+# Output: writes LOCKFILE
+# ---------------------------------------------------------------------------
+cmd_init() {
+  local readme="${1:?Usage: manifest-check.sh init <readme>}"
+
+  local entries
+  entries="$(cmd_parse "$readme")"
+
+  local commit
+  commit="$(git rev-parse HEAD 2>/dev/null || echo "unknown")"
+  local today
+  today="$(date +%Y-%m-%d)"
+
+  local lock_entries="{}"
+
+  while IFS= read -r path; do
+    [[ -f "$path" ]] || continue
+
+    local hash
+    hash="$(file_hash "$path")"
+
+    lock_entries="$(echo "$lock_entries" | jq \
+      --arg p "$path" \
+      --arg h "$hash" \
+      --arg c "$commit" \
+      --arg d "$today" \
+      '. + {($p): {file_hash: $h, verified_at_commit: $c, verified: $d}}')"
+  done < <(echo "$entries" | jq -r '.[].path')
+
+  mkdir -p "$(dirname "$LOCKFILE")"
+
+  jq -n \
+    --arg date "$today" \
+    --arg commit "$commit" \
+    --argjson entries "$lock_entries" \
+    '{meta: {last_verified: $date, commit: $commit}, entries: $entries}' \
+    > "$LOCKFILE"
+
+  echo "Created $LOCKFILE with $(echo "$lock_entries" | jq 'length') entries."
+}
+
+# ---------------------------------------------------------------------------
+# cmd_hash_check — Compare current file hashes against lockfile.
+#
+# Output: JSON { verified: [...], stale: [...] }
+# ---------------------------------------------------------------------------
+cmd_hash_check() {
+  if [[ ! -f "$LOCKFILE" ]]; then
+    echo "Error: $LOCKFILE not found. Run 'manifest-check.sh init <readme>' first." >&2
+    return 1
+  fi
+
+  local verified="[]"
+  local stale="[]"
+
+  while IFS= read -r path; do
+    [[ -f "$path" ]] || continue
+
+    local stored_hash current_hash
+    stored_hash="$(jq -r --arg p "$path" '.entries[$p].file_hash' "$LOCKFILE")"
+    current_hash="$(file_hash "$path")"
+
+    if [[ "$stored_hash" == "$current_hash" ]]; then
+      verified="$(echo "$verified" | jq --arg p "$path" '. + [{path: $p, status: "unchanged"}]')"
+    else
+      stale="$(echo "$stale" | jq --arg p "$path" '. + [{path: $p}]')"
+    fi
+  done < <(jq -r '.entries | keys[]' "$LOCKFILE")
+
+  jq -n \
+    --argjson verified "$verified" \
+    --argjson stale "$stale" \
+    '{verified: $verified, stale: $stale}'
+}
+
+# ---------------------------------------------------------------------------
 # Main dispatch
 # ---------------------------------------------------------------------------
 case "${1:-}" in
@@ -172,8 +258,16 @@ case "${1:-}" in
     shift
     cmd_check_existence "$@"
     ;;
+  init)
+    shift
+    cmd_init "$@"
+    ;;
+  hash-check)
+    shift
+    cmd_hash_check "$@"
+    ;;
   *)
-    echo "Usage: manifest-check.sh {parse|check-existence|check|init|verify} [args...]" >&2
+    echo "Usage: manifest-check.sh {parse|check-existence|init|hash-check|check|verify} [args...]" >&2
     exit 1
     ;;
 esac

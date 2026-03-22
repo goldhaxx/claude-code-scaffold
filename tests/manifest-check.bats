@@ -210,3 +210,113 @@ EOF
   missing=$(echo "$output" | jq '.missing_from_disk | length')
   [ "$missing" -lt 10 ]
 }
+
+
+# =========================================================================
+# Step 3: manifest.lock init + hash comparison
+# =========================================================================
+
+@test "init creates manifest.lock with correct structure" {
+  mkdir -p "$REPO/.claude/rules" "$REPO/scripts"
+  echo "# TDD" > "$REPO/.claude/rules/tdd.md"
+  echo "#!/bin/bash" > "$REPO/scripts/sync.sh"
+  git add -A && git commit -q -m "init"
+
+  cat > "$REPO/README.md" <<'EOF'
+| File | Copy to | What it does | Customize? |
+|---|---|---|---|
+| `.claude/rules/tdd.md` | `./.claude/rules/tdd.md` | TDD rules. | No. |
+| `scripts/sync.sh` | `./scripts/sync.sh` | Sync script. | No. |
+EOF
+
+  run bash "$SCRIPT" init "$REPO/README.md"
+  [ "$status" -eq 0 ]
+  [ -f "$REPO/.claude/manifest.lock" ]
+
+  # Check structure
+  jq -e '.meta.last_verified' "$REPO/.claude/manifest.lock"
+  jq -e '.meta.commit' "$REPO/.claude/manifest.lock"
+  jq -e '.entries[".claude/rules/tdd.md"].file_hash' "$REPO/.claude/manifest.lock"
+  jq -e '.entries["scripts/sync.sh"].file_hash' "$REPO/.claude/manifest.lock"
+}
+
+@test "init stores correct sha256 hashes" {
+  mkdir -p "$REPO/.claude/rules"
+  echo "# TDD" > "$REPO/.claude/rules/tdd.md"
+  git add -A && git commit -q -m "init"
+
+  cat > "$REPO/README.md" <<'EOF'
+| File | Copy to | What it does | Customize? |
+|---|---|---|---|
+| `.claude/rules/tdd.md` | `./.claude/rules/tdd.md` | TDD rules. | No. |
+EOF
+
+  bash "$SCRIPT" init "$REPO/README.md"
+
+  expected_hash=$(shasum -a 256 "$REPO/.claude/rules/tdd.md" | cut -d' ' -f1)
+  actual_hash=$(jq -r '.entries[".claude/rules/tdd.md"].file_hash' "$REPO/.claude/manifest.lock")
+  [ "$expected_hash" = "$actual_hash" ]
+}
+
+@test "init skips entries for files that don't exist on disk" {
+  mkdir -p "$REPO/.claude/rules"
+  echo "# TDD" > "$REPO/.claude/rules/tdd.md"
+  git add -A && git commit -q -m "init"
+
+  cat > "$REPO/README.md" <<'EOF'
+| File | Copy to | What it does | Customize? |
+|---|---|---|---|
+| `.claude/rules/tdd.md` | `./.claude/rules/tdd.md` | TDD rules. | No. |
+| `scripts/gone.sh` | `./scripts/gone.sh` | Missing. | No. |
+EOF
+
+  bash "$SCRIPT" init "$REPO/README.md"
+
+  # tdd.md should be in entries, gone.sh should not
+  jq -e '.entries[".claude/rules/tdd.md"]' "$REPO/.claude/manifest.lock"
+  run jq -e '.entries["scripts/gone.sh"]' "$REPO/.claude/manifest.lock"
+  [ "$status" -ne 0 ]
+}
+
+@test "hash-check reports unchanged files as verified" {
+  mkdir -p "$REPO/.claude/rules"
+  echo "# TDD" > "$REPO/.claude/rules/tdd.md"
+  git add -A && git commit -q -m "init"
+
+  cat > "$REPO/README.md" <<'EOF'
+| File | Copy to | What it does | Customize? |
+|---|---|---|---|
+| `.claude/rules/tdd.md` | `./.claude/rules/tdd.md` | TDD rules. | No. |
+EOF
+
+  bash "$SCRIPT" init "$REPO/README.md"
+  run bash "$SCRIPT" hash-check
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '.verified | length == 1'
+  echo "$output" | jq -e '.verified[0].path == ".claude/rules/tdd.md"'
+  echo "$output" | jq -e '.stale | length == 0'
+}
+
+@test "hash-check reports modified files as stale" {
+  mkdir -p "$REPO/.claude/rules"
+  echo "# TDD" > "$REPO/.claude/rules/tdd.md"
+  git add -A && git commit -q -m "init"
+
+  cat > "$REPO/README.md" <<'EOF'
+| File | Copy to | What it does | Customize? |
+|---|---|---|---|
+| `.claude/rules/tdd.md` | `./.claude/rules/tdd.md` | TDD rules. | No. |
+EOF
+
+  bash "$SCRIPT" init "$REPO/README.md"
+
+  # Modify the file
+  echo "# TDD - updated with new rules" > "$REPO/.claude/rules/tdd.md"
+  git add -A && git commit -q -m "update tdd"
+
+  run bash "$SCRIPT" hash-check
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '.verified | length == 0'
+  echo "$output" | jq -e '.stale | length == 1'
+  echo "$output" | jq -e '.stale[0].path == ".claude/rules/tdd.md"'
+}
