@@ -320,3 +320,74 @@ EOF
   echo "$output" | jq -e '.stale | length == 1'
   echo "$output" | jq -e '.stale[0].path == ".claude/rules/tdd.md"'
 }
+
+
+# =========================================================================
+# Step 4: Diff generation for stale entries
+# =========================================================================
+
+@test "hash-check includes git diff for stale committed entries" {
+  mkdir -p "$REPO/.claude/rules"
+  echo "# TDD" > "$REPO/.claude/rules/tdd.md"
+  git add -A && git commit -q -m "init"
+
+  cat > "$REPO/README.md" <<'EOF'
+| File | Copy to | What it does | Customize? |
+|---|---|---|---|
+| `.claude/rules/tdd.md` | `./.claude/rules/tdd.md` | TDD rules. | No. |
+EOF
+
+  bash "$SCRIPT" init "$REPO/README.md"
+
+  # Modify and commit
+  echo "# TDD - updated" > "$REPO/.claude/rules/tdd.md"
+  git add -A && git commit -q -m "update tdd"
+
+  run bash "$SCRIPT" hash-check
+  [ "$status" -eq 0 ]
+  # Stale entry should have a diff field containing the change
+  echo "$output" | jq -e '.stale[0].diff' > /dev/null
+  echo "$output" | jq -r '.stale[0].diff' | grep -q "TDD - updated"
+}
+
+@test "hash-check includes fallback diff for uncommitted changes" {
+  mkdir -p "$REPO/.claude/rules"
+  echo "# TDD" > "$REPO/.claude/rules/tdd.md"
+  git add -A && git commit -q -m "init"
+
+  cat > "$REPO/README.md" <<'EOF'
+| File | Copy to | What it does | Customize? |
+|---|---|---|---|
+| `.claude/rules/tdd.md` | `./.claude/rules/tdd.md` | TDD rules. | No. |
+EOF
+
+  bash "$SCRIPT" init "$REPO/README.md"
+
+  # Modify WITHOUT committing
+  echo "# TDD - dirty change" > "$REPO/.claude/rules/tdd.md"
+
+  run bash "$SCRIPT" hash-check
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '.stale | length == 1'
+  # Should still have a diff even without commit
+  echo "$output" | jq -e '.stale[0].diff' > /dev/null
+}
+
+@test "hash-check diff is empty string for verified entries" {
+  mkdir -p "$REPO/.claude/rules"
+  echo "# TDD" > "$REPO/.claude/rules/tdd.md"
+  git add -A && git commit -q -m "init"
+
+  cat > "$REPO/README.md" <<'EOF'
+| File | Copy to | What it does | Customize? |
+|---|---|---|---|
+| `.claude/rules/tdd.md` | `./.claude/rules/tdd.md` | TDD rules. | No. |
+EOF
+
+  bash "$SCRIPT" init "$REPO/README.md"
+
+  run bash "$SCRIPT" hash-check
+  [ "$status" -eq 0 ]
+  # Verified entries don't need a diff field
+  echo "$output" | jq -e '.verified[0].path == ".claude/rules/tdd.md"'
+}

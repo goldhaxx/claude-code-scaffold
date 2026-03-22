@@ -236,7 +236,30 @@ cmd_hash_check() {
     if [[ "$stored_hash" == "$current_hash" ]]; then
       verified="$(echo "$verified" | jq --arg p "$path" '. + [{path: $p, status: "unchanged"}]')"
     else
-      stale="$(echo "$stale" | jq --arg p "$path" '. + [{path: $p}]')"
+      # Generate diff for stale entry
+      local diff_text=""
+      local verified_commit
+      verified_commit="$(jq -r --arg p "$path" '.entries[$p].verified_at_commit' "$LOCKFILE")"
+
+      if [[ "$verified_commit" != "null" ]] && [[ "$verified_commit" != "unknown" ]] && \
+         git cat-file -t "$verified_commit" &>/dev/null; then
+        # Try git diff from the verified commit
+        diff_text="$(git diff "$verified_commit" -- "$path" 2>/dev/null || true)"
+      fi
+
+      # Fallback: diff against HEAD if git diff failed or was empty
+      if [[ -z "$diff_text" ]]; then
+        diff_text="$(git diff HEAD -- "$path" 2>/dev/null || true)"
+      fi
+
+      # Last fallback: note that diff is unavailable
+      if [[ -z "$diff_text" ]]; then
+        diff_text="[hash changed, diff unavailable]"
+      fi
+
+      local json_diff
+      json_diff="$(printf '%s' "$diff_text" | jq -Rs '.')"
+      stale="$(echo "$stale" | jq --arg p "$path" --argjson d "$json_diff" '. + [{path: $p, diff: $d}]')"
     fi
   done < <(jq -r '.entries | keys[]' "$LOCKFILE")
 
