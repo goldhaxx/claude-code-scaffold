@@ -3,26 +3,23 @@
 # Checkpoint
 
 > Last updated: 2026-03-22
-> Session objective: Determinism notes, /init update, README, lint tests, fucina sync
+> Session objective: Complete 5 checkpoint next-steps + plan deterministic manifest verification
 
 ## Accomplished
 
-- **format-on-write.sh** now config-driven via `.claude/lint.json` `"formatters"` section (same pattern as linters — hub provides framework, nodes register project-specific formatters)
-- **Git pre-push hook** template runs `security-audit.sh --files-only` before allowing push. Installed in hub. Caught `.bats` allowlist gap on first real push.
-- **Allowlisted `.bats` files** in security audit (test fixtures intentionally contain fake tokens)
-- **/init updated** to copy GitHub templates (README, CONTRIBUTING, issue/PR templates), lint config, and pre-push hook to new projects
-- **Hub README modernized** for GitHub — features list, quick start, updated file manifest with all new commands/hooks/scripts
-- **12 lint hook tests** — built-in linters (bash, json, yaml), config-driven dispatch, graceful skip, edge cases
-- **Fucina synced** — 4 auto-updates, 1 conflict resolved, 3 new files (security-audit command, lint hook, security audit script). Auto-committed by pull-finalize.
-- **Both repos pushed to GitHub** with pre-push security audit active
+- **Fucina cleanup** — deleted stale `.claude/scaffold-sync.log`, added `.claude/lint.json` with cppcheck linter + clang-format formatter for C++/Arduino stack
+- **LICENSE selection in /init** — new `scripts/fetch-license.sh` fetches licenses from GitHub API (deterministic, avoids content filtering issues with license text). `/init` now asks for license choice (MIT, Apache 2.0, GPL-3.0, BSD, Unlicense, none) and runs the script
+- **Format-on-write tests** — 9 new tests in `tests/format-hook.bats` (config-driven, graceful skip, exit 0 always, pipe-separated globs, empty config, missing command)
+- **GitHub Actions CI template** — `docs/templates/github/workflows/ci.yml` runs bats tests + security audit. `/init` copies it to `.github/workflows/ci.yml`
+- **README manifest completed** — added 3 missing rules (deterministic-first, tls-troubleshooting, self-review), new scripts section (scaffold-sync, security-audit, fix-cloudflare-certs, fetch-license), updated github templates description
+- **Deterministic manifest verification plan** — wrote `docs/plan.md` for `manifest-check.sh` + `.claude/manifest.lock` system
 
 ## Current State
 
-- **Branch:** main (both repos, pushed to GitHub)
-- **Tests:** 68/68 passing (41 scaffold-sync + 15 security-audit + 12 lint-hook)
-- **Uncommitted changes:** This checkpoint only
+- **Branch:** main (hub committed, not pushed; fucina committed, not pushed)
+- **Tests:** 77/77 passing (41 scaffold-sync + 15 security-audit + 12 lint-hook + 9 format-hook)
+- **Uncommitted changes:** This checkpoint + docs/plan.md
 - **Build status:** Clean
-- **Pre-push hook:** Active in hub, blocks on security findings
 
 ## Blocked On
 
@@ -30,35 +27,26 @@
 
 ## Next Steps
 
-### 1. Clean up stale fucina files
-- `.claude/scaffold-sync.log` still exists in fucina (no longer written to). Delete it.
-- fucina needs `.claude/lint.json` configured for Arduino/C++ stack (e.g., `platformio check`)
+### 1. Implement deterministic manifest verification
+- Follow `docs/plan.md` — 7 steps, TDD
+- `scripts/manifest-check.sh` + `.claude/manifest.lock` + tests
+- Key insight: hash comparison auto-verifies unchanged files; diffs constrain stale review; identity extraction structures new entry discovery
 
-### 2. Enhance /init with LICENSE selection
-- Ask user which license during init (MIT, Apache 2.0, GPL, none)
-- Copy appropriate LICENSE file to project root
+### 2. Sync fucina with new scaffold changes
+- Fucina needs: fetch-license.sh, CI template, format-hook, updated /init
+- Run `/scaffold-pull` from fucina after manifest-check is complete
 
-### 3. Consider format-on-write tests
-- The format hook is now config-driven but lacks dedicated tests
-- Could share test patterns with lint-hook.bats
-
-### 4. Explore GitHub Actions CI template
-- Template workflow that runs `bats tests/` and `bash scripts/security-audit.sh`
-- Would give projects CI out of the box from /init
-
-### 5. Hub README — remaining sections
-- The "Complete File Manifest" section references some outdated files (INIT_PROMPT.md, HOW_TO_USE.md, SCAFFOLD_SYSTEM_PROMPT.md)
-- Verify all referenced files still exist and remove stale entries
-- Consider whether the manifest is redundant with GUIDE.md
+### 3. Push both repos to GitHub
+- Hub and fucina both have unpushed commits
 
 ## Determinism Notes
 
-- **Pre-push hook worked as designed**: Caught fake tokens in test fixtures. The fix (allowlisting `.bats`) is correct — test files containing fake secrets are expected. No stochastic intervention needed.
-- **Bootstrap worked automatically**: fucina pre-check detected stale script, copied new version, exited with BOOTSTRAPPED. Re-run succeeded. Fully deterministic.
-- **No stochastic interventions this session**: All sync operations were deterministic (auto-update, take-scaffold, accept-new). No conflicts requiring judgment.
+- **LICENSE fetching is now fully deterministic**: `scripts/fetch-license.sh` uses GitHub API via `gh` CLI. Claude never reads or writes license text. This pattern (script for content that triggers content filtering) is reusable for other legal/compliance text.
+- **Manifest verification identified as stochastic**: The full verification process (parse tables, check existence, judge descriptions, find missing files) was done by a Claude agent. The plan in `docs/plan.md` decomposes this into deterministic (parse, hash, diff, discover) and stochastic (judge diff impact, write descriptions) components.
+- **No other stochastic interventions**: All file creation, test writing, and README editing followed established patterns.
 
 ## Context Notes
 
-- The pre-push hook is a git hook (`.git/hooks/pre-push`), not a Claude Code hook. It's not tracked in git (`.git/` is excluded). The template lives at `docs/templates/github/pre-push` and is copied by /init.
-- `.claude/lint.json` is node-specific (not tracked by scaffold sync). Each project maintains its own linter/formatter config.
-- The README file manifest may need pruning — some referenced files (INIT_PROMPT.md, HOW_TO_USE.md) may be from an older scaffold version.
+- `fetch-license.sh` requires `gh` CLI (GitHub CLI) authenticated. Falls back with clear error if not available.
+- The manifest-check plan stores git commit SHA at verification time to enable `git diff <commit> -- <path>` for stale entries. Rebases or shallow clones need a fallback.
+- Fucina's lint.json uses `cppcheck` (not `platformio check`) because the lint hook appends file paths and PlatformIO's `--src-filter` flag expects a different argument format.

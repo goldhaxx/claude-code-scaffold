@@ -1,179 +1,165 @@
-# Plan: Node-Only Classification + Fucina Full Sync
+# Implementation Plan: Deterministic Manifest Verification
 
-> Created: 2026-03-21
-> Status: Draft
+> Created: 2026-03-22
+> Based on: checkpoint next-step discussion
 
-## Overview
+## Objective
 
-Two interleaved workstreams:
-1. **Node-only classification** — build the `sync` field so files can be permanently excluded from sync consideration
-2. **Fucina full sync** — push generalizable fucina changes up, pull hub changes down, classify fucina's files
+Make README manifest verification maximally deterministic by pushing discovery, comparison, and diffing into a script, leaving Claude only the semantic judgment calls.
 
-The sync is the proving ground for the classification system. Build just enough to support the sync, then complete the remaining features.
+## Design
 
-## Problem
+### The Problem
 
-The scaffold sync system describes **sync state** (clean, modified, local-only) but not **sync intent**. There's no way to say "this file is intentionally local — stop asking about it." This wastes context every sync cycle on files that will never move.
+Manifest verification currently has three parts:
+1. **File existence** — does each manifest path exist? Are there untracked files? → Fully computable
+2. **Description accuracy** — does each description still match the file's purpose? → Seems stochastic, but can be decomposed
+3. **Missing entry detection** — which files should be in the manifest but aren't? → Seems stochastic, but can be decomposed
 
-### Fucina's current state
+### The Key Insight
 
-| File | Status | Intent | Action needed |
-|------|--------|--------|---------------|
-| `.claude/settings.json` | MODIFIED | Partially tracked — hooks should update, PlatformIO perms are project-specific | Sync hooks section, mark as node-only after |
-| `.claude/skills/tdd/SKILL.md` | MODIFIED | Node-only — test command example is intentionally `pio test` | Mark node-only |
-| `.claude/rules/sketches.md` | LOCAL | Node-only — firmware-specific workflow | Mark node-only |
-| `GUIDE.md` | MODIFIED* | Tracked — hub section should update (section-merge handles this) | Pull via section-merge |
+Descriptions become stale when files change. If a file hasn't changed since its description was last verified, the description is still valid. This converts "read the file and judge the description" into "has the hash changed?" — a computable operation.
 
-Additionally, the hub has significant new content to push to fucina: hooks system, compound sync commands, deterministic-first rule, hooks reference template, updated slash commands, GUIDE updates.
+When a hash *has* changed, showing the *diff* since last verification is far more constrained than re-reading the whole file. Claude judges "does this diff affect the stated purpose?" rather than "is this 200-line file accurately described?"
 
-## Design Decision: Lockfile `sync` field
+For missing entries, the script extracts identity metadata (comment headers for scripts, first heading + frontmatter for markdown) to give Claude enough context to write a description without reading the full file.
 
-Add a `sync` field to each lockfile entry: `"tracked"` (default) or `"node-only"`.
+### Architecture
+
+```
+scripts/manifest-check.sh     — deterministic: parse, hash, diff, discover
+.claude/manifest.lock          — baseline: hashes + git commit at verification time
+Claude                         — judgment on structured results only
+```
+
+### Stochastic Surface Area: Before vs After
+
+| Operation | Before | After |
+|-----------|--------|-------|
+| Parse README tables, extract paths | Claude reads README, eyeballs it | **Script** parses markdown tables |
+| Check file existence | Claude runs `ls` per file | **Script** batch-checks all paths |
+| Find untracked files | Claude scans dirs, guesses what's tracked | **Script** compares dir listing vs manifest |
+| Judge description accuracy | Claude reads full file + description | Claude reads **diff only** for changed files; unchanged files **auto-verified** |
+| Extract identity for new files | Claude reads full file | **Script** extracts comment header / frontmatter / first heading |
+| Write new descriptions | Claude (unavoidable) | Claude — but with structured metadata input |
+
+**Result:** Claude's judgment is invoked only for stale descriptions (with a diff) and new entry descriptions (with identity metadata). Everything else is deterministic.
+
+### manifest.lock Format
 
 ```json
 {
-  ".claude/rules/sketches.md": {
-    "origin": "local",
-    "scaffold_hash": null,
-    "local_hash": "abc123",
-    "status": "local-only",
-    "sync": "node-only"
+  "meta": {
+    "last_verified": "2026-03-22",
+    "commit": "abc1234"
+  },
+  "entries": {
+    ".claude/rules/tdd.md": {
+      "file_hash": "sha256",
+      "verified_at_commit": "abc1234",
+      "verified": "2026-03-22"
+    }
   }
 }
 ```
 
-### Why this over alternatives
+Storing the git commit at verification time enables `git diff <commit> -- <path>` to produce the exact diff since last verification.
 
-| Option | Pros | Cons | Verdict |
-|--------|------|------|---------|
-| **Lockfile `sync` field** | Single source of truth, backward-compatible (missing = tracked), separates intent from state | Slightly more complex lockfile schema | **Chosen** |
-| `.scaffold-ignore` file | Familiar gitignore pattern | Two sources of truth; loses provenance ("came from scaffold, I chose to keep my version") | Rejected |
-| New `node-only` status | Simple, no new fields | Conflates state with intent. A file can be `modified` AND `node-only` — these are orthogonal. | Rejected |
+### Script Output (JSON)
 
-### Behavior changes
+```json
+{
+  "verified": [
+    { "path": ".claude/rules/tdd.md", "status": "unchanged" }
+  ],
+  "stale": [
+    {
+      "path": ".claude/rules/workflow.md",
+      "description": "current description from README",
+      "diff": "--- a/.claude/rules/workflow.md\n+++ b/..."
+    }
+  ],
+  "missing_from_manifest": [
+    {
+      "path": "scripts/new-thing.sh",
+      "identity": "# new-thing.sh — Does X for Y\n# Usage: ...",
+      "size_bytes": 1234
+    }
+  ],
+  "missing_from_disk": [
+    { "path": ".claude/rules/deleted.md", "description": "was: ..." }
+  ],
+  "summary": {
+    "total": 30, "verified": 25, "stale": 2,
+    "missing_from_manifest": 2, "missing_from_disk": 1
+  }
+}
+```
 
-| Operation | `sync: "tracked"` (default) | `sync: "node-only"` |
-|-----------|---------------------------|---------------------|
-| `pull-plan` | Included in plan | **Skipped entirely** |
-| `pull-auto` | Auto-updated if clean | **Skipped** |
-| `push-candidates` | Listed as candidate | **Skipped** |
-| `scaffold-status` | Shows current status | Shows **NODE-ONLY** badge |
-| `scaffold-demote` | Changes status to modified | Suggest `node-only` instead |
+## Sequence
 
----
+### Step 1: Parse README manifest tables
 
-## Implementation Steps
+- **Test:** Script parses a README with markdown tables, extracts `(path, description)` pairs from rows matching `| path | ... |` pattern
+- **Implement:** `cmd_parse` function. Split on `|`, extract column 1 (path) and column 3 (description), trim whitespace and backticks. Skip header/separator rows.
+- **Files:** `scripts/manifest-check.sh`, `tests/manifest-check.bats`
+- **Verify:** Parse actual README, confirm all known entries extracted. Count matches expected total.
 
-### Phase 1: Build node-only infrastructure (hub)
+### Step 2: File existence + untracked file discovery
 
-#### Step 1: Add `sync` field support to lockfile operations
-- Update `cmd_lock_add` to accept optional `sync` parameter (default `"tracked"`)
-- Update `cmd_init` to default `sync: "tracked"` on all entries
-- Backward compatibility: all read operations treat missing `sync` field as `"tracked"`
-- **Files:** `scripts/scaffold-sync.sh`
-- **Verify:** `scaffold-sync.sh init` produces entries with `sync` field. Existing lockfiles (fucina) still work without it.
+- **Test:** Given parsed entries, report which paths exist and which don't. Given tracked directories, report files not in manifest.
+- **Implement:** `cmd_check_existence` function. Tracked directories: `.claude/rules/`, `.claude/commands/`, `.claude/agents/`, `.claude/skills/`, `.claude/hooks/`, `scripts/`, `docs/templates/`. List files in each, diff against manifest paths.
+- **Files:** `scripts/manifest-check.sh`, `tests/manifest-check.bats`
+- **Verify:** Add an untracked file to a tracked dir, confirm it appears in `missing_from_manifest`
 
-#### Step 2: Add `node-only`, `track`, and `classify` commands
-- `cmd_node_only <file>`: set `.files[file].sync = "node-only"`, log the change
-- `cmd_track <file>`: set `.files[file].sync = "tracked"`, log the change
-- `cmd_classify`: output JSON of all modified/local files without `sync: "node-only"` — `{file, status, origin}` per entry. Claude reads this and calls node-only/track for each after user confirms.
-- **Files:** `scripts/scaffold-sync.sh`
-- **Verify:** Toggle `node-only` ↔ `track` on a file. `classify` lists candidates.
+### Step 3: manifest.lock init + hash comparison
 
-#### Step 3: Update compound commands to respect `sync` field
-- `cmd_pull_plan`: skip files where `sync == "node-only"`
-- `cmd_push_candidates`: skip files where `sync == "node-only"`
-- `cmd_status`: show `NODE-ONLY` badge when `sync == "node-only"`
-- **Files:** `scripts/scaffold-sync.sh`
-- **Verify:** Mark a file as node-only → it disappears from pull-plan, push-candidates. Status shows NODE-ONLY.
+- **Test:** `manifest-check.sh init` creates `.claude/manifest.lock` from current README + file hashes + current git commit. `manifest-check.sh check` compares current hashes against lockfile.
+- **Implement:** `cmd_init` creates lockfile. `cmd_check` re-hashes files, compares, categorizes as `verified` (unchanged) or `stale` (hash differs).
+- **Files:** `scripts/manifest-check.sh`, `tests/manifest-check.bats`
+- **Verify:** Init, modify a file, re-run check → file shows as stale
 
-#### Step 4: Add `/scaffold-ignore` slash command
-- Confirm with user, run `scaffold-sync.sh node-only <file>`
-- **Files:** `.claude/commands/scaffold-ignore.md`
+### Step 4: Diff generation for stale entries
 
-#### Step 5: Update workflow rule with creation-time classification guidance
-- When creating new files in tracked scaffold directories, ask: "node-only or tracked?"
-- Record the answer with the appropriate script command
-- **Why a rule, not a hook:** Classification needs human judgment. Per deterministic-first: judgment → rule, recording → script.
-- **Files:** `.claude/rules/workflow.md`
+- **Test:** Stale entries include a unified diff showing what changed since last verification
+- **Implement:** Use `git diff <verified_at_commit> -- <path>` to produce the diff. Fallback to `diff` if commit is unavailable (rebase, shallow clone).
+- **Files:** `scripts/manifest-check.sh`, `tests/manifest-check.bats`
+- **Verify:** Modify a tracked file, commit, run check → diff shows the actual changes
 
-#### Step 6: Commit hub changes
-- Single commit with all node-only infrastructure
-- **Verify:** Hub repo is clean. `scaffold-sync.sh` help shows new commands.
+### Step 5: Identity extraction for untracked files
 
-### Phase 2: Fucina sync (hub ↔ fucina)
+- **Test:** For files not in the manifest, extract identity metadata. `.sh` → comment header lines (leading `#` block). `.md` → first heading + YAML frontmatter. Other → first 3 lines.
+- **Implement:** `extract_identity` function
+- **Files:** `scripts/manifest-check.sh`, `tests/manifest-check.bats`
+- **Verify:** Add a new script with comment header, confirm identity extraction captures it
 
-#### Step 7: Evaluate fucina → hub push candidates
-- Run `scaffold-sync.sh push-candidates` from fucina
-- Review the 4 changed files:
-  - `settings.json` — MODIFIED, partially generalizable (hook pattern improvement) but the hub already has the new hooks. No push needed.
-  - `SKILL.md` — MODIFIED, project-specific test command. No push.
-  - `sketches.md` — LOCAL, fully project-specific. No push.
-  - `GUIDE.md` — MODIFIED*, node section only. Never push node sections.
-- **Expected outcome:** Nothing to push. All changes are project-specific.
-- **Verify:** Confirm with user that no fucina changes need to go upstream.
+### Step 6: Full JSON report + verify subcommand
 
-#### Step 8: Pull hub → fucina
-- Run from fucina: `scaffold-sync.sh pre-check` then `scaffold-sync.sh pull-plan`
-- Expected plan:
-  - **Auto-update** (~20 clean files): commands, rules, agents, scripts, templates, SCAFFOLD_FRAMEWORK.md
-  - **Section-merge** (1 file): `GUIDE.md` — hub section updates, node section preserved
-  - **Conflict** (2 files): `settings.json` (both changed), `SKILL.md` (both changed)
-  - **New** (3 files): `deterministic-first.md`, `protect-files.sh`, `format-on-write.sh`, `hooks-reference.md`
-- Execute: `pull-auto` for clean files, `pull-apply` for each conflict/new/merge
-- **Verify:** All files updated. Fucina's node-specific content preserved.
+- **Test:** `manifest-check.sh check` produces complete JSON. `manifest-check.sh verify <paths...>` updates lockfile for confirmed entries.
+- **Implement:** Wire all functions together for `check`. Add `cmd_verify` that updates hashes + commit SHA + timestamp for specified paths.
+- **Files:** `scripts/manifest-check.sh`, `tests/manifest-check.bats`
+- **Verify:** Full cycle: init → modify file → check (shows stale) → verify → check (shows verified)
 
-#### Step 9: Resolve conflicts
-- `settings.json`: The hub now has proper hook script references. Fucina needs those PLUS its PlatformIO permissions. Take scaffold version, then re-add PlatformIO permissions. Mark as node-only after.
-- `SKILL.md`: Keep fucina's version (project-specific test command). Mark as node-only.
-- **Verify:** Both files have correct content. Lockfile updated.
+### Step 7: Integration — slash command or workflow
 
-#### Step 10: Classify fucina's files
-- Run `scaffold-sync.sh classify` to list remaining unclassified files
-- Mark node-only: `settings.json`, `SKILL.md`, `sketches.md`
-- Keep tracked: everything else
-- **Verify:** `scaffold-sync.sh status` shows NODE-ONLY badges on the right files.
+- **Test:** N/A (documentation + wiring)
+- **Implement:** Decide whether this warrants a `/manifest-check` command or integrates into `/scaffold-audit`. Update GUIDE.md and README with the new script.
+- **Files:** GUIDE.md, README.md, possibly `.claude/commands/`
+- **Verify:** End-to-end: run the command, review structured output, verify entries
 
-#### Step 11: Finalize and commit
-- Run `scaffold-sync.sh pull-finalize` in fucina
-- Commit fucina changes
-- **Verify:** `scaffold-sync.sh status` shows clean state with NODE-ONLY badges. No pending conflicts.
+## Risks
 
-### Phase 3: Documentation (hub)
-
-#### Step 12: Update GUIDE.md
-- Add `NODE-ONLY` to the File Status Lifecycle diagram
-- Add `/scaffold-ignore` to the sync command reference table
-- Add to Decision Guide: "When should I mark a file as node-only?"
-- Add `node-only` / `track` / `classify` to the compound commands in the help output
-- **Files:** `GUIDE.md`
-
-#### Step 13: Commit hub documentation
-- Single commit with GUIDE updates
-- **Verify:** Diagrams render correctly. Tables are accurate.
-
----
+- **README table parsing fragility** — Markdown tables have variable formatting. Mitigation: test with actual README. Parser should fail loudly on unparseable rows rather than silently missing entries.
+- **Git commit tracking for diffs** — Requires commits to exist (rebases, shallow clones may break). Mitigation: fall back to showing `[hash changed, diff unavailable]` and let Claude read the file.
+- **Tracked directories list becomes stale** — If new directories are added to the scaffold. Mitigation: hardcode in script header with a comment. If the list is wrong, `missing_from_manifest` will be incomplete but nothing breaks.
 
 ## Definition of Done
 
-### Node-only classification
-- [ ] Lockfile entries support `sync: "tracked" | "node-only"` field
-- [ ] `node-only` and `track` commands toggle the field
-- [ ] `classify` lists unclassified modified/local files as JSON
-- [ ] `pull-plan` and `push-candidates` skip node-only files
-- [ ] `status` shows NODE-ONLY badge
-- [ ] `/scaffold-ignore` slash command works
-- [ ] `workflow.md` includes creation-time classification guidance
-- [ ] Backward compatible: old lockfiles without `sync` field still work
-
-### Fucina sync
-- [ ] No generalizable fucina changes lost (confirmed nothing to push)
-- [ ] Hub changes pulled to fucina: hooks, compound commands, deterministic-first rule, updated slash commands, hooks reference, GUIDE updates
-- [ ] `GUIDE.md` section-merged: hub documentation updated, node features preserved
-- [ ] `settings.json` resolved: hub hook scripts + fucina PlatformIO perms
-- [ ] `SKILL.md`, `sketches.md`, `settings.json` marked node-only
-- [ ] Fucina's `scaffold-sync.sh status` is clean with appropriate NODE-ONLY badges
-
-### Documentation
-- [ ] GUIDE.md updated with node-only feature
-- [ ] All done items verified
+- [ ] `manifest-check.sh init` creates `.claude/manifest.lock`
+- [ ] `manifest-check.sh check` produces structured JSON with all 4 categories
+- [ ] `manifest-check.sh verify <paths...>` updates lockfile entries
+- [ ] Unchanged files auto-verified (no Claude needed)
+- [ ] Changed files show diff (not full content) for Claude review
+- [ ] Untracked files show identity metadata for description writing
+- [ ] All new tests pass
+- [ ] Existing 77 tests unaffected
