@@ -1,7 +1,10 @@
 # Checkpoint
 
-> Last updated: [timestamp]
+> Feature: [feature-id]
+> Last updated: [epoch]
+> Plan hash: [hash]
 > Session objective: [what we set out to do]
+<!-- Reminder: if no plan exists yet, run /plan before checkpointing (plan before checkpoint). -->
 
 ## Accomplished
 

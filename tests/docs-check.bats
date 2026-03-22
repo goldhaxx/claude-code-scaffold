@@ -545,3 +545,59 @@ EOF
   [ "$reason" != "null" ]
   [ -n "$reason" ]
 }
+
+# ===========================================================================
+# Step 6: template metadata fields
+# ===========================================================================
+
+TEMPLATES="$BATS_TEST_DIRNAME/../docs/templates"
+
+@test "template: spec.md has Feature placeholder" {
+  run grep -c "^> Feature: \[" "$TEMPLATES/spec.md"
+  [ "$status" -eq 0 ]
+  [ "$output" -ge 1 ]
+}
+
+@test "template: spec.md uses epoch placeholder for Created" {
+  run grep -c "^> Created: \[epoch\]" "$TEMPLATES/spec.md"
+  [ "$status" -eq 0 ]
+  [ "$output" -ge 1 ]
+}
+
+@test "template: plan.md has Feature and Spec hash placeholders" {
+  run grep -c "^> Feature: \[" "$TEMPLATES/plan.md"
+  [ "$status" -eq 0 ]
+  [ "$output" -ge 1 ]
+
+  run grep -c "^> Spec hash: \[" "$TEMPLATES/plan.md"
+  [ "$status" -eq 0 ]
+  [ "$output" -ge 1 ]
+}
+
+@test "template: plan.md uses epoch placeholder for Created" {
+  run grep -c "^> Created: \[epoch\]" "$TEMPLATES/plan.md"
+  [ "$status" -eq 0 ]
+  [ "$output" -ge 1 ]
+}
+
+@test "template: checkpoint.md has Feature and Plan hash placeholders" {
+  run grep -c "^> Feature: \[" "$TEMPLATES/checkpoint.md"
+  [ "$status" -eq 0 ]
+  [ "$output" -ge 1 ]
+
+  run grep -c "^> Plan hash: \[" "$TEMPLATES/checkpoint.md"
+  [ "$status" -eq 0 ]
+  [ "$output" -ge 1 ]
+}
+
+@test "template: checkpoint.md uses epoch placeholder for Last updated" {
+  run grep -c "^> Last updated: \[epoch\]" "$TEMPLATES/checkpoint.md"
+  [ "$status" -eq 0 ]
+  [ "$output" -ge 1 ]
+}
+
+@test "template: checkpoint.md has pre-checkpoint reminder" {
+  run grep -c "plan before checkpoint" "$TEMPLATES/checkpoint.md"
+  [ "$status" -eq 0 ]
+  [ "$output" -ge 1 ]
+}

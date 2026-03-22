@@ -1,6 +1,7 @@
 # Feature: [Name]
 
-> Created: [date]
+> Feature: [feature-id]
+> Created: [epoch]
 > Status: Draft | In Progress | Complete
 
 ## Summary

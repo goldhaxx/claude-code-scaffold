@@ -1,6 +1,8 @@
 # Implementation Plan: [Feature Name]
 
-> Created: [date]
+> Feature: [feature-id]
+> Created: [epoch]
+> Spec hash: [hash]
 > Based on: docs/spec.md
 
 ## Objective
