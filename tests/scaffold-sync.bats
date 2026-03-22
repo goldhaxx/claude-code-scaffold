@@ -94,6 +94,9 @@ HUBEOF
   # Copy the real sync script to the hub (so bootstrap doesn't fire on every test)
   cp "$SCRIPT" "$HUB/scripts/scaffold-sync.sh"
 
+  # Create SCAFFOLD_CHANGELOG.md in hub (required by push-apply and promote)
+  echo "# Scaffold Changelog" > "$HUB/SCAFFOLD_CHANGELOG.md"
+
   # Initialize a git repo in hub (needed for scaffold_version)
   git -C "$HUB" init -q
   git -C "$HUB" add -A
@@ -775,4 +778,148 @@ EOF
   hub_h=$(shasum -a 256 "$HUB/scripts/scaffold-sync.sh" | awk '{print $1}')
   node_h=$(shasum -a 256 "$NODE/scripts/scaffold-sync.sh" | awk '{print $1}')
   [ "$hub_h" = "$node_h" ]
+}
+
+
+# =========================================================================
+# push-candidates tests
+# =========================================================================
+
+@test "push-candidates: clean files are not candidates" {
+  cd "$NODE"
+  result=$(bash "$NODE/scripts/scaffold-sync.sh" push-candidates)
+  # All files should be clean from init, so no candidates
+  [ "$(echo "$result" | jq 'length')" -eq 0 ]
+}
+
+@test "push-candidates: modified file is a candidate" {
+  cd "$NODE"
+
+  # Modify a tracked file locally
+  echo "# Local improvement" >> "$NODE/.claude/rules/tdd.md"
+
+  # Demote first to mark as modified
+  bash "$NODE/scripts/scaffold-sync.sh" demote ".claude/rules/tdd.md"
+
+  result=$(bash "$NODE/scripts/scaffold-sync.sh" push-candidates)
+  echo "$result" | jq -e '.[] | select(.file == ".claude/rules/tdd.md" and .has_diff == true)'
+}
+
+@test "push-candidates: node-only files are excluded" {
+  cd "$NODE"
+
+  # Mark as node-only then modify
+  bash "$NODE/scripts/scaffold-sync.sh" node-only ".claude/rules/tdd.md"
+  echo "# Local only" >> "$NODE/.claude/rules/tdd.md"
+
+  result=$(bash "$NODE/scripts/scaffold-sync.sh" push-candidates)
+  count=$(echo "$result" | jq '[.[] | select(.file == ".claude/rules/tdd.md")] | length')
+  [ "$count" -eq 0 ]
+}
+
+@test "push-candidates: specific file filter works" {
+  cd "$NODE"
+
+  # Demote two files
+  bash "$NODE/scripts/scaffold-sync.sh" demote ".claude/rules/tdd.md"
+  bash "$NODE/scripts/scaffold-sync.sh" demote ".claude/commands/catchup.md"
+
+  result=$(bash "$NODE/scripts/scaffold-sync.sh" push-candidates ".claude/rules/tdd.md")
+  count=$(echo "$result" | jq 'length')
+  [ "$count" -eq 1 ]
+  echo "$result" | jq -e '.[] | select(.file == ".claude/rules/tdd.md")'
+}
+
+
+# =========================================================================
+# push-apply tests
+# =========================================================================
+
+@test "push-apply: copies file to scaffold and updates lockfile" {
+  cd "$NODE"
+
+  # Modify locally and demote
+  echo "# Enhanced TDD" >> "$NODE/.claude/rules/tdd.md"
+  bash "$NODE/scripts/scaffold-sync.sh" demote ".claude/rules/tdd.md"
+
+  bash "$NODE/scripts/scaffold-sync.sh" push-apply ".claude/rules/tdd.md" "enhanced TDD rules"
+
+  # File should be in scaffold
+  grep -q "Enhanced TDD" "$HUB/.claude/rules/tdd.md"
+
+  # Lockfile should be updated
+  status=$(jq -r '.files[".claude/rules/tdd.md"].status' "$NODE/.claude/scaffold.lock")
+  [ "$status" = "clean" ]
+}
+
+
+# =========================================================================
+# promote tests
+# =========================================================================
+
+@test "promote: copies local-only file to scaffold with git commit" {
+  cd "$NODE"
+
+  # Create a new local file
+  cat > "$NODE/.claude/rules/local-rule.md" <<'EOF'
+# Local Rule
+
+A useful rule.
+EOF
+
+  # Add to lockfile as local-only
+  local h
+  h=$(shasum -a 256 "$NODE/.claude/rules/local-rule.md" | awk '{print $1}')
+  local tmp; tmp=$(mktemp)
+  jq --arg f ".claude/rules/local-rule.md" --arg h "$h" \
+    '.files[$f] = {"origin": "local", "scaffold_hash": null, "local_hash": $h, "status": "local-only", "sync": "tracked"}' \
+    "$NODE/.claude/scaffold.lock" > "$tmp"
+  mv "$tmp" "$NODE/.claude/scaffold.lock"
+
+  bash "$NODE/scripts/scaffold-sync.sh" promote ".claude/rules/local-rule.md"
+
+  # File should exist in scaffold
+  [ -f "$HUB/.claude/rules/local-rule.md" ]
+  grep -q "A useful rule" "$HUB/.claude/rules/local-rule.md"
+
+  # Lockfile should show promoted
+  status=$(jq -r '.files[".claude/rules/local-rule.md"].status' "$NODE/.claude/scaffold.lock")
+  [ "$status" = "promoted" ]
+
+  # Scaffold should have a new commit
+  git -C "$HUB" log -1 --format='%s' | grep -q "local-rule"
+}
+
+@test "promote: skips already-clean files" {
+  cd "$NODE"
+  run bash "$NODE/scripts/scaffold-sync.sh" promote ".claude/rules/tdd.md"
+  [ "$status" -eq 0 ]
+  echo "$output" | grep -qi "SKIP\|already"
+}
+
+
+# =========================================================================
+# demote tests
+# =========================================================================
+
+@test "demote: marks clean file as modified" {
+  cd "$NODE"
+
+  status_before=$(jq -r '.files[".claude/rules/tdd.md"].status' "$NODE/.claude/scaffold.lock")
+  [ "$status_before" = "clean" ]
+
+  bash "$NODE/scripts/scaffold-sync.sh" demote ".claude/rules/tdd.md"
+
+  status_after=$(jq -r '.files[".claude/rules/tdd.md"].status' "$NODE/.claude/scaffold.lock")
+  [ "$status_after" = "modified" ]
+}
+
+@test "demote: rejects non-clean files" {
+  cd "$NODE"
+  # Demote first to make it modified
+  bash "$NODE/scripts/scaffold-sync.sh" demote ".claude/rules/tdd.md"
+  # Try to demote again
+  run bash "$NODE/scripts/scaffold-sync.sh" demote ".claude/rules/tdd.md"
+  [ "$status" -eq 0 ]
+  echo "$output" | grep -qi "already.*modified\|effectively demoted"
 }

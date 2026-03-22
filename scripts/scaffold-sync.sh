@@ -835,7 +835,13 @@ cmd_pull_auto() {
   plan=$(cmd_pull_plan)
 
   # Also adopt-clean files (identical local copies not yet in lockfile)
+  # Skip this script itself to avoid replacing a running process mid-execution.
+  # Bootstrap in pre-check handles sync script updates separately.
   echo "$plan" | jq -r '.[] | select(.action == "auto-update" or .action == "adopt-clean") | .file' | while IFS= read -r file; do
+    if [[ "$file" == "scripts/scaffold-sync.sh" ]]; then
+      echo "SKIPPED: $file (updated via bootstrap in pre-check)"
+      continue
+    fi
     local scaffold_file="$scaffold_source/$file"
     local new_hash
     new_hash=$(file_hash "$scaffold_file")
