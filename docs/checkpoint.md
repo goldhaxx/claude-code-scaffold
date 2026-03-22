@@ -3,34 +3,31 @@
 # Checkpoint
 
 > Last updated: 2026-03-22
-> Session objective: Universal delimiters, tests, sync safety, self-review framework, fucina sync
+> Session objective: Fucina sync, GitHub publishing, sync log removal, push-side tests, PII scrubbing
 
 ## Accomplished
 
-- Added `<!-- NODE-SPECIFIC-START -->` delimiter to all 23 synced markdown files (5 rules, 10 commands, 3 agents, 1 skill, 4 templates)
-- Fixed code-block delimiter false match in GUIDE.md (HTML-escaped to avoid `grep -qx` match)
-- Updated GUIDE.md: "Universal Delimiters" section with component table, creation guidance, appendix entry
-- Created `tests/scaffold-sync.bats` — 32 bats tests, all passing
-- Fixed `accept-new` to refuse overwriting existing local files
-- Added `.claude/hooks/*.sh` to TRACKED_PATTERNS
-- Documented bootstrap requirement in GUIDE.md and scaffold-pull command
-- Synced fucina: 25 auto-updates, 1 conflict resolved, 2 hooks re-tracked
-- `pre-check` now enforces both hub and node trees are clean
-- `pull-finalize` auto-commits with structured message listing all synced files
-- `pre-check` auto-bootstraps stale sync script from hub (no more manual `cp`)
-- `pull-plan` distinguishes `adopt-clean` (identical local copy) from `adopt-conflict` (different local copy) — eliminates stochastic diagnosis during sync
-- Created `/scaffold-audit` command for on-demand determinism analysis
-- Created `self-review.md` rule for continuous stochastic surface area flagging
-- Integrated self-review into `/catchup` and `/review`
-- Updated CLAUDE.md with tech stack (bash/bats-core) and test commands
+- Pulled latest hub changes to fucina (5 auto-updates, 2 new files accepted, auto-committed by pull-finalize)
+- Fixed script self-replacement mid-execution: pull-auto now skips scaffold-sync.sh (bootstrap in pre-check handles it)
+- Added 9 push-side tests: push-candidates (4), push-apply (1), promote (2), demote (2) — 41/41 total
+- Removed sync log and changelog: git history is now single source of truth for all sync operations
+- Scrubbed PII from both repos:
+  - GLOBAL_CLAUDE.md: replaced "Zach" with "[Your name]" placeholder
+  - scaffold-sync.sh: stores ~/... in lockfile instead of /Users/<name>/...
+  - scaffold-sync.sh: added get_scaffold_source_display() for safe output in commits/status
+  - Fucina: rewrote git history to remove absolute path from commit messages
+  - Fucina: replaced absolute path in scaffold.lock with ~/
+- Published both repos to GitHub (public):
+  - https://github.com/goldhaxx/claude-code-scaffold
+  - https://github.com/goldhaxx/fucina
 
 ## Current State
 
-- **Branch:** main (hub)
-- **Tests:** 32/32 passing (`bats tests/scaffold-sync.bats`)
-- **Uncommitted changes:** This checkpoint only
+- **Branch:** main (both repos, pushed to GitHub)
+- **Tests:** 41/41 passing (`bats tests/scaffold-sync.bats`)
+- **Uncommitted changes:** This checkpoint only (hub)
 - **Build status:** Clean
-- **Fucina:** Synced to hub @ ef38ff4 (but hub has 4 more commits since — needs another pull)
+- **Both repos:** Public on GitHub, no PII in files or history
 
 ## Blocked On
 
@@ -38,21 +35,67 @@
 
 ## Next Steps
 
-1. **Pull latest hub changes to fucina** — Hub has 4 commits since fucina's last sync (clean-tree enforcement, auto-bootstrap, adopt-clean/conflict, self-review framework). Run `/scaffold-pull` from fucina.
-2. **Publish repos to GitHub** — Enables browsable sync history via commit diffs. Both hub and fucina.
-3. **Evaluate sync log redundancy** — Now that `pull-finalize` auto-commits with file lists, the `.claude/scaffold-sync.log` may be redundant. Compare what each provides before deciding.
-4. **Add push-side tests** — `push-candidates`, `push-apply`, `promote`, `demote` lack test coverage.
-5. **Continue with next feature work** — The scaffold infrastructure is solid. Next session can focus on actual project features.
+### 1. PII/Sensitive Information Audit as Part of /review (HIGH PRIORITY)
+
+Add a security audit step to the review process. Two approaches:
+
+**Option A — Integrate into existing `/review` command:**
+- Add a "Security Audit" section to the code-reviewer agent
+- Checks: grep for patterns (emails, absolute paths with usernames, tokens, secrets, IP addresses)
+- Reports findings alongside code quality review
+
+**Option B — Separate `/security-audit` command:**
+- Standalone command that can be run on demand
+- Also triggered automatically as part of `/review`
+- More thorough: checks tracked files, git history, commit messages, config files
+
+**Recommended:** Option B (separate command, integrated into /review). The security audit is a distinct concern with different patterns than code quality.
+
+Patterns to check:
+- `/Users/<name>/`, `/home/<name>/` — absolute paths with usernames
+- Email patterns: `[\w.-]+@[\w.-]+\.\w+` (excluding noreply)
+- Token patterns: `ghp_`, `gho_`, `sk-`, `Bearer`, `Authorization`
+- Secret patterns: `password`, `secret`, `api_key`, `token` (in non-doc context)
+- `.env` files, `.pem`, `.key` files tracked in git
+- Git author emails that aren't noreply format
+
+### 2. GitHub-Ready Scaffold Enhancement (HIGH PRIORITY)
+
+Enhance the scaffold so every project starts GitHub-ready:
+
+**README.md generation:**
+- Professional README template with badges, table of contents, quick start
+- Auto-populated from CLAUDE.md (project name, tech stack, commands)
+- Mermaid diagrams for architecture
+- Contributing guide section
+- License section
+
+**GitHub-specific files:**
+- `.github/ISSUE_TEMPLATE/` — bug report, feature request templates
+- `.github/PULL_REQUEST_TEMPLATE.md`
+- `LICENSE` — choice of MIT, Apache 2.0, etc.
+- `.github/workflows/` — CI template (test runner)
+- `CONTRIBUTING.md` — contributor guide
+
+**Repo optimization:**
+- GitHub topics/tags
+- Repository description
+- Social preview image guidance
+- Branch protection rules guidance
+
+### 3. Remaining infrastructure items
+- Evaluate whether `.claude/scaffold-sync.log` should be deleted from fucina (file still exists locally, just no longer written to)
+- Consider adding `gh repo edit` commands to scaffold-push for auto-updating GitHub repo metadata
 
 ## Determinism Notes
 
-- **Sync log vs git history**: `pull-finalize` now auto-commits with structured messages. The sync log file (`.claude/scaffold-sync.log`) provides a quick-glance flat file but duplicates git history. Evaluate whether to keep, merge, or remove.
-- **adopt-conflict resolution**: When `pull-plan` returns `adopt-conflict`, the user must choose take-scaffold or merge. This is a correct judgment call — no further automation needed.
-- **Code-block delimiter safety**: Files that document the delimiter syntax (like GUIDE.md) must use HTML entities (`&lt;!--`) in examples, not raw HTML comments. A test for this specific case would prevent regression.
+- **pull-finalize commit messages now use ~/**: The `get_scaffold_source_display()` helper ensures no absolute paths leak into git history. This is a deterministic fix — no judgment needed.
+- **Script self-replacement**: pull-auto skips scaffold-sync.sh and prints SKIPPED message. Bootstrap in pre-check handles it on next run. Fully deterministic.
+- **PII audit should be deterministic**: Pattern matching for secrets/PII is computable (regex on file contents). Should be a script or hook, not Claude reasoning. Consider a `scaffold-sync.sh security-audit` command.
 
 ## Context Notes
 
-- bats-core installed via `brew install bats-core` (v1.13.0)
-- The `accept-new` safety check caught a real issue during fucina sync — hook files existed locally but weren't in the lockfile. The new `adopt-clean`/`adopt-conflict` actions handle this deterministically.
-- Bootstrap is now fully deterministic: `pre-check` compares script hashes and auto-copies if stale. Exits with "BOOTSTRAPPED" so the user re-runs with the updated script.
-- The self-review rule (`self-review.md`) is lightweight — it doesn't run `/scaffold-audit`, just reminds Claude to flag stochastic interventions during checkpoints and reviews.
+- The sync log file still exists in fucina at `.claude/scaffold-sync.log` but is no longer written to. Can be deleted manually.
+- `SCAFFOLD_CHANGELOG.md` was deleted from the hub and removed from git.
+- Git filter-branch was used to rewrite fucina history. The `refs/original/` backup was cleaned up and garbage collected.
+- Both repos use `goldhaxx` as the GitHub org/user. Git author email is the noreply format.
