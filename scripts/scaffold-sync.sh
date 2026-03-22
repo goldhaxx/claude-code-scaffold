@@ -748,9 +748,12 @@ cmd_pull_plan() {
         '. + [{"file": $f, "action": "auto-update", "reason": "Scaffold changed, local is clean"}]')
     else
       # Both sides changed — check for section-merge capability
+      # Only markdown files can have section delimiters (avoids false positives
+      # in scripts that contain delimiter strings as literals)
       local has_delimiter=false
-      if grep -q '<!-- NODE-SPECIFIC-START -->' "$scaffold_file" 2>/dev/null || \
-         grep -q '<!-- HUB-MANAGED-START -->' "$scaffold_file" 2>/dev/null; then
+      if [[ "$file" == *.md ]] && \
+         (grep -qx '<!-- NODE-SPECIFIC-START -->' "$scaffold_file" 2>/dev/null || \
+          grep -qx '<!-- HUB-MANAGED-START -->' "$scaffold_file" 2>/dev/null); then
         has_delimiter=true
       fi
 
