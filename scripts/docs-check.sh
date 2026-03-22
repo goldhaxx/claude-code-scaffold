@@ -493,8 +493,8 @@ cmd_audit_session() {
       continue
     fi
 
-    # Check each pattern against added lines
-    if [[ "$line" =~ ^\+ ]]; then
+    # Check each pattern against added lines (skip allowlisted files)
+    if [[ "$line" =~ ^\+ && ! "$current_file" =~ ^scripts/.*\.sh$ ]]; then
       for pattern_def in "${AUDIT_PATTERNS[@]}"; do
         local pname="${pattern_def%%|*}"
         local pregex="${pattern_def#*|}"

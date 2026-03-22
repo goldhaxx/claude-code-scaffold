@@ -881,6 +881,64 @@ SCRIPT
   rm -rf "$repo"
 }
 
+# ===========================================================================
+# Step 5: audit-session allowlist (AC-8)
+# ===========================================================================
+
+@test "audit-session: allowlists scripts/*.sh — no false positives" {
+  local repo
+  repo=$(create_audit_repo)
+
+  # Create a scripts/ dir with patterns that should be allowlisted
+  mkdir -p "$repo/scripts"
+  cat > "$repo/scripts/sync.sh" <<'SCRIPT'
+#!/bin/bash
+cp "$hub_file" "$node_file"
+jq '.status' lockfile.json
+shasum -a 256 "$file"
+git -C "$other_repo" status
+SCRIPT
+  git -C "$repo" add scripts/sync.sh
+  git -C "$repo" commit -q -m "add sync script"
+
+  run bash "$SCRIPT" audit-session --since HEAD~1 "$repo"
+  [ "$status" -eq 0 ]
+
+  total=$(echo "$output" | jq -r '.summary.total')
+  [ "$total" -eq 0 ]
+
+  rm -rf "$repo"
+}
+
+@test "audit-session: same patterns in non-script files ARE reported" {
+  local repo
+  repo=$(create_audit_repo)
+
+  # Same patterns but in a non-scripts directory
+  mkdir -p "$repo/scripts"
+  cat > "$repo/scripts/sync.sh" <<'SCRIPT'
+#!/bin/bash
+cp "$hub_file" "$node_file"
+SCRIPT
+  cat > "$repo/deploy.sh" <<'SCRIPT'
+#!/bin/bash
+cp src/config.json dist/
+SCRIPT
+  git -C "$repo" add scripts/sync.sh deploy.sh
+  git -C "$repo" commit -q -m "add both"
+
+  run bash "$SCRIPT" audit-session --since HEAD~1 "$repo"
+  [ "$status" -eq 0 ]
+
+  total=$(echo "$output" | jq -r '.summary.total')
+  [ "$total" -eq 1 ]
+
+  file=$(echo "$output" | jq -r '.patterns_found[0].file')
+  [ "$file" = "deploy.sh" ]
+
+  rm -rf "$repo"
+}
+
 @test "audit-session: without --since defaults to last 10 commits" {
   local repo
   repo=$(create_audit_repo)
