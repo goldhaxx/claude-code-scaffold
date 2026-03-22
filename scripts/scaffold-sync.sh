@@ -883,6 +883,10 @@ cmd_pull_apply() {
 
     accept-new)
       [[ -f "$scaffold_file" ]] || die "Scaffold file not found: $scaffold_file"
+      if [[ -f "$file" ]]; then
+        echo "WARNING: $file already exists locally. Use 'take-scaffold' or 'section-merge' instead." >&2
+        die "Refusing to overwrite existing file with accept-new. File: $file"
+      fi
       mkdir -p "$(dirname "$file")"
       cp "$scaffold_file" "$file"
       local new_hash

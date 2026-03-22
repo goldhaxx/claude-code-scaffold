@@ -489,6 +489,31 @@ EOF
 # accept-new tests
 # =========================================================================
 
+@test "accept-new: refuses to overwrite existing local file" {
+  cd "$NODE"
+
+  # File already exists locally
+  cat > "$NODE/.claude/rules/existing.md" <<'EOF'
+# Existing Rule
+
+My custom content I don't want to lose.
+EOF
+
+  # Same file exists in hub
+  cat > "$HUB/.claude/rules/existing.md" <<'EOF'
+# Hub Rule
+
+Different content from hub.
+EOF
+
+  run bash "$NODE/scripts/scaffold-sync.sh" pull-apply ".claude/rules/existing.md" accept-new
+  [ "$status" -ne 0 ]
+  echo "$output" | grep -qi "already exists"
+
+  # Local content should be unchanged
+  grep -q "My custom content" "$NODE/.claude/rules/existing.md"
+}
+
 @test "accept-new: copies file and adds lockfile entry" {
   cd "$NODE"
 
