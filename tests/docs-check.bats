@@ -88,6 +88,12 @@ create_checkpoint() {
 ## Next Steps
 
 - Do more.
+
+## Determinism Review
+
+- **operations_reviewed:** 2
+- **candidates_found:** 0
+- No candidates this session.
 EOF
 }
 
@@ -622,4 +628,97 @@ TEMPLATES="$BATS_TEST_DIRNAME/../docs/templates"
   run grep -c "candidates_found" "$TEMPLATES/checkpoint.md"
   [ "$status" -eq 0 ]
   [ "$output" -ge 1 ]
+}
+
+# ===========================================================================
+# Step 2: validate — missing-determinism-review (AC-4)
+# ===========================================================================
+
+@test "validate: missing-determinism-review when checkpoint has no review section" {
+  # Create linked docs, then replace checkpoint without review section
+  create_linked_docs
+  local plan_hash
+  plan_hash=$(bash "$SCRIPT" status "$DOCS" | jq -r '.plan.content_hash')
+  cat > "$DOCS/checkpoint.md" <<EOF
+# Checkpoint
+
+> Feature: my-feature
+> Last updated: 1742861000
+> Plan hash: ${plan_hash}
+
+## Accomplished
+
+- Did something.
+
+## Next Steps
+
+- Do more.
+EOF
+
+  run bash "$SCRIPT" validate "$DOCS"
+  [ "$status" -eq 0 ]
+
+  result=$(echo "$output" | jq -r '.result')
+  [ "$result" = "missing-determinism-review" ]
+}
+
+@test "validate: aligned when checkpoint has Determinism Review section" {
+  create_linked_docs
+
+  run bash "$SCRIPT" validate "$DOCS"
+  [ "$status" -eq 0 ]
+
+  result=$(echo "$output" | jq -r '.result')
+  [ "$result" = "aligned" ]
+}
+
+@test "validate: missing-determinism-review when section exists but is empty" {
+  # Create linked docs, then replace checkpoint with empty review section
+  create_linked_docs
+  local plan_hash
+  plan_hash=$(bash "$SCRIPT" status "$DOCS" | jq -r '.plan.content_hash')
+  cat > "$DOCS/checkpoint.md" <<EOF
+# Checkpoint
+
+> Feature: my-feature
+> Last updated: 1742861000
+> Plan hash: ${plan_hash}
+
+## Accomplished
+
+- Did something.
+
+## Determinism Review
+
+EOF
+
+  run bash "$SCRIPT" validate "$DOCS"
+  [ "$status" -eq 0 ]
+
+  result=$(echo "$output" | jq -r '.result')
+  [ "$result" = "missing-determinism-review" ]
+}
+
+@test "validate: missing-determinism-review has detail message" {
+  # Create linked docs, then replace checkpoint without review section
+  create_linked_docs
+  local plan_hash
+  plan_hash=$(bash "$SCRIPT" status "$DOCS" | jq -r '.plan.content_hash')
+  cat > "$DOCS/checkpoint.md" <<EOF
+# Checkpoint
+
+> Feature: my-feature
+> Last updated: 1742861000
+> Plan hash: ${plan_hash}
+
+## Accomplished
+
+- Did something.
+EOF
+
+  run bash "$SCRIPT" validate "$DOCS"
+  [ "$status" -eq 0 ]
+
+  details=$(echo "$output" | jq -r '.details | join(", ")')
+  [[ "$details" == *"determinism review"* ]] || [[ "$details" == *"Determinism Review"* ]]
 }

@@ -307,6 +307,34 @@ cmd_validate() {
     fi
   fi
 
+  # Check missing-determinism-review: checkpoint exists but lacks the required section
+  if [[ "$result" == "aligned" && "$cp_exists" == "true" ]]; then
+    local has_review=false
+    local review_has_content=false
+    local in_review=false
+
+    while IFS= read -r line || [[ -n "$line" ]]; do
+      if [[ "$line" =~ ^##[[:space:]]+Determinism[[:space:]]+Review ]]; then
+        has_review=true
+        in_review=true
+        continue
+      fi
+      # Next heading ends the review section
+      if $in_review && [[ "$line" =~ ^## ]]; then
+        break
+      fi
+      # Any non-blank line in the review section counts as content
+      if $in_review && [[ -n "$line" && ! "$line" =~ ^[[:space:]]*$ ]]; then
+        review_has_content=true
+      fi
+    done < "$docs_dir/checkpoint.md"
+
+    if ! $has_review || ! $review_has_content; then
+      result="missing-determinism-review"
+      details=$(echo "$details" | jq '. + ["checkpoint.md missing Determinism Review section or section is empty"]')
+    fi
+  fi
+
   jq -n \
     --arg result "$result" \
     --argjson details "$details" \
@@ -364,6 +392,10 @@ cmd_recommend() {
   elif [[ "$result" == "stale-checkpoint" ]]; then
     next_action="Update checkpoint"
     reason="Plan has changed since the checkpoint was written. The checkpoint is out of date."
+
+  elif [[ "$result" == "missing-determinism-review" ]]; then
+    next_action="Add Determinism Review to checkpoint"
+    reason="Checkpoint exists but is missing the required Determinism Review section. Add the section before clearing context."
 
   elif [[ "$spec_exists" == "true" && "$plan_exists" != "true" ]]; then
     next_action="Run /plan"
