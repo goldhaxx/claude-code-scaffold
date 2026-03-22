@@ -1081,6 +1081,25 @@ COMMANDS="$BATS_TEST_DIRNAME/../.claude/commands"
   [ "$output" -ge 1 ]
 }
 
+# ===========================================================================
+# Step 10: Documentation — README and GUIDE
+# ===========================================================================
+
+README="$BATS_TEST_DIRNAME/../README.md"
+GUIDE="$BATS_TEST_DIRNAME/../GUIDE.md"
+
+@test "readme: mentions audit-session in scripts description" {
+  run grep -c "audit-session" "$README"
+  [ "$status" -eq 0 ]
+  [ "$output" -ge 1 ]
+}
+
+@test "guide: mentions audit-session in command reference" {
+  run grep -c "audit-session" "$GUIDE"
+  [ "$status" -eq 0 ]
+  [ "$output" -ge 1 ]
+}
+
 @test "audit-session: clean commit messages produce no findings" {
   local repo
   repo=$(create_audit_repo)

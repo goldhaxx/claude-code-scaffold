@@ -662,8 +662,9 @@ When adding a new rule, command, agent, skill, or template to the scaffold, **al
 | Command | What it does |
 |---------|-------------|
 | `docs-check.sh status [docs-dir]` | Extract metadata (feature_id, hashes, timestamps) from spec/plan/checkpoint → JSON |
-| `docs-check.sh validate [docs-dir]` | Check alignment: `aligned`, `stale-plan`, `stale-checkpoint`, `mismatched`, `unlinked` |
+| `docs-check.sh validate [docs-dir]` | Check alignment: `aligned`, `stale-plan`, `stale-checkpoint`, `mismatched`, `unlinked`, `missing-determinism-review` |
 | `docs-check.sh recommend [docs-dir]` | State machine → `{next_action, reason}` (e.g., "Run /plan", "Ready to build") |
+| `docs-check.sh audit-session [--since commit] [repo-dir]` | Scan git diffs for stochastic patterns (cp, jq, shasum, git -C, curl, wget) + commit messages for indicator phrases → JSON |
 
 ---
 

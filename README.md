@@ -164,7 +164,7 @@ Copy the whole directory with `cp -r scripts ./scripts`. Contains deterministic 
 | `scripts/fix-cloudflare-certs.sh` | `./scripts/fix-cloudflare-certs.sh` | Diagnoses and repairs Cloudflare WARP TLS certificate issues. Creates combined CA bundle. Called by `/fix-certs`. | No. Only relevant for Cloudflare WARP environments. |
 | `scripts/fetch-license.sh` | `./scripts/fetch-license.sh` | Fetches license templates from GitHub API. Called by `/init` during project setup. Supports MIT, Apache 2.0, GPL-3.0, BSD, Unlicense. | No. Deterministic license fetcher. |
 | `scripts/manifest-check.sh` | `./scripts/manifest-check.sh` | Deterministic README manifest verification. Parses tables, checks file existence, compares hashes against lockfile, generates diffs for stale entries, extracts identity for untracked files. Called by `/scaffold-audit`. | No. Updated via scaffold sync. |
-| `scripts/docs-check.sh` | `./scripts/docs-check.sh` | Deterministic docs lifecycle validation. Extracts metadata, computes content hashes, validates spec↔plan↔checkpoint alignment, recommends next action via state machine. Called by `/catchup`. | No. Updated via scaffold sync. |
+| `scripts/docs-check.sh` | `./scripts/docs-check.sh` | Deterministic docs lifecycle validation. Extracts metadata, computes content hashes, validates spec↔plan↔checkpoint alignment, recommends next action via state machine. Includes `audit-session` subcommand for post-hoc stochastic pattern detection. Called by `/catchup`. | No. Updated via scaffold sync. |
 
 ### The `docs/` directory (copy entire directory to project root)
 
