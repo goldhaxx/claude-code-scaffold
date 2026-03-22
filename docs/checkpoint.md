@@ -3,28 +3,33 @@
 # Checkpoint
 
 > Feature: determinism-enforcement
-> Last updated: 1774211916
-> Plan hash: dae15f7e
-> Session objective: Implement docs-check.sh lifecycle linking + scaffold-wide epoch timestamps + spec determinism enforcement
+> Last updated: 1774213177
+> Plan hash: 9e736a8c
+> Session objective: Implement determinism enforcement — all 11 ACs across 3 parts
 <!-- Reminder: if no plan exists yet, run /plan before checkpointing (plan before checkpoint). -->
 
 ## Accomplished
 
-- **docs-check.sh implemented** — 9-step TDD plan, all steps complete. Three subcommands: `status`, `validate`, `recommend`. 36 tests.
-- **Templates, agents, commands, rules wired** — full lifecycle metadata flow from spec-writer through /catchup.
-- **Epoch timestamps converted** — scaffold-sync.sh and manifest-check.sh now use `date +%s`. Lockfiles regenerated.
-- **Sync failure analysis** — identified 6 historical bugs, two hardening opportunities backlogged.
-- **Determinism enforcement specced** — 11 ACs, 3 parts. Key insight: warm-context review during checkpoint is primary mechanism, audit-session script is safety net.
-- **Doc archival concept backlogged** — unique doc identity + lifespan + archive on completion (needs deep research).
+- **All 11 ACs implemented** across 10 TDD steps, 12 commits.
+- **AC-1:** Checkpoint template now has mandatory `## Determinism Review` section with `operations_reviewed`, `candidates_found` fields.
+- **AC-4:** `docs-check.sh validate` reports `missing-determinism-review` when section is missing or empty.
+- **AC-5, AC-6:** `audit-session` subcommand scans git diffs for stochastic patterns, outputs JSON.
+- **AC-7:** `--since <commit>` flag limits scan range; defaults to last 10 commits.
+- **AC-8:** Allowlists `scripts/*.sh` — zero false positives on scaffold scripts.
+- **AC-9:** Scans commit messages for "manually ran", "had to", "workaround".
+- **AC-2, AC-3:** Workflow rule has checkpoint flow order + 4-item determinism checklist.
+- **Self-review.md** updated to reference mandatory section.
+- **AC-10, AC-11:** `/catchup` surfaces Determinism Review + runs `audit-session`.
+- **README + GUIDE** updated with `audit-session` documentation.
+- **Pushed** to GitHub (all commits).
 
 ## Current State
 
 - **Branch:** main
-- **Tests:** 144/144 passing
-- **Uncommitted changes:** None (this checkpoint not yet committed)
+- **Tests:** 174/174 passing (30 new)
+- **Uncommitted changes:** This checkpoint only
 - **Build status:** Clean
 - **Manifest:** 56/56 verified
-- **Unpushed:** 19 commits
 
 ## Blocked On
 
@@ -32,29 +37,24 @@
 
 ## Next Steps
 
-### 1. Push to GitHub
-- 19 commits unpushed on main
+### 1. Sync to downstream (fucina)
+- New: `audit-session` subcommand. Updated: `docs-check.sh`, `workflow.md`, `self-review.md`, `catchup.md`, `checkpoint.md` template, README, GUIDE.
 
-### 2. Sync to downstream (fucina)
-- New: `docs-check.sh`. Updated: `scaffold-sync.sh`, `manifest-check.sh`, templates, agents, commands, rules.
-
-### 3. `/plan` for determinism enforcement
-- Spec at `docs/spec.md` (feature: determinism-enforcement, 11 ACs)
-- Run `/plan` to create TDD steps, then build
-
-### 4. Backlog (in priority order)
+### 2. Backlog (in priority order)
 - **Sync hardening** — defensive guards on destructive ops + --dry-run mode for pull
 - **Doc archival lifecycle** — unique doc identity + lifespan + archive on completion (needs deep research)
 
 ## Determinism Review
 
-- **operations_reviewed:** 5
-- **candidates_found:** 1
-- **Self-review rule is passive** — `self-review.md` relies on Claude remembering to assess determinism during checkpoints. Nothing enforces it. This is exactly what the determinism-enforcement feature addresses. The spec restructure (warm-context primary, script safety net) was driven by Zach's insight that context-aware review before `/clear` catches far more than post-hoc diff scanning.
-- **Feedback captured:** Zach corrected mid-session when spec→plan was skipped for epoch timestamps. Saved as `feedback_always_spec_plan.md`.
-- No other stochastic operations identified — all implementation was script code via TDD, no manual sync or improvised workarounds.
+- **operations_reviewed:** 6
+- **candidates_found:** 0
+- All implementation was done via TDD (write test → implement → verify → commit). No manual `cp`, `jq`, `shasum`, or `git -C` commands were improvised.
+- No multi-step sequences were improvised — all deterministic operations went through `docs-check.sh` and `manifest-check.sh`.
+- No workarounds for missing script features.
+- No repeated manual operations.
+- No candidates this session.
 
 ## Context Notes
 
-- The plan.md still references the epoch-timestamps feature. Next session should run `/plan` which will overwrite it with determinism-enforcement steps.
-- The determinism enforcement spec was restructured late in the session after Zach's feedback about warm-context review. The 11 ACs reflect the final structure.
+- The `create_checkpoint` helper in tests was updated to include the Determinism Review section, which is now mandatory for aligned validation.
+- The spec status should be updated to "Complete" since all ACs pass.
