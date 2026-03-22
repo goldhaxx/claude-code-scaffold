@@ -1015,6 +1015,38 @@ SCRIPT
   rm -rf "$repo"
 }
 
+# ===========================================================================
+# Step 7: Workflow rule — checkpoint flow and checklist (AC-2, AC-3)
+# ===========================================================================
+
+RULES="$BATS_TEST_DIRNAME/../.claude/rules"
+
+@test "workflow: has determinism review checkpoint flow" {
+  run grep -c "Determinism Review" "$RULES/workflow.md"
+  [ "$status" -eq 0 ]
+  [ "$output" -ge 1 ]
+}
+
+@test "workflow: specifies review before /clear" {
+  # The rule should mention reviewing before suggesting /clear
+  run grep -c "before.*clear\|before.*context" "$RULES/workflow.md"
+  [ "$status" -eq 0 ]
+  [ "$output" -ge 1 ]
+}
+
+@test "workflow: has the 4-item determinism checklist" {
+  # Check for the key checklist items from AC-3
+  run grep -c "manual.*cp\|jq\|shasum\|git -C" "$RULES/workflow.md"
+  [ "$status" -eq 0 ]
+  [ "$output" -ge 1 ]
+}
+
+@test "workflow: requires entry even when no candidates found" {
+  run grep -c "No candidates" "$RULES/workflow.md"
+  [ "$status" -eq 0 ]
+  [ "$output" -ge 1 ]
+}
+
 @test "audit-session: clean commit messages produce no findings" {
   local repo
   repo=$(create_audit_repo)

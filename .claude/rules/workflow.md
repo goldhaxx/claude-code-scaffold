@@ -25,6 +25,18 @@
   - `> Last updated: <epoch>` (using `date +%s`)
   - `> Plan hash: <hash>` (run `scripts/docs-check.sh status` and read `.plan.content_hash`)
 - **Plan before checkpoint:** If a spec exists but no plan, run `/plan` before checkpointing. Planning in warm context is cheaper than in cold context.
+- **Determinism Review at checkpoint:** Before suggesting `/clear`, perform the warm-context determinism review and fill the `## Determinism Review` section in `docs/checkpoint.md`. The checkpoint flow order is:
+  1. Write checkpoint content (accomplished, state, next steps)
+  2. Walk through the determinism checklist (below) while you still have full session awareness
+  3. Write the Determinism Review section with `operations_reviewed` and `candidates_found` counts
+  4. Commit
+  5. Then suggest `/clear`
+- **Determinism checklist** (review before clearing context):
+  - (a) Did I run manual `cp`, `jq`, `shasum`, or `git -C` commands that a script should handle?
+  - (b) Did I improvise a multi-step sequence that could be a single script call?
+  - (c) Did I work around a missing feature in a script?
+  - (d) Did I perform any operation more than once that should be automated?
+  - Even if no candidates are found, write: "No candidates this session."
 - When resuming after `/clear`, read `docs/checkpoint.md` first.
 
 ## Commit Practices
