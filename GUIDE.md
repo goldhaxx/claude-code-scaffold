@@ -657,6 +657,14 @@ When adding a new rule, command, agent, skill, or template to the scaffold, **al
 | `manifest-check.sh check <readme>` | Full report: verified + stale (with diffs) + missing + untracked (with identity) |
 | `manifest-check.sh verify <paths...>` | Update lockfile entries for confirmed paths |
 
+### Docs Lifecycle Scripts
+
+| Command | What it does |
+|---------|-------------|
+| `docs-check.sh status [docs-dir]` | Extract metadata (feature_id, hashes, timestamps) from spec/plan/checkpoint → JSON |
+| `docs-check.sh validate [docs-dir]` | Check alignment: `aligned`, `stale-plan`, `stale-checkpoint`, `mismatched`, `unlinked` |
+| `docs-check.sh recommend [docs-dir]` | State machine → `{next_action, reason}` (e.g., "Run /plan", "Ready to build") |
+
 ---
 
 ## Configuration Layers
@@ -913,6 +921,7 @@ Every scaffold feature traces back to transformer architecture research. This ta
 | Universal delimiters for all markdown | Every synced markdown file has a section delimiter. Hub updates flow via section-merge without overwriting node customizations. Eliminates manual conflict resolution for the most common sync case: hub improves a rule/command while node has project-specific additions. |
 | SCAFFOLD_FRAMEWORK.md protection | Research source material is foundational — changes only under paradigm shifts, preserving the reasoning behind every design decision. |
 | Manifest verification with lockfile | Hash comparison auto-verifies unchanged files (zero Claude involvement). Changed files get a diff (not full content) — Claude judges "does this diff affect the description?" rather than re-reading 200-line files. Untracked files get identity extraction (headers/frontmatter), not full reads. Converts N full-file reads into N hash comparisons + K diffs where K << N. |
+| Docs lifecycle linking | Hash-chain validation between spec→plan→checkpoint. Metadata changes (status, timestamps) don't invalidate hashes — only body content changes do. State machine maps document state to next action deterministically. `/catchup` surfaces staleness before reading content, preventing wasted sessions on outdated context. |
 
 <!-- NODE-SPECIFIC-START -->
 <!-- Everything above is managed by the scaffold hub and updated via /scaffold-pull. -->

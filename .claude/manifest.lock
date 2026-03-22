@@ -1,282 +1,287 @@
 {
   "meta": {
     "last_verified": "2026-03-22",
-    "commit": "11d2a1f772de3d0706bbce153899acb7c16b1065"
+    "commit": "532c0ebbd6ee56d18957e305b392402362c4149e"
   },
   "entries": {
     "GLOBAL_CLAUDE.md": {
       "file_hash": "a868352fc389360b55f7d9f72d4dff26c648f4bf15add1bef614ebabb33244c6",
-      "verified_at_commit": "11d2a1f772de3d0706bbce153899acb7c16b1065",
+      "verified_at_commit": "532c0ebbd6ee56d18957e305b392402362c4149e",
       "verified": "2026-03-22"
     },
     "global-commands/init.md": {
       "file_hash": "07e7240f38a84da6d5950a2bf97e29a8bd959bfe400ce2a58b86ac2e74284c07",
-      "verified_at_commit": "11d2a1f772de3d0706bbce153899acb7c16b1065",
+      "verified_at_commit": "532c0ebbd6ee56d18957e305b392402362c4149e",
       "verified": "2026-03-22"
     },
     "CLAUDE.md": {
       "file_hash": "af57b330caf2ce4604101fb8a2c490a7c9e646d7ea416cc1553bde1ef22f5ffd",
-      "verified_at_commit": "11d2a1f772de3d0706bbce153899acb7c16b1065",
+      "verified_at_commit": "532c0ebbd6ee56d18957e305b392402362c4149e",
       "verified": "2026-03-22"
     },
     ".claudeignore": {
       "file_hash": "77df0dbfb7b9b6fa507c7051986caa7ac32df97c276f5834f4e4eeed806f3be6",
-      "verified_at_commit": "11d2a1f772de3d0706bbce153899acb7c16b1065",
+      "verified_at_commit": "532c0ebbd6ee56d18957e305b392402362c4149e",
       "verified": "2026-03-22"
     },
     ".mcp.json": {
       "file_hash": "e8133c71dd3347621a63527204164aa14371f3436853a98d8766219c6c81d013",
-      "verified_at_commit": "11d2a1f772de3d0706bbce153899acb7c16b1065",
+      "verified_at_commit": "532c0ebbd6ee56d18957e305b392402362c4149e",
       "verified": "2026-03-22"
     },
     ".claude/settings.json": {
       "file_hash": "09eaa9c60dd7007367214e8d432668051f9fb2821950135217411d3ff76ed9c7",
-      "verified_at_commit": "11d2a1f772de3d0706bbce153899acb7c16b1065",
+      "verified_at_commit": "532c0ebbd6ee56d18957e305b392402362c4149e",
       "verified": "2026-03-22"
     },
     ".claude/hooks/protect-files.sh": {
       "file_hash": "f4738ac6a12332ba19799ac47dcd335a0e729e3cb3817f6c7f64224ecec8af26",
-      "verified_at_commit": "11d2a1f772de3d0706bbce153899acb7c16b1065",
+      "verified_at_commit": "532c0ebbd6ee56d18957e305b392402362c4149e",
       "verified": "2026-03-22"
     },
     ".claude/hooks/lint-on-write.sh": {
       "file_hash": "f32768aba5802f0496c7687583d5ea36c5aec0679d25c9f651cc28d6ecb6a44f",
-      "verified_at_commit": "11d2a1f772de3d0706bbce153899acb7c16b1065",
+      "verified_at_commit": "532c0ebbd6ee56d18957e305b392402362c4149e",
       "verified": "2026-03-22"
     },
     ".claude/hooks/format-on-write.sh": {
       "file_hash": "a243b5842ccfb468196e1c6725d77d9f3ad9becb156a422697f9d0c63c5ef277",
-      "verified_at_commit": "11d2a1f772de3d0706bbce153899acb7c16b1065",
+      "verified_at_commit": "532c0ebbd6ee56d18957e305b392402362c4149e",
       "verified": "2026-03-22"
     },
     ".claude/rules/tdd.md": {
       "file_hash": "121c23fb1d169c1dd71e3811ddc39e3516dedec6bfbc385537fc4d5ef3a119c8",
-      "verified_at_commit": "11d2a1f772de3d0706bbce153899acb7c16b1065",
+      "verified_at_commit": "532c0ebbd6ee56d18957e305b392402362c4149e",
       "verified": "2026-03-22"
     },
     ".claude/rules/workflow.md": {
-      "file_hash": "68fd0abe32533638ad5ad63a1fa380686d3641ef4538dcd42e76e5d810901a0d",
-      "verified_at_commit": "11d2a1f772de3d0706bbce153899acb7c16b1065",
+      "file_hash": "fd7355c3d2e66926a0e0446e60d823d42821b881afdd96c9b921e5c0d40d3bdf",
+      "verified_at_commit": "532c0ebbd6ee56d18957e305b392402362c4149e",
       "verified": "2026-03-22"
     },
     ".claude/rules/code-quality.md": {
       "file_hash": "2bb6332c0e64f5845b1eb185bf95105e8723a975e2d6caabe10be23350ba9a85",
-      "verified_at_commit": "11d2a1f772de3d0706bbce153899acb7c16b1065",
+      "verified_at_commit": "532c0ebbd6ee56d18957e305b392402362c4149e",
       "verified": "2026-03-22"
     },
     ".claude/rules/deterministic-first.md": {
       "file_hash": "2d5fad689a823e7b09f0fb9e03d263bed365f33106ce2599c4e71f83b4232243",
-      "verified_at_commit": "11d2a1f772de3d0706bbce153899acb7c16b1065",
+      "verified_at_commit": "532c0ebbd6ee56d18957e305b392402362c4149e",
       "verified": "2026-03-22"
     },
     ".claude/rules/tls-troubleshooting.md": {
       "file_hash": "0329208e75cce3f7c5652ed39322150c4c21063a67c7443b49896a9e0db38c99",
-      "verified_at_commit": "11d2a1f772de3d0706bbce153899acb7c16b1065",
+      "verified_at_commit": "532c0ebbd6ee56d18957e305b392402362c4149e",
       "verified": "2026-03-22"
     },
     ".claude/rules/self-review.md": {
       "file_hash": "421bc459353f2db3dd1037360ca0959284f68ac847070b4303e43be39a0ac523",
-      "verified_at_commit": "11d2a1f772de3d0706bbce153899acb7c16b1065",
+      "verified_at_commit": "532c0ebbd6ee56d18957e305b392402362c4149e",
       "verified": "2026-03-22"
     },
     ".claude/skills/tdd/SKILL.md": {
       "file_hash": "77d65b1a6ea15921d883e556600d05ce685c40b46e837b1c7a281f736b12b034",
-      "verified_at_commit": "11d2a1f772de3d0706bbce153899acb7c16b1065",
+      "verified_at_commit": "532c0ebbd6ee56d18957e305b392402362c4149e",
       "verified": "2026-03-22"
     },
     ".claude/agents/code-reviewer.md": {
       "file_hash": "a69f59b508ce7f5e3d540ee67a48b867f93e39844e1af4aa277f0708c87aa2eb",
-      "verified_at_commit": "11d2a1f772de3d0706bbce153899acb7c16b1065",
+      "verified_at_commit": "532c0ebbd6ee56d18957e305b392402362c4149e",
       "verified": "2026-03-22"
     },
     ".claude/agents/spec-writer.md": {
-      "file_hash": "bd1f7109a3e9adecb867accda921770a3ce336be92325e6def541e6d884ccefa",
-      "verified_at_commit": "11d2a1f772de3d0706bbce153899acb7c16b1065",
+      "file_hash": "4846e7d85030f383ffae33370085c936ad4c8caac52ef589da7d53eb67d73387",
+      "verified_at_commit": "532c0ebbd6ee56d18957e305b392402362c4149e",
       "verified": "2026-03-22"
     },
     ".claude/agents/scaffold-differ.md": {
       "file_hash": "628438f3e09157034af1afc9a2f40c3d701e03584f7d49a2941c0883ad2fbf45",
-      "verified_at_commit": "11d2a1f772de3d0706bbce153899acb7c16b1065",
+      "verified_at_commit": "532c0ebbd6ee56d18957e305b392402362c4149e",
       "verified": "2026-03-22"
     },
     ".claude/commands/catchup.md": {
-      "file_hash": "bab2409342877d73d407f295327cadc634ad4ce80cf6a928f6bafe7857161759",
-      "verified_at_commit": "11d2a1f772de3d0706bbce153899acb7c16b1065",
+      "file_hash": "381572779580ce13fb55bfdb40a25618ad8f288f60e6f1cbbcafd203a41378c2",
+      "verified_at_commit": "532c0ebbd6ee56d18957e305b392402362c4149e",
       "verified": "2026-03-22"
     },
     ".claude/commands/plan.md": {
-      "file_hash": "69ed9f71a020056aee8e2526cbbb00787ed17d708177eef3672237715dcda03e",
-      "verified_at_commit": "11d2a1f772de3d0706bbce153899acb7c16b1065",
+      "file_hash": "062d57d6a2e1c57fd6f5f90369620192541b2f33f8155e0f3904ae0bf37ca40b",
+      "verified_at_commit": "532c0ebbd6ee56d18957e305b392402362c4149e",
       "verified": "2026-03-22"
     },
     ".claude/commands/review.md": {
       "file_hash": "414238c85787cf1bd76b0d4498ec8841958277252ac1b1b300a0786e65535c7e",
-      "verified_at_commit": "11d2a1f772de3d0706bbce153899acb7c16b1065",
+      "verified_at_commit": "532c0ebbd6ee56d18957e305b392402362c4149e",
       "verified": "2026-03-22"
     },
     ".claude/commands/scaffold-status.md": {
       "file_hash": "de2265f8c6ba7533e5714ffe86de4553df244a53013a77c1b018d92ed6d65f9a",
-      "verified_at_commit": "11d2a1f772de3d0706bbce153899acb7c16b1065",
+      "verified_at_commit": "532c0ebbd6ee56d18957e305b392402362c4149e",
       "verified": "2026-03-22"
     },
     ".claude/commands/scaffold-pull.md": {
       "file_hash": "c018f769678495b890b2e4b55310a32b1be6958fb5d59260df212532b14c96e3",
-      "verified_at_commit": "11d2a1f772de3d0706bbce153899acb7c16b1065",
+      "verified_at_commit": "532c0ebbd6ee56d18957e305b392402362c4149e",
       "verified": "2026-03-22"
     },
     ".claude/commands/scaffold-push.md": {
       "file_hash": "f24f24395b67de6f0a94df73018b3c87ba18025ffb1772c6a897078332125ca6",
-      "verified_at_commit": "11d2a1f772de3d0706bbce153899acb7c16b1065",
+      "verified_at_commit": "532c0ebbd6ee56d18957e305b392402362c4149e",
       "verified": "2026-03-22"
     },
     ".claude/commands/scaffold-promote.md": {
       "file_hash": "47829804b2a3811d9bcfe453ca8e91044209daba0c7dc9636fc5d2ce56ac72a8",
-      "verified_at_commit": "11d2a1f772de3d0706bbce153899acb7c16b1065",
+      "verified_at_commit": "532c0ebbd6ee56d18957e305b392402362c4149e",
       "verified": "2026-03-22"
     },
     ".claude/commands/scaffold-demote.md": {
       "file_hash": "aa37ee563b17e6dc76dd7ed4e8d1a442c134d345b0329495597f459301c6d96d",
-      "verified_at_commit": "11d2a1f772de3d0706bbce153899acb7c16b1065",
+      "verified_at_commit": "532c0ebbd6ee56d18957e305b392402362c4149e",
       "verified": "2026-03-22"
     },
     ".claude/commands/scaffold-ignore.md": {
       "file_hash": "14d283da82df17b10809f841973dbf590397b7a713fb7910289785e2a7b76c63",
-      "verified_at_commit": "11d2a1f772de3d0706bbce153899acb7c16b1065",
+      "verified_at_commit": "532c0ebbd6ee56d18957e305b392402362c4149e",
       "verified": "2026-03-22"
     },
     ".claude/commands/scaffold-audit.md": {
       "file_hash": "0896372d740c25a8bdf2d1af605063cd499f80c5588827121d42107bed605e67",
-      "verified_at_commit": "11d2a1f772de3d0706bbce153899acb7c16b1065",
+      "verified_at_commit": "532c0ebbd6ee56d18957e305b392402362c4149e",
       "verified": "2026-03-22"
     },
     ".claude/commands/security-audit.md": {
       "file_hash": "942f45234793bddfe935ca790696defae80cf76b07e22950dd12b37ff144e6ab",
-      "verified_at_commit": "11d2a1f772de3d0706bbce153899acb7c16b1065",
+      "verified_at_commit": "532c0ebbd6ee56d18957e305b392402362c4149e",
       "verified": "2026-03-22"
     },
     ".claude/commands/fix-certs.md": {
       "file_hash": "dc6fcc09f574e67a02c03c918b03870e9c10b6186b43465f468f2109227ac937",
-      "verified_at_commit": "11d2a1f772de3d0706bbce153899acb7c16b1065",
+      "verified_at_commit": "532c0ebbd6ee56d18957e305b392402362c4149e",
       "verified": "2026-03-22"
     },
     "scripts/scaffold-sync.sh": {
       "file_hash": "80d111175fbb993b6293a52864218349504e26062dae74bc6ed29206d6dc934e",
-      "verified_at_commit": "11d2a1f772de3d0706bbce153899acb7c16b1065",
+      "verified_at_commit": "532c0ebbd6ee56d18957e305b392402362c4149e",
       "verified": "2026-03-22"
     },
     "scripts/security-audit.sh": {
       "file_hash": "b52128c6c7aa0eafed9f246b0b772a9554aa219e09a9ca0d0aff0b871ccd7c15",
-      "verified_at_commit": "11d2a1f772de3d0706bbce153899acb7c16b1065",
+      "verified_at_commit": "532c0ebbd6ee56d18957e305b392402362c4149e",
       "verified": "2026-03-22"
     },
     "scripts/fix-cloudflare-certs.sh": {
       "file_hash": "09d5cc9ff708e90a1f2d846e70b92f7f388ca24c28a5fc452bfe66e6d5e5ab8d",
-      "verified_at_commit": "11d2a1f772de3d0706bbce153899acb7c16b1065",
+      "verified_at_commit": "532c0ebbd6ee56d18957e305b392402362c4149e",
       "verified": "2026-03-22"
     },
     "scripts/fetch-license.sh": {
       "file_hash": "157192855692eff1d05fc5285f7dfadf7f116a8d054c98f757cc7f0b47d6ee01",
-      "verified_at_commit": "11d2a1f772de3d0706bbce153899acb7c16b1065",
+      "verified_at_commit": "532c0ebbd6ee56d18957e305b392402362c4149e",
       "verified": "2026-03-22"
     },
     "scripts/manifest-check.sh": {
       "file_hash": "2689119e6af904c624cddbb5513dae61c7e0afcecfddaacaf39704df04b6b040",
-      "verified_at_commit": "11d2a1f772de3d0706bbce153899acb7c16b1065",
+      "verified_at_commit": "532c0ebbd6ee56d18957e305b392402362c4149e",
+      "verified": "2026-03-22"
+    },
+    "scripts/docs-check.sh": {
+      "file_hash": "6bcbb2d4f9960be33ee0c72595e7bfd4982aa3411699ea243d3077ecbd9ecd53",
+      "verified_at_commit": "532c0ebbd6ee56d18957e305b392402362c4149e",
       "verified": "2026-03-22"
     },
     "docs/templates/spec.md": {
-      "file_hash": "34505752d644e83734fe7fd3d7122e22c93de9070e744875f0f94602510669e7",
-      "verified_at_commit": "11d2a1f772de3d0706bbce153899acb7c16b1065",
+      "file_hash": "c3a7a1016a913d34a681ead53f0e6a3876ad237d44fdb682a2042d0ce8b343e1",
+      "verified_at_commit": "532c0ebbd6ee56d18957e305b392402362c4149e",
       "verified": "2026-03-22"
     },
     "docs/templates/checkpoint.md": {
-      "file_hash": "0fa254e95eef6b59efbc30eb22ac398d31f4db717287dfa5f47fc3908d8235dd",
-      "verified_at_commit": "11d2a1f772de3d0706bbce153899acb7c16b1065",
+      "file_hash": "9a5cc0a0dc28099b5a012d217deb6963a0b45b87eefb4d7b27c5917356fddb9c",
+      "verified_at_commit": "532c0ebbd6ee56d18957e305b392402362c4149e",
       "verified": "2026-03-22"
     },
     "docs/templates/plan.md": {
-      "file_hash": "675b23942f4c1f721e4d5be2886eeea1a038f6f7b6caa294af80701709edf514",
-      "verified_at_commit": "11d2a1f772de3d0706bbce153899acb7c16b1065",
+      "file_hash": "7961317e4cac9d84ba69567def985a527280220b564b0dec631ee0553a5326b5",
+      "verified_at_commit": "532c0ebbd6ee56d18957e305b392402362c4149e",
       "verified": "2026-03-22"
     },
     "docs/templates/hooks-reference.md": {
       "file_hash": "eb03fd3ba5ed6e52c04cff9dda559f3959487344c050af82c1b74f511f6260e6",
-      "verified_at_commit": "11d2a1f772de3d0706bbce153899acb7c16b1065",
+      "verified_at_commit": "532c0ebbd6ee56d18957e305b392402362c4149e",
       "verified": "2026-03-22"
     },
     "docs/templates/lint.json": {
       "file_hash": "64b5a45fca29bf21888d7288ab3fb0fc91d636902d1e6159956d96adf1aaba03",
-      "verified_at_commit": "11d2a1f772de3d0706bbce153899acb7c16b1065",
+      "verified_at_commit": "532c0ebbd6ee56d18957e305b392402362c4149e",
       "verified": "2026-03-22"
     },
     "docs/templates/github/README.md": {
       "file_hash": "16234b5e0a8715af63c1e6ef83ea56db2e7f1e0211f67b2f12f19d2ab4c534f8",
-      "verified_at_commit": "11d2a1f772de3d0706bbce153899acb7c16b1065",
+      "verified_at_commit": "532c0ebbd6ee56d18957e305b392402362c4149e",
       "verified": "2026-03-22"
     },
     "docs/templates/github/CONTRIBUTING.md": {
       "file_hash": "941625610dd2d615dc51f361683348fb0ab98d13bd64b75f04cdca18cc52c07e",
-      "verified_at_commit": "11d2a1f772de3d0706bbce153899acb7c16b1065",
+      "verified_at_commit": "532c0ebbd6ee56d18957e305b392402362c4149e",
       "verified": "2026-03-22"
     },
     "docs/templates/github/PULL_REQUEST_TEMPLATE.md": {
       "file_hash": "765d88486ce308244e12ce04d69bc6fa6b33d0456570bd00cbd2c4c89c5d63d8",
-      "verified_at_commit": "11d2a1f772de3d0706bbce153899acb7c16b1065",
+      "verified_at_commit": "532c0ebbd6ee56d18957e305b392402362c4149e",
       "verified": "2026-03-22"
     },
     "docs/templates/github/ISSUE_TEMPLATE/bug_report.md": {
       "file_hash": "69740712a0775c406a7914857b5699cd9207b19912e7d42d81f613d1b1fa8988",
-      "verified_at_commit": "11d2a1f772de3d0706bbce153899acb7c16b1065",
+      "verified_at_commit": "532c0ebbd6ee56d18957e305b392402362c4149e",
       "verified": "2026-03-22"
     },
     "docs/templates/github/ISSUE_TEMPLATE/feature_request.md": {
       "file_hash": "8ebdc22c7a9b57bc52fd3e163a326c6bc5571a088d510081962a46b7352dfc1c",
-      "verified_at_commit": "11d2a1f772de3d0706bbce153899acb7c16b1065",
+      "verified_at_commit": "532c0ebbd6ee56d18957e305b392402362c4149e",
       "verified": "2026-03-22"
     },
     "docs/templates/github/workflows/ci.yml": {
       "file_hash": "7c61c73a11f413ec3f059290f526c76d8fa0922569990bbfcf988c6710c8ee59",
-      "verified_at_commit": "11d2a1f772de3d0706bbce153899acb7c16b1065",
+      "verified_at_commit": "532c0ebbd6ee56d18957e305b392402362c4149e",
       "verified": "2026-03-22"
     },
     "docs/templates/github/pre-push": {
       "file_hash": "c15b28f12f45447ff62ae32f562ef72622213d39f675747200761b1499cf6c51",
-      "verified_at_commit": "11d2a1f772de3d0706bbce153899acb7c16b1065",
+      "verified_at_commit": "532c0ebbd6ee56d18957e305b392402362c4149e",
       "verified": "2026-03-22"
     },
     "docs/spec.md": {
-      "file_hash": "4283780d61db2ccea27ebe2c160c4bf41ff9229362e36f0e037ae5a3eadeb53b",
-      "verified_at_commit": "11d2a1f772de3d0706bbce153899acb7c16b1065",
+      "file_hash": "6ba4edccf2c898d810ccd0052f66bae2ac270a5452dc53b97efe558733f476f7",
+      "verified_at_commit": "532c0ebbd6ee56d18957e305b392402362c4149e",
       "verified": "2026-03-22"
     },
     "docs/checkpoint.md": {
-      "file_hash": "2fb3ab719261a2a93ed36d8b9cb2c18390a602449571948f005b2d3cc1963f8d",
-      "verified_at_commit": "11d2a1f772de3d0706bbce153899acb7c16b1065",
+      "file_hash": "8d3f6add9233d06f220aa17a88cfec6ee0463bcc3004c282aecb453b496de6cf",
+      "verified_at_commit": "532c0ebbd6ee56d18957e305b392402362c4149e",
       "verified": "2026-03-22"
     },
     "docs/plan.md": {
-      "file_hash": "a10b199f99d1c6c4672d43bbec5360bbbb8fa4f50913e04595c1c62faab3c845",
-      "verified_at_commit": "11d2a1f772de3d0706bbce153899acb7c16b1065",
+      "file_hash": "09b5f26c31623eff942068b7d686ee4065dd72bfc0ed00ec6391e37293f2a7bc",
+      "verified_at_commit": "532c0ebbd6ee56d18957e305b392402362c4149e",
       "verified": "2026-03-22"
     },
     "README.md": {
-      "file_hash": "d7b830b2b2fa90844ae3fb8bc43b63807a3e09bd015245654e069b527fa2fff9",
-      "verified_at_commit": "11d2a1f772de3d0706bbce153899acb7c16b1065",
+      "file_hash": "e38cb2f4b56ecc20707e8a5bb5be0804d853bfb9cec800f5b835f3d24344ad69",
+      "verified_at_commit": "532c0ebbd6ee56d18957e305b392402362c4149e",
       "verified": "2026-03-22"
     },
     "HOW_TO_USE.md": {
       "file_hash": "7930fd2133910655c87335127194b5ed01e59edb89f7a50d396161c22ade3bfb",
-      "verified_at_commit": "11d2a1f772de3d0706bbce153899acb7c16b1065",
+      "verified_at_commit": "532c0ebbd6ee56d18957e305b392402362c4149e",
       "verified": "2026-03-22"
     },
     "SCAFFOLD_SYSTEM_PROMPT.md": {
       "file_hash": "b17a28101b4e532faed56c7e21c2be224a31409f622eb9213115ea21be17a3f2",
-      "verified_at_commit": "11d2a1f772de3d0706bbce153899acb7c16b1065",
+      "verified_at_commit": "532c0ebbd6ee56d18957e305b392402362c4149e",
       "verified": "2026-03-22"
     },
     "INIT_PROMPT.md": {
       "file_hash": "125a38e7fc041b112f95cb2713764126df9faff039614dc580f3fd68a5a37497",
-      "verified_at_commit": "11d2a1f772de3d0706bbce153899acb7c16b1065",
+      "verified_at_commit": "532c0ebbd6ee56d18957e305b392402362c4149e",
       "verified": "2026-03-22"
     }
   }
