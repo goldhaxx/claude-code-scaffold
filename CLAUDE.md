@@ -9,7 +9,10 @@
 
 ## Commands
 ```bash
-bats tests/scaffold-sync.bats        # Run scaffold sync tests
+bats tests/                          # Run all tests (sync + security)
+bats tests/scaffold-sync.bats        # Run scaffold sync tests only
+bats tests/security-audit.bats       # Run security audit tests only
+bash scripts/security-audit.sh       # Run PII/secrets scan
 bash -n scripts/scaffold-sync.sh     # Syntax check the sync script
 ```
 

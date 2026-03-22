@@ -692,6 +692,7 @@ Hook scripts live in `.claude/hooks/` and are referenced from `settings.json`. T
 | Hook | Event | Script | What it does |
 |------|-------|--------|-------------|
 | File protection | PreToolUse (Write\|Edit\|MultiEdit) | `protect-files.sh` | Blocks writes to `.env`, credentials, `SCAFFOLD_FRAMEWORK.md`, `node_modules/`, `dist/`, `generated/` |
+| Syntax lint | PostToolUse (Write\|Edit\|MultiEdit) | `lint-on-write.sh` | Validates syntax: bash -n for .sh, jq for .json, yaml check for .yaml. Blocks on errors. |
 | Auto-format | PostToolUse (Write\|Edit\|MultiEdit) | `format-on-write.sh` | Runs project formatter (uncomment for your stack: Prettier, Black, gofmt, etc.) |
 
 ### Rules (loaded at launch)
@@ -798,6 +799,7 @@ graph TD
 | Script | Event | Exit 2 blocks | What it checks |
 |--------|-------|---------------|----------------|
 | `protect-files.sh` | PreToolUse | Yes | `.env`, `*credentials*`, `*secret*`, `*.pem`, `*.key`, `SCAFFOLD_FRAMEWORK.md`, `node_modules/`, `dist/`, `generated/`, `.git/` |
+| `lint-on-write.sh` | PostToolUse | Yes | Syntax validation: `bash -n` for `.sh`, `jq empty` for `.json`, python yaml check for `.yaml`. Blocks writes with syntax errors. |
 | `format-on-write.sh` | PostToolUse | No | Detects file type, runs appropriate formatter (uncomment for your stack) |
 
 ### Adding a New Hook
