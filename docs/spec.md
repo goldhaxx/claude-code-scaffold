@@ -1,68 +1,69 @@
-# Feature: Determinism Enforcement
+# Feature: Sync Hardening
 
-> Feature: determinism-enforcement
-> Created: 1774211321
+> Feature: sync-hardening
+> Created: 1774213893
 > Status: Draft
 
 ## Summary
 
-Make the end-of-session determinism review mandatory, performed in warm context during checkpoint (before `/clear`), and backed by a safety-net script for post-hoc detection. The warm-context review is the primary mechanism because Claude has full session awareness — every manual step, every improvisation, every workaround. The script catches what the warm review missed. `/catchup` surfaces both.
+Add defensive guards to every destructive operation in `scaffold-sync.sh` and a `--dry-run` mode for pull/push workflows. Today, destructive operations (file copy, delete, lockfile mutation) trust the caller's classification without re-verifying preconditions at execution time. Six bugs have already been found and fixed from this gap (865792b, e507083, 3982959, 9f2a9c0, 280bab5, 721f344). This feature prevents the next six by making every destructive operation self-validating.
 
 ## Job To Be Done
 
-**When** I checkpoint my work before clearing context,
-**I want to** be forced to review what was stochastic while I still have full session awareness,
-**So that** deterministic improvements are captured in warm context (where signal is richest) and survive into the next session.
+**When** I run `/scaffold-pull` or `/scaffold-push` and the plan includes destructive operations (overwrite, delete, lockfile mutation),
+**I want** each operation to verify its own preconditions immediately before executing, and to preview changes without applying them,
+**So that** state drift between plan and apply phases can't cause silent data loss, and I can inspect what will happen before committing to it.
 
 ## Acceptance Criteria
 
-### Part 1: Warm-context review during checkpoint (primary mechanism)
-- [ ] **AC-1:** The checkpoint template (`docs/templates/checkpoint.md`) has a required `## Determinism Review` section with structured fields: `operations_reviewed: [count]`, `candidates_found: [count]`, and a bulleted list format.
-- [ ] **AC-2:** The workflow rule (`workflow.md`) instructs Claude to fill the Determinism Review section at every checkpoint, **before** suggesting `/clear`. The review must happen in warm context — Claude has full session awareness and can identify operations it performed that should be scripted. Even if no candidates are found, the entry must read "No candidates this session."
-- [ ] **AC-3:** The workflow rule specifies the review checklist Claude must walk through: (a) Did I run manual `cp`, `jq`, `shasum`, or `git -C` commands that a script should handle? (b) Did I improvise a multi-step sequence that could be a single script call? (c) Did I work around a missing feature in a script? (d) Did I perform any operation more than once that should be automated?
-- [ ] **AC-4:** `docs-check.sh validate` reports `missing-determinism-review` when checkpoint.md exists but has no `## Determinism Review` section (or the section is empty/placeholder-only).
+### Part 1: Defensive guards on destructive operations
 
-### Part 2: Safety-net script (post-hoc detection)
-- [ ] **AC-5:** `docs-check.sh audit-session` scans `git diff <last-checkpoint-commit>..HEAD` for patterns indicating stochastic operations: manual `cp` commands, inline `jq` pipelines, `shasum`/`sha256sum` calls, `git -C` commands, and multi-step file manipulation sequences.
-- [ ] **AC-6:** `audit-session` outputs JSON: `{patterns_found: [{pattern, file, line, context}], summary: {total, by_category}}`.
-- [ ] **AC-7:** `audit-session` accepts an optional `--since <commit>` flag. Without it, defaults to the commit tagged in checkpoint.md metadata or the last 10 commits.
-- [ ] **AC-8:** `audit-session` has zero false positives on scaffold scripts themselves (scaffold-sync.sh, manifest-check.sh, docs-check.sh are allowlisted — they're *supposed* to run these commands).
-- [ ] **AC-9:** `audit-session` scans commit messages (not just diffs) for phrases like "manually ran", "had to", "workaround", which indicate improvised steps.
+- [ ] **AC-1:** Before every `cp` that overwrites an existing file, the script verifies: (a) source file exists, (b) destination file's current hash matches what was seen during `pull-plan`. If the hash changed, the operation aborts with a descriptive error.
+- [ ] **AC-2:** Before every `rm` in `pull-apply delete`, the script verifies the file's lockfile status is still what the plan expected. If status changed, abort with error.
+- [ ] **AC-3:** After every `jq` mutation of the lockfile, the script verifies the output is valid JSON (`jq empty` on the temp file). If invalid, abort before `mv`, preserving the original lockfile.
+- [ ] **AC-4:** After `git add` + `git commit` in finalize commands, the script verifies the commit succeeded (exit code check + `git rev-parse HEAD` changed). If not, report the failure clearly.
+- [ ] **AC-5:** All guard failures produce a consistent error format: `GUARD_FAIL: <operation> on <file>: <reason>`. Exit code 3 (distinct from existing 1=general error, 2=hook block).
 
-### Part 3: /catchup integration (cross-session continuity)
-- [ ] **AC-10:** `/catchup` reads the `## Determinism Review` section from the previous checkpoint and, if candidates were found, displays them under an "Outstanding determinism improvements" heading before the regular summary.
-- [ ] **AC-11:** `/catchup` runs `docs-check.sh audit-session --since <checkpoint-commit>` and appends any new findings to the report (captures stochastic operations that happened between the checkpoint and now).
+### Part 2: `--dry-run` mode
+
+- [ ] **AC-6:** `pull-auto --dry-run` outputs what files would be copied and what lockfile entries would be updated, without executing any `cp`, `jq`, or `mv` operations.
+- [ ] **AC-7:** `pull-apply <file> <action> --dry-run` outputs the action that would be taken without executing it. For `section-merge` and `write-merged`, shows the content that would be written.
+- [ ] **AC-8:** `pull-finalize --dry-run` outputs the commit message and file list that would be committed, without staging or committing.
+- [ ] **AC-9:** `push-apply <file> --dry-run` and `push-finalize --dry-run` behave analogously to their pull counterparts.
+- [ ] **AC-10:** `--dry-run` still runs `pre-check` (cleanness verification) — dry-run doesn't skip safety checks, only mutations.
+- [ ] **AC-11:** Dry-run output uses a consistent prefix: `DRY-RUN: would <verb> <file>` (e.g., `DRY-RUN: would copy .claude/rules/tdd.md`, `DRY-RUN: would delete .claude/rules/old.md`).
+
+### Part 3: Test coverage for edge cases
+
+- [ ] **AC-12:** Test: file modified between `pull-plan` and `pull-apply` triggers guard failure (hash mismatch).
+- [ ] **AC-13:** Test: `jq` producing invalid JSON is caught before lockfile is corrupted.
+- [ ] **AC-14:** Test: `pull-auto --dry-run` produces expected output without modifying any files or lockfile.
+- [ ] **AC-15:** Test: all guard failures exit with code 3 and produce the `GUARD_FAIL:` prefix.
 
 ## Affected Files
 
 | File | Change |
 |------|--------|
-| `docs/templates/checkpoint.md` | Modified — add required Determinism Review section with checklist |
-| `scripts/docs-check.sh` | Modified — add `audit-session` subcommand, extend `validate` for missing review detection |
-| `tests/docs-check.bats` | Modified — new tests for audit-session and validate extension |
-| `.claude/rules/workflow.md` | Modified — checkpoint flow: write content → warm-context determinism review → then suggest /clear |
-| `.claude/rules/self-review.md` | Modified — reference the mandatory checkpoint section and review checklist |
-| `.claude/commands/catchup.md` | Modified — surface outstanding determinism items + run audit-session |
-| `README.md` | Modified — document audit-session in scripts manifest |
-| `GUIDE.md` | Modified — add audit-session to command reference |
+| `scripts/scaffold-sync.sh` | Modified — add guards to destructive ops, add `--dry-run` flag parsing, add dry-run output |
+| `tests/scaffold-sync.bats` | Modified — new tests for guards, dry-run, edge cases |
 
 ## Dependencies
 
-- **Requires:** `docs-check.sh` (done), lifecycle metadata in checkpoint (done)
+- **Requires:** Current scaffold-sync.sh (all existing commands stable, 144+ tests passing)
 - **Blocked by:** Nothing
 
 ## Out of Scope
 
-- Auto-fixing stochastic operations (the script reports, humans decide)
-- Blocking commits that have stochastic patterns (too aggressive — many are legitimate)
-- Scanning non-git-tracked operations (terminal history, etc.)
-- Full `/scaffold-audit` integration (that's a separate, heavier analysis)
+- Rollback/undo capability (git checkout is sufficient recovery)
+- Concurrent sync detection (document as unsupported, don't build locking)
+- Dry-run for `promote`/`demote` (these are simple single-file ops with existing guards)
+- Interactive confirmation prompts in the script (that's Claude's job in slash commands)
 
 ## Implementation Notes
 
-- **Warm context is the primary signal.** The audit-session script is a safety net, not the main detector. Claude in warm context knows it ran `cp` manually or improvised a workaround — no regex can match that fidelity. The script catches things Claude forgot to flag or didn't recognize as stochastic.
-- **Checkpoint flow order matters.** The workflow rule must specify: (1) write checkpoint content (accomplished, state, next steps), (2) perform determinism review checklist in warm context, (3) write the Determinism Review section, (4) commit, (5) *then* suggest `/clear`. The review must happen before context is lost.
-- **Pattern detection (safety net):** Use `git diff --unified=0` to get changed lines only, then grep for patterns. Categories: `cp ` (file copy), `jq ` (JSON manipulation), `shasum|sha256sum` (hash computation), `git -C` (cross-repo git), `curl|wget` (network fetches that could be scripted). Each pattern has an allowlist of files where it's expected.
-- **Allowlist:** `scripts/*.sh` files are allowlisted by default — they're the deterministic implementations. Only flag these patterns in commit messages, slash command outputs, or non-script files.
-- **Checkpoint commit detection:** Read checkpoint.md metadata for the commit hash, or fall back to `git log --grep="checkpoint" -1 --format=%H`.
-- **The "no candidates" case is important:** Requiring "No candidates this session" when nothing is found normalizes the review. It's the equivalent of a pilot's checklist — you confirm you checked, not just that you found something.
+- **Hash capture in pull-plan:** `pull-plan` already computes file hashes for comparison. Extend the plan JSON to include `local_hash_at_plan` for each file. Guards in `pull-apply` re-hash and compare.
+- **jq validation pattern:** After every `jq ... > "$tmp"`, add `jq empty "$tmp" 2>/dev/null || { rm -f "$tmp"; die "GUARD_FAIL: ..."; }` before `mv "$tmp" "$LOCKFILE"`.
+- **Dry-run threading:** Add a `DRY_RUN=false` global. Parse `--dry-run` in each subcommand. Wrap mutations in `if ! $DRY_RUN; then ... else echo "DRY-RUN: would ..."; fi`.
+- **Exit code 3:** Distinct from `die` (exit 1) and hook blocks (exit 2). Add a `guard_fail` function that formats the message and exits 3.
+- **Backward compatibility:** `--dry-run` is opt-in. All existing behavior unchanged without the flag.
+- **Test strategy:** Use the existing bats test infrastructure. Modify files between plan and apply steps to trigger guards. Capture stderr for guard messages.
