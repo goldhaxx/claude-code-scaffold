@@ -61,6 +61,7 @@ ALLOWLIST_FILES=(
   'tls-troubleshooting.md'         # Documents cert paths as instructions
   'hooks-reference.md'             # Documents hook patterns
   'SCAFFOLD_FRAMEWORK.md'          # Research document
+  '.bats'                          # Test fixtures contain fake tokens/secrets by design
 )
 
 # ---------------------------------------------------------------------------
