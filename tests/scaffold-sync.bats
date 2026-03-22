@@ -936,3 +936,25 @@ EOF
   [ "$status" -eq 3 ]
   echo "$output" | grep -q "GUARD_FAIL: cp on .claude/rules/tdd.md: test reason"
 }
+
+# =========================================================================
+# Sync hardening: jq validation guard (AC-3, AC-13)
+# =========================================================================
+
+@test "jq guard: invalid lockfile JSON triggers guard_fail before mv" {
+  cd "$NODE"
+  # Save original lockfile for comparison
+  local original_hash
+  original_hash=$(shasum -a 256 "$NODE/.claude/scaffold.lock" | awk '{print $1}')
+
+  # Corrupt the lockfile to invalid JSON so jq output will be invalid
+  echo "NOT JSON" > "$NODE/.claude/scaffold.lock"
+
+  # Attempt a lock-update — should guard_fail because jq produces invalid output
+  run bash "$NODE/scripts/scaffold-sync.sh" lock-update ".claude/rules/tdd.md" "status" "modified"
+  [ "$status" -eq 3 ]
+  echo "$output" | grep -q "GUARD_FAIL:"
+
+  # Lockfile should still be the corrupted version (not replaced with jq garbage)
+  [ "$(cat "$NODE/.claude/scaffold.lock")" = "NOT JSON" ]
+}
