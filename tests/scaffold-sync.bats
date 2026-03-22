@@ -1057,6 +1057,45 @@ EOF
   echo "$output" | grep -q "GUARD_FAIL:"
 }
 
+# =========================================================================
+# Sync hardening: guard consistency (AC-15)
+# =========================================================================
+
+@test "all guards: exit code 3 and GUARD_FAIL prefix" {
+  cd "$NODE"
+  # Test 1: guard_fail directly
+  run bash -c 'source "$1" --source-only 2>/dev/null; guard_fail "test" "test.md" "reason"' _ "$NODE/scripts/scaffold-sync.sh"
+  [ "$status" -eq 3 ]
+  echo "$output" | grep -q "^GUARD_FAIL: test on test.md: reason"
+
+  # Test 2: jq guard (corrupt lockfile)
+  echo "NOT JSON" > "$NODE/.claude/scaffold.lock"
+  run bash "$NODE/scripts/scaffold-sync.sh" lock-update ".claude/rules/tdd.md" "status" "modified"
+  [ "$status" -eq 3 ]
+  echo "$output" | grep -q "^GUARD_FAIL: jq on"
+
+  # Restore lockfile for next test
+  cd "$NODE"
+  git checkout -- .claude/scaffold.lock
+
+  # Test 3: hash mismatch guard
+  echo "# Hub v2" > "$HUB/.claude/rules/tdd.md"
+  git -C "$HUB" add -A && git -C "$HUB" commit -q -m "update"
+  bash "$NODE/scripts/scaffold-sync.sh" demote ".claude/rules/tdd.md"
+  git -C "$NODE" add -A && git -C "$NODE" commit -q -m "demote"
+  local plan_hash
+  plan_hash=$(bash "$NODE/scripts/scaffold-sync.sh" pull-plan | jq -r '.[] | select(.file == ".claude/rules/tdd.md") | .local_hash')
+  echo "# changed after plan" > "$NODE/.claude/rules/tdd.md"
+  run env PLAN_LOCAL_HASH="$plan_hash" bash "$NODE/scripts/scaffold-sync.sh" pull-apply ".claude/rules/tdd.md" take-scaffold
+  [ "$status" -eq 3 ]
+  echo "$output" | grep -q "^GUARD_FAIL: cp on"
+
+  # Test 4: status mismatch guard (delete)
+  run env PLAN_LOCAL_STATUS="clean" bash "$NODE/scripts/scaffold-sync.sh" pull-apply ".claude/rules/tdd.md" delete
+  [ "$status" -eq 3 ]
+  echo "$output" | grep -q "^GUARD_FAIL: rm on"
+}
+
 @test "jq guard: invalid lockfile JSON triggers guard_fail before mv" {
   cd "$NODE"
   # Save original lockfile for comparison
