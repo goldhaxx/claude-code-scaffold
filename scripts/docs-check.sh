@@ -247,6 +247,26 @@ cmd_validate() {
     details=$(echo "$details" | jq '. + ["checkpoint.md missing"]')
   fi
 
+  # Check for unlinked docs (exist but have no feature_id metadata)
+  local has_unlinked=false
+  if [[ "$spec_exists" == "true" && -z "$spec_fid" ]]; then
+    details=$(echo "$details" | jq '. + ["spec.md unlinked (no metadata)"]')
+    has_unlinked=true
+  fi
+  if [[ "$plan_exists" == "true" && -z "$plan_fid" ]]; then
+    details=$(echo "$details" | jq '. + ["plan.md unlinked (no metadata)"]')
+    has_unlinked=true
+  fi
+  if [[ "$cp_exists" == "true" && -z "$cp_fid" ]]; then
+    details=$(echo "$details" | jq '. + ["checkpoint.md unlinked (no metadata)"]')
+    has_unlinked=true
+  fi
+
+  # If any present docs are unlinked and no other result takes priority, report it
+  if $has_unlinked && [[ ${#fids[@]} -eq 0 ]]; then
+    result="unlinked"
+  fi
+
   # Check feature_id mismatch (only among docs that have feature_ids)
   if [[ ${#fids[@]} -ge 2 ]]; then
     local first="${fids[0]}"

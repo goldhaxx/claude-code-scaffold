@@ -394,3 +394,68 @@ create_linked_docs() {
   result=$(echo "$output" | jq -r '.result')
   [ "$result" = "mismatched" ]
 }
+
+# ===========================================================================
+# Step 4: validate — missing docs and unlinked metadata
+# ===========================================================================
+
+@test "validate: only spec exists — reports plan and checkpoint missing" {
+  create_spec "my-feature" "1742860800" "In Progress"
+
+  run bash "$SCRIPT" validate "$DOCS"
+  [ "$status" -eq 0 ]
+
+  details=$(echo "$output" | jq -r '.details | join(", ")')
+  [[ "$details" == *"plan.md missing"* ]]
+  [[ "$details" == *"checkpoint.md missing"* ]]
+}
+
+@test "validate: all docs missing — reports all missing, no error" {
+  run bash "$SCRIPT" validate "$DOCS"
+  [ "$status" -eq 0 ]
+
+  details=$(echo "$output" | jq -r '.details | join(", ")')
+  [[ "$details" == *"spec.md missing"* ]]
+  [[ "$details" == *"plan.md missing"* ]]
+  [[ "$details" == *"checkpoint.md missing"* ]]
+}
+
+@test "validate: doc exists but no metadata — reports unlinked" {
+  cat > "$DOCS/spec.md" <<'EOF'
+# Some Feature
+
+No metadata here at all.
+EOF
+  cat > "$DOCS/plan.md" <<'EOF'
+# Some Plan
+
+No metadata here either.
+EOF
+
+  run bash "$SCRIPT" validate "$DOCS"
+  [ "$status" -eq 0 ]
+
+  result=$(echo "$output" | jq -r '.result')
+  details=$(echo "$output" | jq -r '.details | join(", ")')
+
+  # Unlinked docs can't be validated — should report it
+  [[ "$details" == *"unlinked"* ]] || [ "$result" = "unlinked" ]
+}
+
+@test "validate: spec + plan exist, checkpoint missing — still validates hashes" {
+  create_spec "my-feature" "1742860800" "In Progress"
+  local spec_hash
+  spec_hash=$(bash "$SCRIPT" status "$DOCS" | jq -r '.spec.content_hash')
+  create_plan "my-feature" "1742860900" "$spec_hash"
+
+  run bash "$SCRIPT" validate "$DOCS"
+  [ "$status" -eq 0 ]
+
+  result=$(echo "$output" | jq -r '.result')
+  details=$(echo "$output" | jq -r '.details | join(", ")')
+
+  # Hashes match so far, but checkpoint is missing
+  [[ "$details" == *"checkpoint.md missing"* ]]
+  # Result should be aligned (what we can check is aligned)
+  [ "$result" = "aligned" ]
+}
