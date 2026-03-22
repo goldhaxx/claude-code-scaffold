@@ -941,6 +941,31 @@ EOF
 # Sync hardening: jq validation guard (AC-3, AC-13)
 # =========================================================================
 
+# =========================================================================
+# Sync hardening: hash-at-plan capture (AC-1 prerequisite)
+# =========================================================================
+
+@test "pull-plan: includes local_hash in plan entries" {
+  cd "$NODE"
+  # Modify hub file to trigger a plan entry
+  echo "# Updated content" > "$HUB/.claude/rules/tdd.md"
+  git -C "$HUB" add -A && git -C "$HUB" commit -q -m "update rule"
+
+  local plan
+  plan=$(bash "$NODE/scripts/scaffold-sync.sh" pull-plan)
+
+  # Plan should have the tdd.md entry with a local_hash field
+  local local_hash
+  local_hash=$(echo "$plan" | jq -r '.[] | select(.file == ".claude/rules/tdd.md") | .local_hash')
+  [ -n "$local_hash" ]
+  [ "$local_hash" != "null" ]
+
+  # The local_hash should match the actual file hash
+  local actual_hash
+  actual_hash=$(shasum -a 256 "$NODE/.claude/rules/tdd.md" | awk '{print $1}')
+  [ "$local_hash" = "$actual_hash" ]
+}
+
 @test "jq guard: invalid lockfile JSON triggers guard_fail before mv" {
   cd "$NODE"
   # Save original lockfile for comparison

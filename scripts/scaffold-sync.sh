@@ -631,8 +631,10 @@ cmd_pull_plan() {
 
     # Check if file was removed from scaffold
     if [[ ! -f "$scaffold_file" ]]; then
-      plan=$(echo "$plan" | jq --arg f "$file" \
-        '. + [{"file": $f, "action": "removed", "reason": "File no longer exists in scaffold"}]')
+      local clh
+      clh=$(file_hash "$file" 2>/dev/null || echo "MISSING")
+      plan=$(echo "$plan" | jq --arg f "$file" --arg lh "$clh" \
+        '. + [{"file": $f, "action": "removed", "reason": "File no longer exists in scaffold", "local_hash": $lh}]')
       continue
     fi
 
@@ -661,15 +663,15 @@ cmd_pull_plan() {
     if [[ "$current_local_h" == "MISSING" ]]; then
       # File exists in lockfile but not locally (deleted locally)
       plan=$(echo "$plan" | jq --arg f "$file" \
-        '. + [{"file": $f, "action": "new", "reason": "File missing locally but exists in scaffold"}]')
+        '. + [{"file": $f, "action": "new", "reason": "File missing locally but exists in scaffold", "local_hash": "MISSING"}]')
       continue
     fi
 
     # Scaffold changed — check if local is clean or modified
     if [[ "$local_changed" == "false" && "$status" != "modified" ]]; then
       # Local is clean — safe to auto-update
-      plan=$(echo "$plan" | jq --arg f "$file" \
-        '. + [{"file": $f, "action": "auto-update", "reason": "Scaffold changed, local is clean"}]')
+      plan=$(echo "$plan" | jq --arg f "$file" --arg lh "$current_local_h" \
+        '. + [{"file": $f, "action": "auto-update", "reason": "Scaffold changed, local is clean", "local_hash": $lh}]')
     else
       # Both sides changed — check for section-merge capability
       # Only markdown files can have section delimiters (avoids false positives
@@ -682,11 +684,11 @@ cmd_pull_plan() {
       fi
 
       if [[ "$has_delimiter" == "true" ]]; then
-        plan=$(echo "$plan" | jq --arg f "$file" \
-          '. + [{"file": $f, "action": "section-merge", "reason": "Both changed, file has section delimiter"}]')
+        plan=$(echo "$plan" | jq --arg f "$file" --arg lh "$current_local_h" \
+          '. + [{"file": $f, "action": "section-merge", "reason": "Both changed, file has section delimiter", "local_hash": $lh}]')
       else
-        plan=$(echo "$plan" | jq --arg f "$file" \
-          '. + [{"file": $f, "action": "conflict", "reason": "Both scaffold and local have changes"}]')
+        plan=$(echo "$plan" | jq --arg f "$file" --arg lh "$current_local_h" \
+          '. + [{"file": $f, "action": "conflict", "reason": "Both scaffold and local have changes", "local_hash": $lh}]')
       fi
     fi
   done < <(jq -r '.files | keys[]' "$LOCKFILE" | sort)
@@ -700,15 +702,15 @@ cmd_pull_plan() {
         scaffold_h=$(file_hash "$scaffold_source/$file")
         local_h=$(file_hash "$file")
         if [[ "$scaffold_h" == "$local_h" ]]; then
-          plan=$(echo "$plan" | jq --arg f "$file" \
-            '. + [{"file": $f, "action": "adopt-clean", "reason": "New in scaffold, identical local copy exists — will track as clean"}]')
+          plan=$(echo "$plan" | jq --arg f "$file" --arg lh "$local_h" \
+            '. + [{"file": $f, "action": "adopt-clean", "reason": "New in scaffold, identical local copy exists — will track as clean", "local_hash": $lh}]')
         else
-          plan=$(echo "$plan" | jq --arg f "$file" \
-            '. + [{"file": $f, "action": "adopt-conflict", "reason": "New in scaffold, different local copy exists — needs resolution"}]')
+          plan=$(echo "$plan" | jq --arg f "$file" --arg lh "$local_h" \
+            '. + [{"file": $f, "action": "adopt-conflict", "reason": "New in scaffold, different local copy exists — needs resolution", "local_hash": $lh}]')
         fi
       else
         plan=$(echo "$plan" | jq --arg f "$file" \
-          '. + [{"file": $f, "action": "new", "reason": "New file in scaffold, not yet tracked"}]')
+          '. + [{"file": $f, "action": "new", "reason": "New file in scaffold, not yet tracked", "local_hash": "MISSING"}]')
       fi
     fi
   done < <(scan_scaffold_files "$scaffold_source")
