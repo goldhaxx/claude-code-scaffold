@@ -114,9 +114,18 @@ HUBEOF
   cp "$HUB/GUIDE.md" "$NODE/GUIDE.md"
   cp "$HUB/CLAUDE.md" "$NODE/CLAUDE.md"
 
-  # Run init in node
+  # Initialize node as a git repo (needed for pre-check and pull-finalize)
+  git -C "$NODE" init -q
+  git -C "$NODE" add -A
+  git -C "$NODE" commit -q -m "init node"
+
+  # Run scaffold init in node
   cd "$NODE"
   bash "$NODE/scripts/scaffold-sync.sh" init "$HUB"
+
+  # Commit the lockfile so the node is clean
+  git -C "$NODE" add -A
+  git -C "$NODE" commit -q -m "scaffold init"
 }
 
 teardown() {
@@ -593,4 +602,90 @@ EOF
   # Output format is: MISSING  <filepath>
   hash_part=$(echo "$result" | awk '{print $1}')
   [ "$hash_part" = "MISSING" ]
+}
+
+
+# =========================================================================
+# pre-check tests
+# =========================================================================
+
+@test "pre-check: passes when both repos are clean" {
+  cd "$NODE"
+  run bash "$NODE/scripts/scaffold-sync.sh" pre-check
+  [ "$status" -eq 0 ]
+  echo "$output" | grep -q "OK"
+}
+
+@test "pre-check: fails when hub has uncommitted changes" {
+  cd "$NODE"
+  echo "dirty" > "$HUB/dirty.txt"
+  run bash "$NODE/scripts/scaffold-sync.sh" pre-check
+  [ "$status" -ne 0 ]
+  echo "$output" | grep -qi "scaffold repo has uncommitted"
+}
+
+@test "pre-check: fails when node has uncommitted changes" {
+  cd "$NODE"
+  echo "dirty" > "$NODE/dirty.txt"
+  run bash "$NODE/scripts/scaffold-sync.sh" pre-check
+  [ "$status" -ne 0 ]
+  echo "$output" | grep -qi "this project has uncommitted"
+}
+
+
+# =========================================================================
+# pull-finalize tests
+# =========================================================================
+
+@test "pull-finalize: creates a git commit with sync summary" {
+  cd "$NODE"
+
+  # Modify hub and run a pull-auto to create real changes
+  cat > "$HUB/.claude/rules/tdd.md" <<'EOF'
+# TDD Rules v2
+
+Updated hub content.
+
+<!-- NODE-SPECIFIC-START -->
+<!-- Add project-specific content below this line. -->
+<!-- Hub content above is updated via /scaffold-pull. -->
+EOF
+  git -C "$HUB" add -A && git -C "$HUB" commit -q -m "update tdd"
+
+  bash "$NODE/scripts/scaffold-sync.sh" pull-auto
+
+  # Finalize should commit
+  bash "$NODE/scripts/scaffold-sync.sh" pull-finalize
+
+  # Verify a commit was created
+  local last_msg
+  last_msg=$(git -C "$NODE" log -1 --format='%s')
+  echo "$last_msg" | grep -q "chore(scaffold): pull from hub"
+
+  # Working tree should be clean after finalize
+  local status
+  status=$(git -C "$NODE" status --porcelain)
+  [ -z "$status" ]
+}
+
+@test "pull-finalize: commit message lists synced files" {
+  cd "$NODE"
+
+  # Modify hub
+  cat > "$HUB/.claude/commands/catchup.md" <<'EOF'
+Updated catchup command.
+
+<!-- NODE-SPECIFIC-START -->
+<!-- Add project-specific content below this line. -->
+<!-- Hub content above is updated via /scaffold-pull. -->
+EOF
+  git -C "$HUB" add -A && git -C "$HUB" commit -q -m "update catchup"
+
+  bash "$NODE/scripts/scaffold-sync.sh" pull-auto
+  bash "$NODE/scripts/scaffold-sync.sh" pull-finalize
+
+  # Commit body should list the changed file
+  local body
+  body=$(git -C "$NODE" log -1 --format='%b')
+  echo "$body" | grep -q "catchup.md"
 }

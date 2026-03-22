@@ -69,6 +69,8 @@ For each file with action `removed`:
 ./scripts/scaffold-sync.sh pull-finalize
 ```
 
+This commits all changes with a structured message listing every synced file. The commit is browsable on GitHub.
+
 Report what happened: N auto-updated, N section-merged, N conflicts resolved, N new files, N skipped.
 
 ## Rules
@@ -76,6 +78,7 @@ Report what happened: N auto-updated, N section-merged, N conflicts resolved, N 
 - NEVER auto-update a file that has local changes — the script enforces this.
 - ALWAYS show the user what will change before writing.
 - For merge conflicts, Claude proposes the merge but the user must approve.
+- Do NOT manually commit sync changes — `pull-finalize` handles the commit.
 
 <!-- NODE-SPECIFIC-START -->
 <!-- Add project-specific content below this line. -->

@@ -662,6 +662,7 @@ cmd_pre_check() {
 
   [[ -d "$scaffold_source" ]] || die "Scaffold not found at: $scaffold_source"
 
+  # Check hub (scaffold) is clean
   if git -C "$scaffold_source" rev-parse HEAD >/dev/null 2>&1; then
     local dirty
     dirty=$(git -C "$scaffold_source" status --porcelain 2>/dev/null)
@@ -673,6 +674,20 @@ cmd_pre_check() {
       exit 1
     fi
   fi
+
+  # Check node (current project) is clean
+  if git rev-parse HEAD >/dev/null 2>&1; then
+    local node_dirty
+    node_dirty=$(git status --porcelain 2>/dev/null)
+    if [[ -n "$node_dirty" ]]; then
+      echo "ERROR: This project has uncommitted changes:" >&2
+      echo "$node_dirty" >&2
+      echo "" >&2
+      echo "Commit or stash changes before syncing." >&2
+      exit 1
+    fi
+  fi
+
   echo "OK"
 }
 
@@ -931,7 +946,7 @@ cmd_pull_apply() {
   esac
 }
 
-# pull-finalize: Update version, write log header, output summary
+# pull-finalize: Update version, commit all changes, output summary
 cmd_pull_finalize() {
   require_lockfile
   local scaffold_source
@@ -946,6 +961,37 @@ cmd_pull_finalize() {
 
   cmd_lock_set_version "$new_version"
   cmd_log "pull from scaffold @ $new_version"
+
+  # Build commit message from changed files
+  if git rev-parse HEAD >/dev/null 2>&1; then
+    local changed_files
+    changed_files=$(git diff --name-only 2>/dev/null)
+    local staged_files
+    staged_files=$(git diff --cached --name-only 2>/dev/null)
+
+    # Combine staged and unstaged changes
+    local all_changes
+    all_changes=$(printf '%s\n%s' "$changed_files" "$staged_files" | sort -u | grep -v '^$')
+
+    if [[ -n "$all_changes" ]]; then
+      local file_count
+      file_count=$(echo "$all_changes" | wc -l | tr -d ' ')
+
+      local commit_body=""
+      commit_body+="Scaffold source: $scaffold_source @ $new_version"$'\n'
+      commit_body+=""$'\n'
+      commit_body+="Files synced ($file_count):"$'\n'
+      while IFS= read -r f; do
+        commit_body+="  - $f"$'\n'
+      done <<< "$all_changes"
+
+      git add -A
+      git commit -m "chore(scaffold): pull from hub @ $new_version" -m "$commit_body" \
+        || echo "Nothing to commit"
+    else
+      echo "No file changes to commit."
+    fi
+  fi
 
   echo "Pull finalized. Scaffold version: $new_version"
 }
