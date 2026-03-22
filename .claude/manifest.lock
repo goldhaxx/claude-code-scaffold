@@ -1,7 +1,7 @@
 {
   "meta": {
-    "last_verified": 1774210892,
-    "commit": "1d8809373b7ae78ded095def50f5227becd53db5"
+    "last_verified": 1774213098,
+    "commit": "e53ed22dba1a6e983c8049c0939a3c0b0a8043f1"
   },
   "entries": {
     "GLOBAL_CLAUDE.md": {
@@ -55,9 +55,9 @@
       "verified": 1774210892
     },
     ".claude/rules/workflow.md": {
-      "file_hash": "fd7355c3d2e66926a0e0446e60d823d42821b881afdd96c9b921e5c0d40d3bdf",
-      "verified_at_commit": "1d8809373b7ae78ded095def50f5227becd53db5",
-      "verified": 1774210892
+      "file_hash": "ef1b44d48ce28eb4eae8f1e239205412204228b6320de99e98af961f8f4c9860",
+      "verified_at_commit": "e53ed22dba1a6e983c8049c0939a3c0b0a8043f1",
+      "verified": 1774213098
     },
     ".claude/rules/code-quality.md": {
       "file_hash": "2bb6332c0e64f5845b1eb185bf95105e8723a975e2d6caabe10be23350ba9a85",
@@ -75,9 +75,9 @@
       "verified": 1774210892
     },
     ".claude/rules/self-review.md": {
-      "file_hash": "421bc459353f2db3dd1037360ca0959284f68ac847070b4303e43be39a0ac523",
-      "verified_at_commit": "1d8809373b7ae78ded095def50f5227becd53db5",
-      "verified": 1774210892
+      "file_hash": "4f80fd195af03943f3c8b049faea507d44a9404109a4164ebd9d5ca7d59a3354",
+      "verified_at_commit": "e53ed22dba1a6e983c8049c0939a3c0b0a8043f1",
+      "verified": 1774213098
     },
     ".claude/skills/tdd/SKILL.md": {
       "file_hash": "77d65b1a6ea15921d883e556600d05ce685c40b46e837b1c7a281f736b12b034",
@@ -100,9 +100,9 @@
       "verified": 1774210892
     },
     ".claude/commands/catchup.md": {
-      "file_hash": "381572779580ce13fb55bfdb40a25618ad8f288f60e6f1cbbcafd203a41378c2",
-      "verified_at_commit": "1d8809373b7ae78ded095def50f5227becd53db5",
-      "verified": 1774210892
+      "file_hash": "f00b58c08e9866421eba8069b4764378feb7747d618e16cc434b2c01b053fd61",
+      "verified_at_commit": "e53ed22dba1a6e983c8049c0939a3c0b0a8043f1",
+      "verified": 1774213098
     },
     ".claude/commands/plan.md": {
       "file_hash": "062d57d6a2e1c57fd6f5f90369620192541b2f33f8155e0f3904ae0bf37ca40b",
@@ -185,9 +185,9 @@
       "verified": 1774210892
     },
     "scripts/docs-check.sh": {
-      "file_hash": "6bcbb2d4f9960be33ee0c72595e7bfd4982aa3411699ea243d3077ecbd9ecd53",
-      "verified_at_commit": "1d8809373b7ae78ded095def50f5227becd53db5",
-      "verified": 1774210892
+      "file_hash": "e77a414b40cd7b4cc7a69efed388bac5b6c8398df57b26d0b7e8d1885e92ec90",
+      "verified_at_commit": "e53ed22dba1a6e983c8049c0939a3c0b0a8043f1",
+      "verified": 1774213098
     },
     "docs/templates/spec.md": {
       "file_hash": "c3a7a1016a913d34a681ead53f0e6a3876ad237d44fdb682a2042d0ce8b343e1",
@@ -195,9 +195,9 @@
       "verified": 1774210892
     },
     "docs/templates/checkpoint.md": {
-      "file_hash": "9a5cc0a0dc28099b5a012d217deb6963a0b45b87eefb4d7b27c5917356fddb9c",
-      "verified_at_commit": "1d8809373b7ae78ded095def50f5227becd53db5",
-      "verified": 1774210892
+      "file_hash": "f40c1a6838293a7bf800e071a73c0d18bfcf2e3a265dd31c94b4a251172f6718",
+      "verified_at_commit": "e53ed22dba1a6e983c8049c0939a3c0b0a8043f1",
+      "verified": 1774213098
     },
     "docs/templates/plan.md": {
       "file_hash": "7961317e4cac9d84ba69567def985a527280220b564b0dec631ee0553a5326b5",
@@ -250,24 +250,24 @@
       "verified": 1774210892
     },
     "docs/spec.md": {
-      "file_hash": "718414b654b2b5713ea08535788016636a32dd6d574ae7b2866b834a54ec5c4f",
-      "verified_at_commit": "1d8809373b7ae78ded095def50f5227becd53db5",
-      "verified": 1774210892
+      "file_hash": "c01c6d9829f3b13efaf2171c9ca7be2e30ac6a2e570edc57cef0b740387cf823",
+      "verified_at_commit": "e53ed22dba1a6e983c8049c0939a3c0b0a8043f1",
+      "verified": 1774213098
     },
     "docs/checkpoint.md": {
-      "file_hash": "8d3f6add9233d06f220aa17a88cfec6ee0463bcc3004c282aecb453b496de6cf",
-      "verified_at_commit": "1d8809373b7ae78ded095def50f5227becd53db5",
-      "verified": 1774210892
+      "file_hash": "044ba4f84a914b47e2e18443323ead61a1cb213b52135f3110a55479b7301095",
+      "verified_at_commit": "e53ed22dba1a6e983c8049c0939a3c0b0a8043f1",
+      "verified": 1774213098
     },
     "docs/plan.md": {
-      "file_hash": "3d3dd389d8e76be14970622fa04a1dc667e23c2ec589f6f57b8644e065ae4851",
-      "verified_at_commit": "1d8809373b7ae78ded095def50f5227becd53db5",
-      "verified": 1774210892
+      "file_hash": "e05d23cdbffb7ebfc8175beca3ed28b1f515b99a89b0451bb6fa7726eb099b88",
+      "verified_at_commit": "e53ed22dba1a6e983c8049c0939a3c0b0a8043f1",
+      "verified": 1774213098
     },
     "README.md": {
-      "file_hash": "e38cb2f4b56ecc20707e8a5bb5be0804d853bfb9cec800f5b835f3d24344ad69",
-      "verified_at_commit": "1d8809373b7ae78ded095def50f5227becd53db5",
-      "verified": 1774210892
+      "file_hash": "809b3fc5acf9f511d4005740223e94d562c15f8ca9880bcc8a61b8727cc8e95f",
+      "verified_at_commit": "e53ed22dba1a6e983c8049c0939a3c0b0a8043f1",
+      "verified": 1774213098
     },
     "HOW_TO_USE.md": {
       "file_hash": "7930fd2133910655c87335127194b5ed01e59edb89f7a50d396161c22ade3bfb",
