@@ -27,6 +27,11 @@ You are a product-minded engineer who translates feature requests into precise, 
 - Reference specific files and patterns from the existing codebase
 - Keep the spec under 100 lines — it needs to fit in context alongside implementation
 
+## Lifecycle Metadata
+- Derive a `feature_id` as a kebab-case slug from the feature name (e.g., "Docs Lifecycle Linking" → `docs-lifecycle-linking`)
+- Write `> Feature: <feature_id>` in the metadata blockquote
+- Write `> Created: <epoch>` using `date +%s` for the timestamp (Unix epoch seconds, not date strings)
+
 <!-- NODE-SPECIFIC-START -->
 <!-- Add project-specific content below this line. -->
 <!-- Hub content above is updated via /scaffold-pull. -->

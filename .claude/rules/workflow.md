@@ -20,6 +20,11 @@
   - Current state of the implementation
   - Failing tests (if any) and why
   - Exact next steps to resume
+- **Lifecycle metadata:** When writing a checkpoint, include metadata in the blockquote:
+  - `> Feature: <feature_id>` (copied from plan.md's metadata)
+  - `> Last updated: <epoch>` (using `date +%s`)
+  - `> Plan hash: <hash>` (run `scripts/docs-check.sh status` and read `.plan.content_hash`)
+- **Plan before checkpoint:** If a spec exists but no plan, run `/plan` before checkpointing. Planning in warm context is cheaper than in cold context.
 - When resuming after `/clear`, read `docs/checkpoint.md` first.
 
 ## Commit Practices
