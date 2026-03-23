@@ -2,7 +2,7 @@
 
 > Feature: context-budget
 > Created: 1774234571
-> Status: Draft
+> Status: In Progress
 
 ## Summary
 

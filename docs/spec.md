@@ -1,76 +1,73 @@
-# Feature: Permissions Security Audit
+# Feature: Context Budget Measurement
 
-> Feature: permissions-audit
-> Created: 1774218765
+> Feature: context-budget
+> Created: 1774234571
 > Status: In Progress
 
 ## Summary
 
-Add a deterministic script (`scripts/permissions-audit.sh`) and a tracked decision log (`.claude/permissions-log.json`) that audit every Bash permission entry in `.claude/settings.json` and `.claude/settings.local.json`. Every grant gets a documented rationale, risk level, and efficiency tradeoff. Dangerous or unreviewed entries are surfaced immediately rather than accumulating silently.
-
-**Prior art (this session):** We established a permission philosophy — read-only commands (git status, git log, docs-check.sh) should auto-allow; mutating commands (cp, git push, rm) require approval. We removed 7 dangerous entries from `settings.json` (cat, find, env, echo, sort, git branch, git tag) and identified that compound commands (`cmd1; cmd2`) bypass allow-list matching. `settings.local.json` currently has 37 unreviewed entries including `Bash(find:*)`, `Bash(echo:*)`, loop primitives, and a `FILTER_BRANCH_SQUELCH_WARNING` compound command — all dangerous and unreviewed.
+A deterministic script that measures the token cost of all always-loaded scaffold files (CLAUDE.md, rules, settings.json, .claudeignore) and reports budget utilization against research-backed thresholds. Every token in the always-loaded layer competes for attention weight — this tool makes the cost visible so the scaffold can be kept lean.
 
 ## Job To Be Done
 
-**When** a Bash permission is added to either settings file (manually or via Claude Code's approval prompt),
-**I want to** know immediately if it matches a known-dangerous pattern and require a documented rationale, risk level, and efficiency justification before it is considered reviewed,
-**So that** every permission has an explicit tradeoff decision on record and dangerous grants cannot accumulate unnoticed.
+**When** adding or modifying always-loaded scaffold files (CLAUDE.md, rules, settings),
+**I want to** see exactly how much of the context budget each file consumes,
+**So that** I can make informed decisions about what belongs in the always-loaded layer versus on-demand loading.
 
 ## Acceptance Criteria
 
 Each criterion is independently testable. Binary pass/fail.
 
-- [ ] **AC-1:** `permissions-audit.sh check` parses all `allow` and `deny` entries from both `.claude/settings.json` and `.claude/settings.local.json`, outputs JSON: `{"entries": [{permission, source, status}], "danger": N, "unreviewed": N, "reviewed": N}`.
-
-- [ ] **AC-2:** Exit codes: `0` = all REVIEWED and no DANGER; `1` = UNREVIEWED entries exist (no DANGER); `2` = DANGER entries exist (takes precedence).
-
-- [ ] **AC-3:** `check` flags entries matching hardcoded dangerous patterns as `DANGER` regardless of log status. Patterns: broad command wildcards (`echo:*`, `cat:*`, `find:*`, `bash:*`), arbitrary execution (`env `, `xargs -I`, `find -exec`, `find -delete`), shell loop primitives (`for `, `do `, `done`), file mutation (`sort -o`, `git branch -D`, `git tag -d`), redirect operators (`>`, `>>`), compound operators (`;`, `&&`, `||`), and env-prefix commands (`VAR=value cmd`).
-
-- [ ] **AC-4:** Entries absent from `.claude/permissions-log.json` are `UNREVIEWED`. Entries present with all required fields non-empty and non-`"TODO"` are `REVIEWED`.
-
-- [ ] **AC-5:** `check --text` outputs grouped human-readable report: DANGER first (naming matched pattern), then UNREVIEWED, then REVIEWED (with risk and rationale). REVIEWED suppressed unless `--verbose`.
-
-- [ ] **AC-6:** `.claude/permissions-log.json` schema: `{"entries": {"<permission>": {"risk": "CRITICAL|HIGH|MEDIUM|LOW", "rationale": "...", "efficiency_justification": "...", "reviewer": "...", "reviewed_epoch": N}}}`.
-
-- [ ] **AC-7:** `permissions-audit.sh init` creates the log with all unreviewed entries as stubs (`risk: "", rationale: "TODO", ...`). Preserves existing reviewed entries. Idempotent.
-
-- [ ] **AC-8 (error):** Missing log file → treat all as UNREVIEWED, exit `1`, stderr: `NOTE: permissions-log.json not found — run permissions-audit.sh init`.
-
-- [ ] **AC-9 (error):** Invalid JSON log → stderr: `ERROR: permissions-log.json is not valid JSON`, exit `2`.
-
-- [ ] **AC-10 (edge):** Same permission in both files → report once with `"source": ["settings.json", "settings.local.json"]`, count as one entry.
-
-- [ ] **AC-11:** `/scaffold-audit` includes a "Permissions" section when `permissions-audit.sh check` exits non-zero, showing danger/unreviewed counts and all DANGER permission strings.
+- [ ] **AC-1:** `context-budget.sh check` outputs JSON with per-file entries for every always-loaded file: `{path, lines, chars, estimated_tokens}` and a `totals` object with aggregate counts.
+- [ ] **AC-2:** Token estimation uses chars/4 heuristic (industry-standard BPE approximation for English text). Each file's `estimated_tokens` equals `ceil(chars / 4)`.
+- [ ] **AC-3:** `context-budget.sh check --context-window N` sets the context window size in tokens. The budget ceiling is `context_window × 0.04` (the ~4% system prompt overhead from SCAFFOLD_FRAMEWORK.md). Default context window: 200000.
+- [ ] **AC-4:** `context-budget.sh check --text` outputs a human-readable table with columns: File, Lines, Tokens, % of Budget. Includes a total row, a status line (HEALTHY / WARNING / CRITICAL), and the detected/configured context window.
+- [ ] **AC-5:** Exit code 0 when total is under 70% of budget (HEALTHY), exit code 1 when 70-90% (WARNING), exit code 2 when over 90% (CRITICAL).
+- [ ] **AC-6:** `--budget N` flag overrides the computed budget ceiling directly (e.g., `--budget 8000`), taking precedence over `--context-window`.
+- [ ] **AC-7:** The script measures both the project CLAUDE.md and the global `~/.claude/CLAUDE.md` (if it exists), reporting them as separate entries but including both in the total.
+- [ ] **AC-8:** Files that don't exist are skipped silently (no error for missing optional files like global CLAUDE.md). Files that are expected but missing (project CLAUDE.md) produce a warning entry in the output.
+- [ ] **AC-9:** `/scaffold-audit` integration — the scaffold-audit command includes context budget status in its report, calling `context-budget.sh check`.
+- [ ] **AC-10:** CLAUDE.md line count is reported separately with a threshold warning if it exceeds 80 lines (the research-backed maximum from SCAFFOLD_FRAMEWORK.md).
+- [ ] **AC-11:** `--model MODEL_ID` flag maps known models to their context window size. Supported models: `claude-opus-4-6[1m]` → 1000000, `claude-opus-4-6` → 200000, `claude-sonnet-4-6` → 200000, `claude-haiku-4-5` → 200000. Unknown models default to 200000 with a warning on stderr.
+- [ ] **AC-12:** The JSON output includes a `context` object: `{model: "<model_id or null>", context_window: <tokens>, budget_ceiling: <tokens>, source: "flag|model|default"}` so the user knows how the budget was determined.
 
 ## Affected Files
 
 | File | Change |
 |------|--------|
-| `scripts/permissions-audit.sh` | New — deterministic audit script |
-| `.claude/permissions-log.json` | New — tracked decision log (committed) |
-| `.claude/commands/scaffold-audit.md` | Modified — add permissions check step |
-| `tests/permissions-audit.bats` | New — tests for the audit script |
+| `scripts/context-budget.sh` | New — the measurement script |
+| `tests/context-budget.bats` | New — bats tests |
+| `.claude/commands/scaffold-audit.md` | Modified — add budget check step |
+| `CLAUDE.md` | Modified — add command reference |
+| `GUIDE.md` | Modified — add to command reference tables |
 
 ## Dependencies
 
-- **Requires:** `jq` (already used by scaffold-sync.sh)
+- **Requires:** `jq` (already a project dependency for other scripts)
 - **Blocked by:** Nothing
 
 ## Out of Scope
 
-- Auto-remediation (removing or rewriting permission entries)
-- Auditing non-Bash permission types (`Read(...)`, `Write(...)`)
-- Per-project overrides to the dangerous-pattern list
-- Cleaning up `settings.local.json` (separate manual task using audit output)
+- Actual tokenizer integration (tiktoken, Claude tokenizer) — chars/4 is sufficient for budget monitoring. Exact counts are unnecessary for threshold-based warnings.
+- Measuring on-demand files (commands, agents, skills) — these load into isolated contexts and don't compete with the always-loaded budget.
+- Measuring conversation history or tool results — these are runtime concerns, not scaffold configuration concerns.
+- Automatic remediation (moving content to on-demand files) — the tool reports, the user decides.
 
 ## Implementation Notes
 
-- **Script pattern:** Follow `scripts/security-audit.sh` structure — `set -euo pipefail`, pattern arrays, finding helpers, exit code logic.
-- **Pattern extraction:** Strip `Bash(` prefix and trailing `)` with sed, test against regex array.
-- **Log keys:** Exact permission strings, no normalization. `"Bash(find:*)"` in settings must match `"Bash(find:*)"` in log.
-- **Test strategy:** Own test file `tests/permissions-audit.bats` — fixture settings/log files in `mktemp -d`, assert exit codes and JSON output with jq.
-- **Compound command detection (AC-3):** The `;`, `&&`, `||` patterns catch entries like the `FILTER_BRANCH` command and the `bash -n ... && echo` entries in `settings.local.json`. These bypass allow-list matching and should always be flagged.
-- **Behavioral rule (from this session):** Claude should never chain Bash commands with `;`/`&&` — use parallel tool calls instead. This is documented in feedback memory and prevents new compound entries from being created.
+- Follow the same script pattern as `permissions-audit.sh`: subcommand dispatch, `set -euo pipefail`, JSON primary output, `--text` flag for human-readable.
+- Always-loaded file list (hardcoded, matches GUIDE.md "Always Loaded at Launch" diagram):
+  - `./CLAUDE.md`
+  - `~/.claude/CLAUDE.md` (global, optional)
+  - `.claude/rules/*.md` (glob)
+  - `.claude/settings.json`
+  - `.claudeignore`
+- Hook scripts (`.claude/hooks/*.sh`) execute outside the context window — they are NOT loaded as text, so they don't count against the token budget. Only their references in settings.json count.
+- Budget ceiling formula: `context_window × 0.04`. For 200K → 8,000 tokens. For 1M → 40,000 tokens. The `--budget` flag overrides this formula entirely.
+- `ceil(chars / 4)` can be computed in bash as `$(( (chars + 3) / 4 ))`.
+- Flag precedence: `--budget` (explicit ceiling) > `--context-window` (compute ceiling) > `--model` (look up window, compute ceiling) > default (200K window, 8K ceiling).
+- Model lookup table is a simple bash associative array. New models are added by editing one line — no external dependency.
+- The `source` field in JSON output tracks provenance: `"flag"` if `--budget` was used, `"model"` if `--model` was used, `"context-window"` if `--context-window` was used, `"default"` otherwise.
 
 <!-- NODE-SPECIFIC-START -->
 <!-- Add project-specific content below this line. -->
