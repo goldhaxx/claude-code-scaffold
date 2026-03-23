@@ -20,6 +20,7 @@ set -euo pipefail
 # ---------------------------------------------------------------------------
 
 PROJECT_DIR="."
+GLOBAL_CLAUDE_MD="$HOME/.claude/CLAUDE.md"
 TEXT_MODE=false
 BUDGET_FLAG=""
 CONTEXT_WINDOW_FLAG=""
@@ -35,7 +36,7 @@ BUDGET_PERCENT=4  # 4% of context window
 CMD=""
 
 usage() {
-  echo "Usage: context-budget.sh check [--project-dir DIR] [--text] [--budget N] [--context-window N] [--model MODEL_ID]" >&2
+  echo "Usage: context-budget.sh check [--project-dir DIR] [--global-claude-md PATH] [--text] [--budget N] [--context-window N] [--model MODEL_ID]" >&2
   exit 2
 }
 
@@ -45,6 +46,8 @@ while [[ $# -gt 0 ]]; do
       CMD="$1"; shift ;;
     --project-dir)
       PROJECT_DIR="$2"; shift 2 ;;
+    --global-claude-md)
+      GLOBAL_CLAUDE_MD="$2"; shift 2 ;;
     --text)
       TEXT_MODE=true; shift ;;
     --budget)
@@ -85,12 +88,23 @@ measure_file() {
 
 cmd_check() {
   local files_json="[]"
+  local warnings_json="[]"
 
-  # Project CLAUDE.md
+  # Global CLAUDE.md (optional — silently skip if missing)
+  if [[ -f "$GLOBAL_CLAUDE_MD" ]]; then
+    local entry
+    entry=$(measure_file "$GLOBAL_CLAUDE_MD")
+    files_json=$(echo "$files_json" | jq --argjson e "$entry" '. + [$e]')
+  fi
+
+  # Project CLAUDE.md (expected — warn if missing)
   if [[ -f "$PROJECT_DIR/CLAUDE.md" ]]; then
     local entry
     entry=$(measure_file "$PROJECT_DIR/CLAUDE.md")
     files_json=$(echo "$files_json" | jq --argjson e "$entry" '. + [$e]')
+  else
+    warnings_json=$(echo "$warnings_json" | jq --arg p "$PROJECT_DIR/CLAUDE.md" \
+      '. + [{type: "missing_file", path: $p, message: "Project CLAUDE.md not found"}]')
   fi
 
   # Rules files
@@ -187,10 +201,12 @@ cmd_check() {
     --argjson tl "$total_lines" --argjson tc "$total_chars" --argjson tt "$total_tokens" \
     --arg bp "$budget_percent" --arg st "$status_label" \
     --arg model "$model" --argjson cw "$context_window" --argjson bc "$budget_ceiling" --arg src "$source" \
+    --argjson warnings "$warnings_json" \
     '{
       files: $files,
       totals: {lines: $tl, chars: $tc, estimated_tokens: $tt, budget_percent: ($bp | tonumber), status: $st},
-      context: {model: (if $model == "null" then null else $model end), context_window: $cw, budget_ceiling: $bc, source: $src}
+      context: {model: (if $model == "null" then null else $model end), context_window: $cw, budget_ceiling: $bc, source: $src},
+      warnings: $warnings
     }'
 
   return "$exit_code"
