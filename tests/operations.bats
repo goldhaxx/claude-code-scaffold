@@ -209,3 +209,53 @@ JSON
   [ "$status" -eq 0 ]
   echo "$output" | jq -e '.provider == "linear"'
 }
+
+# =========================================================================
+# Step 6: Local adapter schema compatibility (AC-5)
+# =========================================================================
+
+@test "backlog.list local command produces same schema as docs-check.sh list-specs" {
+  # Create fixture specs directory in the real project structure
+  local FIXTURE_DIR
+  FIXTURE_DIR=$(mktemp -d)
+  mkdir -p "$FIXTURE_DIR/docs/specs"
+  cat > "$FIXTURE_DIR/docs/specs/test-feature.md" <<'SPEC'
+# Feature: Test Feature
+
+> Feature: test-feature
+> Created: 1700000000
+> Status: Draft
+
+## Summary
+A test feature.
+SPEC
+
+  # Get the command from resolve output
+  run bash "$SCRIPT" resolve backlog.list --project-dir "$PROJECT"
+  [ "$status" -eq 0 ]
+  local resolved_cmd
+  resolved_cmd=$(echo "$output" | jq -r '.invocation.command')
+
+  # The command uses relative path "scripts/docs-check.sh list-specs".
+  # Verify it references the right script and subcommand.
+  echo "$resolved_cmd" | grep -q "docs-check.sh list-specs"
+
+  # Run docs-check.sh directly against the fixture
+  local DOCS_SCRIPT="$BATS_TEST_DIRNAME/../scripts/docs-check.sh"
+  local direct_output
+  direct_output=$(bash "$DOCS_SCRIPT" list-specs "$FIXTURE_DIR/docs" 2>/dev/null)
+
+  # Verify direct output schema has the contract fields
+  echo "$direct_output" | jq -e '.[0] | has("feature_id")'
+  echo "$direct_output" | jq -e '.[0] | has("status")'
+  echo "$direct_output" | jq -e '.[0] | has("created")'
+
+  # Verify the contract matches docs-check.sh output keys
+  local contract_fields
+  contract_fields=$(echo "$output" | jq -r '.contract.output[]' | sort)
+  local actual_fields
+  actual_fields=$(echo "$direct_output" | jq -r '.[0] | keys[]' | sort)
+  [ "$contract_fields" = "$actual_fields" ]
+
+  rm -rf "$FIXTURE_DIR"
+}
