@@ -121,17 +121,41 @@ cmd_check() {
   total_chars=$(echo "$files_json" | jq '[.[].chars] | add // 0')
   total_tokens=$(echo "$files_json" | jq '[.[].estimated_tokens] | add // 0')
 
-  # Determine budget ceiling
+  # Determine context window from flags (precedence: budget > context-window > model > default)
   local context_window budget_ceiling source model
   context_window=$DEFAULT_CONTEXT_WINDOW
   source="default"
   model="null"
 
+  # Model lookup (bash 3 compatible — no associative arrays)
+  if [[ -n "$MODEL_FLAG" ]]; then
+    model="$MODEL_FLAG"
+    source="model"
+    case "$MODEL_FLAG" in
+      claude-opus-4-6\[1m\]) context_window=1000000 ;;
+      claude-opus-4-6)       context_window=200000 ;;
+      claude-sonnet-4-6)     context_window=200000 ;;
+      claude-haiku-4-5)      context_window=200000 ;;
+      *)
+        echo "WARNING: Unknown model '$MODEL_FLAG', defaulting to ${DEFAULT_CONTEXT_WINDOW} token context window" >&2
+        context_window=$DEFAULT_CONTEXT_WINDOW
+        ;;
+    esac
+  fi
+
+  # --context-window overrides model lookup
+  if [[ -n "$CONTEXT_WINDOW_FLAG" ]]; then
+    context_window=$CONTEXT_WINDOW_FLAG
+    source="context-window"
+  fi
+
+  # Compute budget ceiling from context window
+  budget_ceiling=$(( context_window * BUDGET_PERCENT / 100 ))
+
+  # --budget overrides everything
   if [[ -n "$BUDGET_FLAG" ]]; then
     budget_ceiling=$BUDGET_FLAG
     source="flag"
-  else
-    budget_ceiling=$(( context_window * BUDGET_PERCENT / 100 ))
   fi
 
   # Compute budget percentage

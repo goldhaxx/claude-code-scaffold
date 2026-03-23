@@ -192,3 +192,101 @@ teardown() {
   status_val=$(echo "$output" | jq -r '.totals.status')
   [ "$status_val" = "HEALTHY" ]
 }
+
+
+# =========================================================================
+# Step 4: --context-window, --model, --budget flags (AC-3, AC-6, AC-11)
+# =========================================================================
+
+@test "--context-window 1000000 sets budget to 40000" {
+  run bash "$SCRIPT" check --project-dir "$FIXTURE" --context-window 1000000
+  [ "$status" -eq 0 ]
+  local ceiling
+  ceiling=$(echo "$output" | jq '.context.budget_ceiling')
+  [ "$ceiling" -eq 40000 ]
+  local window
+  window=$(echo "$output" | jq '.context.context_window')
+  [ "$window" -eq 1000000 ]
+}
+
+@test "--context-window sets source to context-window" {
+  run bash "$SCRIPT" check --project-dir "$FIXTURE" --context-window 500000
+  [ "$status" -eq 0 ]
+  local source
+  source=$(echo "$output" | jq -r '.context.source')
+  [ "$source" = "context-window" ]
+}
+
+@test "--model claude-opus-4-6[1m] sets window to 1000000" {
+  run bash "$SCRIPT" check --project-dir "$FIXTURE" --model 'claude-opus-4-6[1m]'
+  [ "$status" -eq 0 ]
+  local window
+  window=$(echo "$output" | jq '.context.context_window')
+  [ "$window" -eq 1000000 ]
+  local ceiling
+  ceiling=$(echo "$output" | jq '.context.budget_ceiling')
+  [ "$ceiling" -eq 40000 ]
+}
+
+@test "--model claude-opus-4-6 sets window to 200000" {
+  run bash "$SCRIPT" check --project-dir "$FIXTURE" --model 'claude-opus-4-6'
+  [ "$status" -eq 0 ]
+  local window
+  window=$(echo "$output" | jq '.context.context_window')
+  [ "$window" -eq 200000 ]
+}
+
+@test "--model claude-sonnet-4-6 sets window to 200000" {
+  run bash "$SCRIPT" check --project-dir "$FIXTURE" --model 'claude-sonnet-4-6'
+  [ "$status" -eq 0 ]
+  local window
+  window=$(echo "$output" | jq '.context.context_window')
+  [ "$window" -eq 200000 ]
+}
+
+@test "--model sets source to model and records model id" {
+  run bash "$SCRIPT" check --project-dir "$FIXTURE" --model 'claude-opus-4-6[1m]'
+  [ "$status" -eq 0 ]
+  local source
+  source=$(echo "$output" | jq -r '.context.source')
+  [ "$source" = "model" ]
+  local model
+  model=$(echo "$output" | jq -r '.context.model')
+  [ "$model" = "claude-opus-4-6[1m]" ]
+}
+
+@test "unknown model defaults to 200000 with stderr warning" {
+  # Capture stderr separately
+  local stderr_out
+  stderr_out=$(bash "$SCRIPT" check --project-dir "$FIXTURE" --model 'claude-future-99' 2>&1 >/dev/null) || true
+  [[ "$stderr_out" == *"Unknown model"* ]]
+
+  # Verify JSON output is correct (redirect stderr away)
+  run bash -c "bash '$SCRIPT' check --project-dir '$FIXTURE' --model 'claude-future-99' 2>/dev/null"
+  [ "$status" -eq 0 ]
+  local window
+  window=$(echo "$output" | jq '.context.context_window')
+  [ "$window" -eq 200000 ]
+}
+
+@test "--budget overrides --context-window" {
+  run bash "$SCRIPT" check --project-dir "$FIXTURE" --context-window 1000000 --budget 5000
+  [ "$status" -eq 0 ]
+  local ceiling
+  ceiling=$(echo "$output" | jq '.context.budget_ceiling')
+  [ "$ceiling" -eq 5000 ]
+  local source
+  source=$(echo "$output" | jq -r '.context.source')
+  [ "$source" = "flag" ]
+}
+
+@test "--budget overrides --model" {
+  run bash "$SCRIPT" check --project-dir "$FIXTURE" --model 'claude-opus-4-6[1m]' --budget 3000
+  [ "$status" -eq 0 ]
+  local ceiling
+  ceiling=$(echo "$output" | jq '.context.budget_ceiling')
+  [ "$ceiling" -eq 3000 ]
+  local source
+  source=$(echo "$output" | jq -r '.context.source')
+  [ "$source" = "flag" ]
+}
