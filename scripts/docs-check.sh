@@ -236,6 +236,20 @@ cmd_validate() {
   [[ -n "$plan_fid" ]] && fids+=("$plan_fid")
   [[ -n "$cp_fid" ]] && fids+=("$cp_fid")
 
+  # Multi-spec: if no spec.md exists, check if specs/ has any specs
+  # If so, this is "no-active-spec" (not an error — just no feature activated)
+  if [[ "$spec_exists" != "true" && "$plan_exists" != "true" && "$cp_exists" != "true" ]]; then
+    local specs_dir="$docs_dir/specs"
+    if [[ -d "$specs_dir" ]] && ls "$specs_dir"/*.md >/dev/null 2>&1; then
+      jq -n \
+        --arg result "no-active-spec" \
+        --argjson details '["no docs/spec.md — activate a spec from docs/specs/"]' \
+        --argjson status "$status_json" \
+        '{result: $result, details: $details, status: $status}'
+      return 0
+    fi
+  fi
+
   # Check for missing docs
   if [[ "$spec_exists" != "true" ]]; then
     details=$(echo "$details" | jq '. + ["spec.md missing"]')
@@ -372,8 +386,21 @@ cmd_recommend() {
 
   local next_action reason
 
+  # No active spec — specs exist in backlog but none activated
+  if [[ "$result" == "no-active-spec" ]]; then
+    # Find a Ready spec to suggest
+    local ready_spec
+    ready_spec=$(cmd_list_specs "$docs_dir" | jq -r '[.[] | select(.status == "Ready")] | first | .feature_id // empty')
+    if [[ -n "$ready_spec" ]]; then
+      next_action="Activate a spec: docs-check.sh activate $ready_spec"
+      reason="No active spec. Ready specs available in docs/specs/."
+    else
+      next_action="Mark a spec as Ready, then activate it"
+      reason="Specs exist in docs/specs/ but none are marked Ready."
+    fi
+
   # No docs at all
-  if [[ "$spec_exists" != "true" && "$plan_exists" != "true" && "$cp_exists" != "true" ]]; then
+  elif [[ "$spec_exists" != "true" && "$plan_exists" != "true" && "$cp_exists" != "true" ]]; then
     next_action="Describe a feature"
     reason="No spec, plan, or checkpoint found. Start by describing what you want to build."
 
@@ -560,6 +587,215 @@ cmd_audit_session() {
 }
 
 # ---------------------------------------------------------------------------
+# cmd_list_specs — List all specs in docs/specs/ with metadata.
+#
+# Usage:
+#   docs-check.sh list-specs [docs-dir]
+#
+# Output: JSON array of {feature_id, status, created} for each spec file.
+# Returns [] if docs/specs/ is empty or doesn't exist.
+# ---------------------------------------------------------------------------
+cmd_list_specs() {
+  local docs_dir="${1:-$DEFAULT_DOCS_DIR}"
+  local specs_dir="$docs_dir/specs"
+
+  if [[ ! -d "$specs_dir" ]]; then
+    echo "[]"
+    return 0
+  fi
+
+  local result="[]"
+  local found=false
+
+  for spec_file in "$specs_dir"/*.md; do
+    # Handle glob returning literal *.md when no files exist
+    [[ -f "$spec_file" ]] || continue
+    found=true
+
+    local meta
+    meta=$(parse_metadata "$spec_file")
+
+    local feature_id status created
+    feature_id=$(echo "$meta" | jq -r '.feature_id // empty')
+    status=$(echo "$meta" | jq -r '.status // empty')
+    created=$(echo "$meta" | jq -r '.created // empty')
+
+    result=$(echo "$result" | jq \
+      --arg fid "$feature_id" \
+      --arg status "$status" \
+      --arg created "$created" \
+      '. + [{feature_id: $fid, status: $status, created: $created}]')
+  done
+
+  echo "$result"
+}
+
+# ---------------------------------------------------------------------------
+# cmd_activate — Activate a spec from the backlog.
+#
+# Usage:
+#   docs-check.sh activate <feature-id> [docs-dir]
+#
+# Creates branch claude/<type>/<feature-id>, copies spec to docs/spec.md,
+# updates spec status to "In Progress".
+# Fails if: feature-id not found, another spec is In Progress, worktree dirty.
+# ---------------------------------------------------------------------------
+cmd_activate() {
+  local feature_id="${1:?Usage: activate <feature-id> [docs-dir]}"
+  local docs_dir="${2:-$DEFAULT_DOCS_DIR}"
+  local specs_dir="$docs_dir/specs"
+  local repo_root
+  repo_root=$(cd "$docs_dir" 2>/dev/null && git rev-parse --show-toplevel 2>/dev/null) || {
+    repo_root=$(cd "$docs_dir/.." 2>/dev/null && pwd)
+  }
+
+  # Find the spec file
+  local spec_file=""
+  for f in "$specs_dir"/*.md; do
+    [[ -f "$f" ]] || continue
+    local fid
+    fid=$(parse_metadata "$f" | jq -r '.feature_id // empty')
+    if [[ "$fid" == "$feature_id" ]]; then
+      spec_file="$f"
+      break
+    fi
+  done
+
+  if [[ -z "$spec_file" ]]; then
+    echo "ERROR: spec with feature_id '$feature_id' not found in $specs_dir" >&2
+    exit 1
+  fi
+
+  # Check no other spec is In Progress
+  for f in "$specs_dir"/*.md; do
+    [[ -f "$f" ]] || continue
+    [[ "$f" == "$spec_file" ]] && continue
+    local st
+    st=$(parse_metadata "$f" | jq -r '.status // empty')
+    if [[ "$st" == "In Progress" ]]; then
+      local blocking_fid
+      blocking_fid=$(parse_metadata "$f" | jq -r '.feature_id // empty')
+      echo "ERROR: spec '$blocking_fid' is already In Progress. Complete it first." >&2
+      exit 1
+    fi
+  done
+
+  # Check worktree is clean
+  if [[ -n "$(git -C "$repo_root" status --porcelain 2>/dev/null)" ]]; then
+    echo "ERROR: worktree has uncommitted changes. Commit or stash before activating." >&2
+    exit 1
+  fi
+
+  # Extract type from spec (default to feat)
+  local spec_type="feat"
+  # Look for a Type: field in metadata, or default
+  local type_field
+  type_field=$(grep -m1 '^> Type:' "$spec_file" 2>/dev/null | sed 's/^> Type: *//' || true)
+  if [[ -n "$type_field" ]]; then
+    spec_type="$type_field"
+  fi
+
+  local branch_name="claude/${spec_type}/${feature_id}"
+
+  # Create branch
+  git -C "$repo_root" checkout -b "$branch_name" 2>/dev/null || {
+    echo "ERROR: failed to create branch '$branch_name'" >&2
+    exit 1
+  }
+
+  # Copy spec to docs/spec.md
+  cp "$spec_file" "$docs_dir/spec.md"
+
+  # Update status in specs/ to "In Progress"
+  sed -i '' "s/^> Status: .*/> Status: In Progress/" "$spec_file" 2>/dev/null || \
+    sed -i "s/^> Status: .*/> Status: In Progress/" "$spec_file"
+
+  echo "Activated spec '$feature_id' on branch '$branch_name'"
+}
+
+# ---------------------------------------------------------------------------
+# cmd_complete — Mark a spec as Complete.
+#
+# Usage:
+#   docs-check.sh complete <feature-id> [docs-dir]
+#
+# Updates spec status to "Complete". Clears docs/assumptions.md if it exists.
+# Fails if spec is not In Progress or feature-id not found.
+# ---------------------------------------------------------------------------
+cmd_complete() {
+  local feature_id="${1:?Usage: complete <feature-id> [docs-dir]}"
+  local docs_dir="${2:-$DEFAULT_DOCS_DIR}"
+  local specs_dir="$docs_dir/specs"
+
+  # Find the spec file
+  local spec_file=""
+  for f in "$specs_dir"/*.md; do
+    [[ -f "$f" ]] || continue
+    local fid
+    fid=$(parse_metadata "$f" | jq -r '.feature_id // empty')
+    if [[ "$fid" == "$feature_id" ]]; then
+      spec_file="$f"
+      break
+    fi
+  done
+
+  if [[ -z "$spec_file" ]]; then
+    echo "ERROR: spec with feature_id '$feature_id' not found in $specs_dir" >&2
+    exit 1
+  fi
+
+  # Verify spec is In Progress
+  local current_status
+  current_status=$(parse_metadata "$spec_file" | jq -r '.status // empty')
+  if [[ "$current_status" != "In Progress" ]]; then
+    echo "ERROR: spec '$feature_id' is '$current_status', not 'In Progress'" >&2
+    exit 1
+  fi
+
+  # Update status to Complete
+  sed -i '' "s/^> Status: .*/> Status: Complete/" "$spec_file" 2>/dev/null || \
+    sed -i "s/^> Status: .*/> Status: Complete/" "$spec_file"
+
+  # Clear assumptions.md if it exists
+  local assumptions_file="$docs_dir/assumptions.md"
+  if [[ -f "$assumptions_file" ]]; then
+    : > "$assumptions_file"
+  fi
+
+  echo "Completed spec '$feature_id'"
+}
+
+# ---------------------------------------------------------------------------
+# cmd_config_get — Read a feature toggle from .claude/scaffold.json.
+#
+# Usage:
+#   docs-check.sh config-get <key> [project-dir]
+#
+# Returns the value of features.<key> from .claude/scaffold.json.
+# Returns "false" if file is missing, key is missing, or features object
+# doesn't exist.
+# ---------------------------------------------------------------------------
+cmd_config_get() {
+  local key="${1:?Usage: config-get <key> [project-dir]}"
+  local project_dir="${2:-.}"
+  local config_file="$project_dir/.claude/scaffold.json"
+
+  if [[ ! -f "$config_file" ]]; then
+    echo "false"
+    return 0
+  fi
+
+  local value
+  value=$(jq -r --arg k "$key" '.features[$k] // "false"' "$config_file" 2>/dev/null)
+
+  if [[ -z "$value" || "$value" == "null" ]]; then
+    echo "false"
+  else
+    echo "$value"
+  fi
+}
+
+# ---------------------------------------------------------------------------
 # Dispatch
 # ---------------------------------------------------------------------------
 
@@ -571,8 +807,12 @@ case "$cmd" in
   validate)      cmd_validate "$@" ;;
   recommend)     cmd_recommend "$@" ;;
   audit-session) cmd_audit_session "$@" ;;
+  config-get)    cmd_config_get "$@" ;;
+  list-specs)    cmd_list_specs "$@" ;;
+  activate)      cmd_activate "$@" ;;
+  complete)      cmd_complete "$@" ;;
   *)
-    echo "Usage: docs-check.sh {status|validate|recommend|audit-session} [args...]" >&2
+    echo "Usage: docs-check.sh {status|validate|recommend|audit-session|config-get|list-specs|activate|complete} [args...]" >&2
     exit 1
     ;;
 esac

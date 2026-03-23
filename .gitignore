@@ -23,5 +23,8 @@ generated/
 .claude/settings.local.json
 .claude/local/
 
+# Claude Code worktrees (per-session, not shared)
+.claude/worktrees/
+
 # Scaffold sync state — tracked in git for provenance.
 # Listed in .claudeignore so Claude uses the script to access them, not raw reads.

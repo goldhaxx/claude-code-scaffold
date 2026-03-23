@@ -49,3 +49,6 @@ yarn.lock
 
 # Scaffold sync state (machine-managed, not useful in context)
 .claude/scaffold.lock
+
+# Claude Code worktrees (session-specific, not useful in context)
+.claude/worktrees/

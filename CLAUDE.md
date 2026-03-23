@@ -9,10 +9,14 @@
 
 ## Commands
 ```bash
-bats tests/                          # Run all tests (sync + security)
+bats tests/                          # Run all tests
 bats tests/scaffold-sync.bats        # Run scaffold sync tests only
 bats tests/security-audit.bats       # Run security audit tests only
+bats tests/feature-lifecycle.bats    # Run feature lifecycle tests only
 bash scripts/security-audit.sh       # Run PII/secrets scan
+bash scripts/docs-check.sh list-specs    # List specs in backlog
+bash scripts/docs-check.sh activate <id> # Activate a spec → create branch
+bash scripts/docs-check.sh complete <id> # Mark spec complete
 bash -n scripts/scaffold-sync.sh     # Syntax check the sync script
 ```
 
@@ -25,9 +29,11 @@ src/
 ├── models/       # Data models, types, schemas
 └── __tests__/    # Test files mirror src/ structure
 docs/
-├── spec.md       # Current feature specification
-├── plan.md       # Implementation plan
-└── checkpoint.md # Progress state for session continuity
+├── specs/        # Spec backlog (Draft/Ready/In Progress/Complete)
+├── spec.md       # Active feature specification (branch-local)
+├── plan.md       # Implementation plan (branch-local)
+├── checkpoint.md # Progress state for session continuity
+└── assumptions.md # Judgment calls made during implementation
 ```
 
 <!-- HUB-MANAGED-START -->
