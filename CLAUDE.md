@@ -22,6 +22,8 @@ bash scripts/context-budget.sh check --model claude-opus-4-6[1m] --text  # With 
 bash scripts/docs-check.sh list-specs    # List specs in backlog
 bash scripts/docs-check.sh activate <id> # Activate a spec → create branch
 bash scripts/docs-check.sh complete <id> # Mark spec complete
+bash scripts/operations.sh resolve <operation>              # Resolve operation routing
+bash scripts/operations.sh resolve <operation> --project-dir DIR  # With project dir
 bash -n scripts/scaffold-sync.sh     # Syntax check the sync script
 ```
 

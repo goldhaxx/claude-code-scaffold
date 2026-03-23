@@ -1,74 +1,97 @@
-# Implementation Plan: Context Budget Measurement
+# Implementation Plan: Modular Tool Integration Layer
 
-> Feature: context-budget
-> Created: 1774235150
-> Spec hash: 9889e126
+> Feature: tool-integration
+> Created: 1774299081
+> Spec hash: 19d3f4c3
 > Based on: docs/spec.md
 
 ## Objective
 
-Build a deterministic bash script that measures token cost of always-loaded scaffold files and reports budget utilization with model-aware thresholds.
+Build `scripts/operations.sh` — a mechanism-agnostic routing layer that resolves scaffold operations to local bash commands or external MCP tool instructions based on `.claude/scaffold.json` config.
 
 ## Sequence
 
-### Step 1: Script skeleton with usage and arg parsing
-- **Test:** `context-budget.sh` with no args prints usage and exits 2. `context-budget.sh check` exits 0 with valid JSON.
-- **Implement:** Script boilerplate: `set -euo pipefail`, usage function, argument parsing loop (check command, --text, --budget, --context-window, --model flags), dispatch.
-- **Files:** `scripts/context-budget.sh`, `tests/context-budget.bats`
-- **Verify:** bats tests pass
+### Step 1: Script skeleton + unknown operation error (AC-10)
+- **Test:** `operations.sh resolve unknown.op` exits 1 with stderr containing `ERROR: unknown operation "unknown.op"`. `operations.sh` with no args prints usage and exits 2.
+- **Implement:** Create `scripts/operations.sh` with shebang, `set -euo pipefail`, `usage()`, arg parsing (`resolve` subcommand + operation name), and a hardcoded operations registry that rejects unknown operations.
+- **Files:** `scripts/operations.sh` (new), `tests/operations.bats` (new)
+- **Verify:** `bats tests/operations.bats`
 
-### Step 2: File discovery and per-file measurement (AC-1, AC-2)
-- **Test:** `check` outputs JSON with `files` array containing entries for project CLAUDE.md, rules/*.md, settings.json, .claudeignore. Each entry has `path`, `lines`, `chars`, `estimated_tokens`. Token estimate = ceil(chars/4).
-- **Implement:** Glob for always-loaded files, `wc -c` and `wc -l` for each, compute tokens, build JSON array.
-- **Files:** `scripts/context-budget.sh`, `tests/context-budget.bats`
-- **Verify:** bats tests pass
+### Step 2: No-config local fallback + invalid JSON error (AC-11, AC-9)
+- **Test 1:** `operations.sh resolve backlog.list` with no `.claude/scaffold.json` present outputs JSON with `"provider":"local","mechanism":"bash"` and a non-empty `invocation.command`. Exit 0.
+- **Test 2:** `operations.sh resolve backlog.list` with invalid JSON in `.claude/scaffold.json` exits 1 with stderr `ERROR: .claude/scaffold.json is not valid JSON`.
+- **Implement:** Config reading logic: check file existence (missing = all local), validate JSON with `jq empty`, extract integrations key (missing = all local). Define local adapter for `backlog.list` with command pointing to `docs-check.sh list-specs`.
+- **Files:** `scripts/operations.sh`, `tests/operations.bats`
+- **Verify:** `bats tests/operations.bats`
 
-### Step 3: Budget computation and exit codes (AC-3, AC-5, AC-12)
-- **Test:** Default budget = 200000 * 0.04 = 8000. JSON includes `totals` with aggregate counts and `budget_percent`. JSON includes `context` object with model/context_window/budget_ceiling/source. Exit 0 when under 70%, exit 1 when 70-90%, exit 2 when over 90%.
-- **Implement:** Compute totals from file array, compute budget_percent, determine status and exit code, add context object.
-- **Files:** `scripts/context-budget.sh`, `tests/context-budget.bats`
-- **Verify:** bats tests pass
+### Step 3: Full operations taxonomy — all 17 local resolves (AC-1)
+- **Test:** For each of the 17 operations (`backlog.{list,create,prioritize,get}`, `spec.{read,write,list,activate,complete}`, `plan.{read,write}`, `checkpoint.{read,write}`, `status.{get,update}`, `pr.{create,list}`, `review.run`), verify `operations.sh resolve <op>` with no config returns JSON with `"provider":"local","mechanism":"bash"` and a non-empty `invocation.command`. Exit 0.
+- **Implement:** Add local adapter definitions for all 17 operations. Map each to the corresponding `docs-check.sh` subcommand or file path. Operations without a current local implementation get placeholder commands.
+- **Files:** `scripts/operations.sh`, `tests/operations.bats`
+- **Verify:** `bats tests/operations.bats`
 
-### Step 4: --context-window, --model, --budget flags (AC-3, AC-6, AC-11)
-- **Test:** `--context-window 1000000` sets budget to 40000. `--model claude-opus-4-6[1m]` sets window to 1000000. `--budget 5000` overrides computed ceiling. Unknown model warns on stderr and defaults to 200K. Flag precedence: budget > context-window > model > default.
-- **Implement:** Model lookup via case statement (bash 3 compatible), flag precedence logic, source tracking.
-- **Files:** `scripts/context-budget.sh`, `tests/context-budget.bats`
-- **Verify:** bats tests pass
+### Step 4: Config parsing — MCP resolve for backlog.list (AC-2)
+- **Test:** Given fixture `scaffold.json` with `integrations.routing.backlog: "linear"` and `providers.linear: {mechanism: "mcp", project: "Test", team: "TestTeam"}`, `operations.sh resolve backlog.list` outputs JSON with `"provider":"linear","mechanism":"mcp"`, invocation containing `"tool":"mcp__claude_ai_Linear__list_issues"` and params from provider config, and a contract with output fields.
+- **Implement:** Config-aware routing: read `integrations.routing.<group>` via jq, look up provider in `integrations.providers`, build MCP adapter response with tool name, params, and output contract. Define Linear MCP adapter for `backlog.list`.
+- **Files:** `scripts/operations.sh`, `tests/operations.bats`
+- **Verify:** `bats tests/operations.bats`
 
-### Step 5: Global CLAUDE.md and missing file handling (AC-7, AC-8)
-- **Test:** When global CLAUDE.md exists, it appears in files array. When it doesn't exist, it's silently skipped. When project CLAUDE.md is missing, a warning entry appears.
-- **Implement:** Check `~/.claude/CLAUDE.md` existence, add to file list if present. Mark project CLAUDE.md as expected; report warning if missing.
-- **Files:** `scripts/context-budget.sh`, `tests/context-budget.bats`
-- **Verify:** bats tests pass
+### Step 5: Missing provider error + partial routing fallback (AC-3, AC-4)
+- **Test 1:** Fixture with `routing.backlog: "linear"` but no `providers.linear` exits 1 with stderr `ERROR: provider "linear" is configured for backlog but has no entry in integrations.providers`.
+- **Test 2:** Fixture with only `routing.backlog: "linear"` (no other routing entries), `operations.sh resolve spec.read` returns local adapter, `operations.sh resolve backlog.list` returns linear MCP adapter.
+- **Implement:** Provider existence validation before building MCP response. Fallback logic: missing routing entry for a group defaults to local.
+- **Files:** `scripts/operations.sh`, `tests/operations.bats`
+- **Verify:** `bats tests/operations.bats`
 
-### Step 6: CLAUDE.md line count warning (AC-10)
-- **Test:** JSON includes `warnings` array. When CLAUDE.md exceeds 80 lines, a warning entry appears with the line count.
-- **Implement:** Check line count of project CLAUDE.md, add warning to output if > 80.
-- **Files:** `scripts/context-budget.sh`, `tests/context-budget.bats`
-- **Verify:** bats tests pass
+### Step 6: Local adapter schema compatibility (AC-5)
+- **Test:** Run `operations.sh resolve backlog.list` (local mode), extract the command from invocation, execute it against a fixture `docs/specs/` directory with test spec files. Compare the output schema against direct `docs-check.sh list-specs` run on the same directory. Both produce arrays of `{feature_id, status, created}`.
+- **Implement:** Ensure the local `backlog.list` command passes `--project-dir` or docs-dir argument so it targets the correct specs directory. Adjust command string if needed.
+- **Files:** `tests/operations.bats`
+- **Verify:** `bats tests/operations.bats`
 
-### Step 7: Text output mode (AC-4)
-- **Test:** `--text` outputs table with File/Lines/Tokens/% columns, total row, status line (HEALTHY/WARNING/CRITICAL), and context window info.
-- **Implement:** Format file array as aligned table, compute and display status.
-- **Files:** `scripts/context-budget.sh`, `tests/context-budget.bats`
-- **Verify:** bats tests pass
+### Step 7: backlog.get with Linear MCP routing + contract mapping (AC-6)
+- **Test:** Given linear routing config, `operations.sh resolve backlog.get test-id` outputs JSON with `"mechanism":"mcp"`, `"tool":"mcp__claude_ai_Linear__get_issue"`, params including the id argument, and a contract mapping Linear fields (`identifier`, `title`, `state.name`, `priority`) to scaffold fields (`id`, `title`, `status`, `priority`).
+- **Implement:** Add `backlog.get` MCP adapter with parameterized id from the resolve argument. Define field mapping in the contract object.
+- **Files:** `scripts/operations.sh`, `tests/operations.bats`
+- **Verify:** `bats tests/operations.bats`
 
-### Step 8: Scaffold-audit integration + docs updates (AC-9)
-- **Test:** Verify scaffold-audit command references context-budget.sh.
-- **Implement:** Add context budget check step to scaffold-audit command. Update CLAUDE.md command reference and GUIDE.md tables.
-- **Files:** `.claude/commands/scaffold-audit.md`, `CLAUDE.md`, `GUIDE.md`
-- **Verify:** bats tests pass, full test suite passes
+### Step 8: Extensible mechanism field (AC-12)
+- **Test:** Given fixture with `providers.custom: {mechanism: "webhook", url: "https://example.com"}` and `routing.backlog: "custom"`, `operations.sh resolve backlog.list` outputs JSON with `"mechanism":"webhook"`. The script does not reject the unknown mechanism value.
+- **Implement:** Ensure mechanism field is read from provider config and passed through as-is. No validation against a closed set. For non-`mcp` external providers, output a generic invocation with the provider config as params.
+- **Files:** `scripts/operations.sh`, `tests/operations.bats`
+- **Verify:** `bats tests/operations.bats`
+
+### Step 9: scaffold.json integrations schema + scaffold-sync tracking (AC-8)
+- **Test 1:** `.claude/scaffold.json` with both `features` and `integrations` keys passes `jq empty`.
+- **Test 2:** `grep -q 'scaffold.json' scripts/scaffold-sync.sh` confirms `.claude/scaffold.json` is in TRACKED_PATTERNS.
+- **Implement:** Update `.claude/scaffold.json` to include empty `integrations` key (no routing, no providers — local-only default). Add `.claude/scaffold.json` to `TRACKED_PATTERNS` array in `scaffold-sync.sh`.
+- **Files:** `.claude/scaffold.json`, `scripts/scaffold-sync.sh`, `tests/operations.bats`
+- **Verify:** `bats tests/operations.bats && bats tests/scaffold-sync.bats`
+
+### Step 10: Wire /catchup command (AC-7)
+- **Test:** `grep -q "operations.sh resolve backlog.list" .claude/commands/catchup.md` returns 0.
+- **Implement:** Update step 0c in `.claude/commands/catchup.md`: call `operations.sh resolve backlog.list`, check the mechanism in the JSON response, if `bash` execute the command directly, if `mcp` instruct Claude to call the specified MCP tool with the given params.
+- **Files:** `.claude/commands/catchup.md`
+- **Verify:** `grep -q "operations.sh resolve backlog.list" .claude/commands/catchup.md`
+
+### Step 11: Documentation update (CLAUDE.md, GUIDE.md)
+- **Test:** `grep -q "operations.sh" CLAUDE.md && grep -q "operations.sh" GUIDE.md`
+- **Implement:** Add `operations.sh resolve <operation>` to CLAUDE.md commands block (node section, above `HUB-MANAGED-START`). Add to GUIDE.md Command Reference table (hub section). Add integrations config schema documentation to GUIDE.md Configuration Layers section.
+- **Files:** `CLAUDE.md`, `GUIDE.md`
+- **Verify:** Full test suite passes: `bats tests/`
 
 ## Risks
 
-- **macOS wc padding:** `wc` on macOS pads output with spaces. Use `awk` or `tr -d ' '` to normalize.
-- **Bash 3 on macOS:** macOS ships bash 3 which lacks associative arrays. Use `case` statement for model lookup instead.
-- **Test isolation:** Tests need fixture directories with known file content to get deterministic token counts. Use bats `setup`/`teardown` with temp dirs.
+- **macOS bash 3:** macOS ships bash 3 which lacks associative arrays. Use `case` statements for operation registry and adapter lookups instead.
+- **Config schema evolution:** The `scaffold.json` integrations schema is new and will evolve. Use jq's `// "default"` fallback everywhere — unknown keys ignored, missing keys get defaults.
+- **MCP tool name accuracy:** Linear MCP tool names must match what Claude Code exposes. Verify against `settings.local.json` allowlist entries.
+- **Local adapter fidelity:** The `backlog.list` local command must produce output identical to `docs-check.sh list-specs`. Step 6 directly validates this with schema comparison.
 
 ## Definition of Done
 
 - [ ] All 12 acceptance criteria from spec pass
-- [ ] All existing tests still pass (256 baseline)
+- [ ] All existing tests still pass
+- [ ] `operations.sh` follows established script pattern (set -euo pipefail, subcommand dispatch, JSON output)
 - [ ] Code reviewed (run /review)
 
 <!-- NODE-SPECIFIC-START -->

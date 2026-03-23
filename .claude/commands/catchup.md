@@ -2,7 +2,7 @@ Read the current state of the project to resume work after a context reset.
 
 0a. If `scripts/docs-check.sh` exists, run `scripts/docs-check.sh validate` and report any staleness or mismatches before reading documents.
 0b. If `scripts/docs-check.sh` exists, run `scripts/docs-check.sh recommend` and display the recommended next action.
-0c. If `scripts/docs-check.sh` exists, run `scripts/docs-check.sh list-specs` to see all specs in the backlog. Report counts by status (Draft, Ready, In Progress, Complete).
+0c. Run `scripts/operations.sh resolve backlog.list` to get routing info. If the mechanism is `bash`, execute the command from `invocation.command` (e.g., `scripts/docs-check.sh list-specs`). If the mechanism is `mcp`, call the specified MCP tool with the given params. Report counts by status (Draft, Ready, In Progress, Complete).
 0d. Check the current branch name (`git branch --show-current`). Report whether it follows the `claude/<type>/<name>` naming convention.
 
 1. Read `docs/checkpoint.md` if it exists — this contains the last session's progress and next steps.

@@ -1,74 +1,68 @@
-<!-- Active checkpoint — overwritten each session. See docs/templates/checkpoint.md for format guide. -->
-
 # Checkpoint
 
-> Feature: permissions-audit
-> Last updated: 1774234144
-> Plan hash: 54053eab
-> Session objective: Build permissions-audit system (ZWR-11), first full use of activate → branch → TDD → /commit → /pr lifecycle
+> Feature: tool-integration
+> Last updated: 1774309949
+> Plan hash: 2fce56f9
+> Session objective: Implement BTS-19 (Modular Tool Integration Layer) — all 11 plan steps
 
 ## Accomplished
 
-### Permissions security audit (ZWR-11, complete)
-- **All 11 ACs implemented** across 10 TDD steps, 34 new tests (256 total), all passing.
-- `scripts/permissions-audit.sh`: `check` (JSON + `--text` + `--verbose`) and `init` commands.
-- 10 danger pattern categories: broad-wildcard, compound-operator, redirect, env-prefix, find-exec, loop-primitive, arbitrary-exec, file-mutation.
-- Log-based REVIEWED/UNREVIEWED classification with schema validation.
-- Error handling: missing log (NOTE + exit 1), invalid JSON (ERROR + exit 2).
-- Deduplication across `settings.json` + `settings.local.json` (AC-10).
-- `/scaffold-audit` integration (AC-11).
-- Non-Bash entries skip danger pattern matching (review fix).
-- REVIEWED entries include risk/rationale in verbose output (review fix, AC-5 compliance).
-- PR #1 merged, spec marked Complete, ZWR-11 Done in Linear.
+### BTS-19 implementation complete (all 12 ACs pass)
+- **Steps 1-11** of TDD plan executed in strict red-green-refactor order
+- `scripts/operations.sh` — 17 operations, local bash adapters, Linear MCP adapters, config-aware routing
+- `tests/operations.bats` — 31 tests covering all 12 acceptance criteria
+- `/catchup` step 0c wired to `operations.sh resolve backlog.list`
+- `scaffold.json` gets `integrations` schema key, tracked in `scaffold-sync.sh` TRACKED_PATTERNS
+- CLAUDE.md and GUIDE.md updated with operations.sh documentation
 
-### Activate bug fix
-- `docs-check.sh activate` was copying spec *before* updating status → `docs/spec.md` got stale status. Fixed: update status first, then copy.
+### Code review + fixes
+- Code-reviewer agent found 2 blockers: printf-based JSON injection (B-1), hyphenated provider names crash (B-2)
+- Fixed: all JSON construction now uses `jq -n --arg`, all jq queries use bracket notation with `--arg`
+- Also fixed: `backlog.get` local adapter substitutes real ID, `review.run` stub returns valid JSON
 
-### Backlog item created
-- **ZWR-22** Docs directory strategy — rethink single-file spec/plan/checkpoint approach. Medium priority, needs-research. Linked to ZWR-19 (tool integration) and ZWR-20 (workflow engine).
+### Functional verification
+- Ran all three modes live: local (no config), Linear MCP (with routing), error paths
+- All produce correct JSON output
 
-### Linear housekeeping
-- ZWR-10 marked Done (was stuck on "In Progress").
-
-### Lifecycle observation
-- First real use of `activate` → branch → TDD → `/commit` → `/pr` flow. Worked smoothly. Found and fixed the activate status bug during the run.
-- Option A chosen for Linear's role: Linear owns backlog priority, git owns everything else. Manual status updates until ZWR-19.
+### PR and backlog
+- Draft PR: https://github.com/goldhaxx/claude-code-scaffold/pull/3
+- BTS-24 created: scaffold.json node-override strategy — blocks adding Linear config to hub
 
 ## Current State
 
-- **Branch:** main
-- **Tests:** 256/256 passing
-- **Uncommitted changes:** This checkpoint + specs/permissions-audit.md status
+- **Branch:** `claude/feat/tool-integration`
+- **Tests:** 332/332 passing
+- **Uncommitted changes:** This checkpoint
 - **Build status:** Clean
-- **Docs lifecycle:** permissions-audit spec Complete, plan/checkpoint on main
+- **PR:** Draft #3 open
 
 ## Blocked On
 
-- Nothing
+- Nothing (implementation complete, PR open for review)
 
 ## Next Steps
 
-### Next feature: ZWR-12 (Context budget measurement)
-- Needs spec — no spec written yet.
-- Script to count tokens in always-loaded scaffold files, report budget utilization.
-- Should follow the full lifecycle: spec → activate → plan → TDD → /pr.
+1. Review and merge PR #3
+2. Mark BTS-19 complete (`scripts/docs-check.sh complete tool-integration`)
+3. Pick next backlog item — candidates:
+   - BTS-24: scaffold.json node-override strategy (Medium, needs-research) — unblocks adding Linear routing to hub
+   - BTS-23: CLAUDE.md content review — trim to 80-line budget (Medium, needs-spec)
+   - BTS-22: Docs directory strategy (Medium, needs-research)
 
-### Backlog (in Linear, priority order)
-- **ZWR-12** Context budget measurement (High, no spec)
-- **ZWR-19** Modular tool integration layer (Medium, needs-research)
-- **ZWR-22** Docs directory strategy (Medium, needs-research)
-- **ZWR-20** Workflow engine / deterministic state machine (Low, needs-research)
-- **ZWR-21** GitHub Agentic Workflows integration (Low, needs-research)
+## Context Notes
+
+- `operations.sh resolve` returns informational JSON — it describes what to call but doesn't execute. An `exec` subcommand is a natural Phase 2 addition (flagged as C-4 in review).
+- `scaffold.json` has no section-merge support (JSON can't have delimiters). BTS-24 addresses this.
+- macOS bash 3 constraint respected: no associative arrays, case statements for registry.
+- The audit-session finding (jq in tests) is a false positive — `jq empty` in a test file is intentional validation, not stochastic improvisation.
 
 ## Determinism Review
 
-- **operations_reviewed:** 10
-- **candidates_found:** 0
-- All implementation followed TDD (red → green → refactor → commit pattern).
-- Script is fully deterministic (jq parsing, pattern matching, file I/O).
-- No manual `cp`, `jq`, `shasum`, or `git -C` improvised outside scripts.
-- Linear updates used MCP tools (deterministic API calls).
-- Spec activation used `docs-check.sh activate` (deterministic script).
-- Review delegated to code-reviewer sub-agent (isolated context).
-- Security audit run via script (`security-audit.sh --files-only`).
-- No candidates this session.
+- **operations_reviewed:** 12
+- **candidates_found:** 1
+- **`/catchup` dispatch logic (C-4):** Claude now reads `operations.sh resolve` output and conditionally dispatches (bash → execute, mcp → call tool). This conditional logic could be a deterministic `operations.sh exec backlog.list` subcommand that resolves AND executes in one call. Impact: medium. Deferred to Phase 2.
+- All JSON construction uses `jq -n` (deterministic). No manual cp, shasum, or git -C improvised. All file operations used dedicated tools.
+
+<!-- NODE-SPECIFIC-START -->
+<!-- Add project-specific content below this line. -->
+<!-- Hub content above is updated via /scaffold-pull. -->

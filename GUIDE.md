@@ -692,6 +692,12 @@ When adding a new rule, command, agent, skill, or template to the scaffold, **al
 | `context-budget.sh check --context-window N` | Set context window size directly (overrides `--model`) |
 | `context-budget.sh check --budget N` | Override budget ceiling directly (overrides `--context-window` and `--model`) |
 
+### Operations Routing Scripts
+
+| Command | What it does |
+|---------|-------------|
+| `operations.sh resolve <operation> [--project-dir DIR]` | Resolve operation to provider/mechanism/invocation JSON based on `.claude/scaffold.json` routing config. Returns local bash adapter when no config exists. |
+
 ### Multi-Spec Lifecycle Scripts
 
 | Command | What it does |

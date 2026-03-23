@@ -2,6 +2,22 @@
 
 A development scaffold for [Claude Code](https://docs.anthropic.com/en/docs/claude-code) that makes AI-assisted development reliable and repeatable. Spec-driven, test-first, with bi-directional sync between a central hub and any number of downstream projects.
 
+## What This Is
+
+This scaffold bootstraps any code repository — new or existing — with the configuration, scripts, and workflow structure needed to get the most out of Claude Code. It is not a framework or a library. It is a set of files that drop into your project and teach Claude Code how to work effectively: when to write tests, how to manage context, where to store specs and plans, and what to enforce deterministically vs. leave to judgment.
+
+**Who it's for:** Developers using Claude Code who want structured, repeatable AI-assisted development. You might be starting a greenfield project with zero lines of code, or retrofitting a mature codebase with tens of thousands of lines. Either way, the scaffold provides the same foundation: spec-driven development, test-first verification, and context management that respects how transformers actually work.
+
+**How it grows with you:** The scaffold works out-of-the-box with zero external dependencies — just local files and bash scripts. As you get comfortable, you can progressively unlock more capabilities:
+
+1. **Start here** — Local files + bash scripts. Specs in markdown, backlog in memory, plans in `docs/`. Everything works offline, no accounts needed.
+2. **Add project management** — Connect Linear, GitHub Issues, or Jira via MCP. The scaffold routes backlog operations to your tool of choice.
+3. **Add documentation tools** — Connect Notion or other MCP servers. Specs and plans can live wherever your team already works.
+4. **Add CI/CD automation** — Use the Claude Agent SDK to run scaffold workflows programmatically in pipelines. GitHub Agentic Workflows can trigger scaffold-aware agents on events.
+5. **Distribute to your team** — Package the scaffold as a Claude Code plugin for one-command installation across projects.
+
+Each level is optional. The scaffold never requires external tools — it adapts to what you bring.
+
 **Why this exists:** Transformer attention is zero-sum. Every token competes for weight. Performance degrades as context fills — starting at just 3,000 tokens. This scaffold manages that constraint through specification-driven development, test-driven verification, and hierarchical context management.
 
 ## Features
@@ -9,6 +25,7 @@ A development scaffold for [Claude Code](https://docs.anthropic.com/en/docs/clau
 - **Spec-first workflow** — acceptance criteria before code, every time
 - **TDD enforcement** — red-green-refactor cycle with automatic verification
 - **Context management** — hierarchical loading, aggressive clearing, checkpoint/resume
+- **Modular tool integration** — pluggable providers for backlog, specs, plans, and more. Local files by default; MCP, CLIs, and APIs when you're ready
 - **Bi-directional sync** — hub/node architecture with section-merge, conflict resolution, lockfile tracking
 - **Security audit** — deterministic PII/secrets scanner, pre-push hook, integrated into reviews
 - **Universal linting** — config-driven syntax validation via `.claude/lint.json`, extensible to any language
