@@ -670,7 +670,7 @@ When adding a new rule, command, agent, skill, or template to the scaffold, **al
 
 | Command | What it does |
 |---------|-------------|
-| `/scaffold-audit` | Analyzes scaffold for stochastic-to-deterministic improvement opportunities. Calls `manifest-check.sh check` for deterministic README verification. Includes permissions audit when `permissions-audit.sh` exists. |
+| `/scaffold-audit` | Analyzes scaffold for stochastic-to-deterministic improvement opportunities. Calls `manifest-check.sh check` for deterministic README verification. Includes permissions audit and context budget check. |
 | `/fix-certs` | Diagnoses and repairs Cloudflare WARP TLS certificate issues |
 | `/init` | Initializes a new project from the scaffold (global command) |
 
@@ -681,6 +681,16 @@ When adding a new rule, command, agent, skill, or template to the scaffold, **al
 | `permissions-audit.sh check [--settings-dir DIR] [--log FILE]` | Classify all Bash permission entries as DANGER/UNREVIEWED/REVIEWED → JSON |
 | `permissions-audit.sh check --text [--verbose]` | Human-readable grouped report (DANGER, UNREVIEWED, optionally REVIEWED) |
 | `permissions-audit.sh init [--settings-dir DIR] [--log FILE]` | Create/update decision log with stubs for unreviewed entries |
+
+### Context Budget Scripts
+
+| Command | What it does |
+|---------|-------------|
+| `context-budget.sh check` | Measure token cost of always-loaded scaffold files → JSON |
+| `context-budget.sh check --text` | Human-readable table with per-file tokens and budget status |
+| `context-budget.sh check --model MODEL_ID` | Set context window from known model (e.g., `claude-opus-4-6[1m]` → 1M) |
+| `context-budget.sh check --context-window N` | Set context window size directly (overrides `--model`) |
+| `context-budget.sh check --budget N` | Override budget ceiling directly (overrides `--context-window` and `--model`) |
 
 ### Multi-Spec Lifecycle Scripts
 
@@ -971,6 +981,7 @@ Every scaffold feature traces back to transformer architecture research. This ta
 | Docs lifecycle linking | Hash-chain validation between spec→plan→checkpoint. Metadata changes (status, timestamps) don't invalidate hashes — only body content changes do. State machine maps document state to next action deterministically. `/catchup` surfaces staleness before reading content, preventing wasted sessions on outdated context. |
 | Multi-spec backlog | Specs live in `docs/specs/` with lifecycle states. One active spec at a time (enforced by `activate`). Branch = isolation boundary. Git already solves parallel workstreams — the scaffold just formalizes the mapping. |
 | Branch-based feature lifecycle | Branch naming convention (`claude/<type>/<name>`) enables programmatic identification. Draft PRs with mandatory human review (universal consensus across 12 teams). `/commit` and `/pr` commands enforce discipline without manual git orchestration. |
+| Context budget measurement | Token estimation (chars/4) for always-loaded files with model-aware budget ceilings. Makes the attention cost of scaffold configuration visible. Three-tier thresholds (HEALTHY/WARNING/CRITICAL) surface problems before they degrade performance. |
 
 ---
 

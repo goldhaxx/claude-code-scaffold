@@ -29,7 +29,7 @@ Each criterion is independently testable. Binary pass/fail.
 - [ ] **AC-9:** `/scaffold-audit` integration — the scaffold-audit command includes context budget status in its report, calling `context-budget.sh check`.
 - [ ] **AC-10:** CLAUDE.md line count is reported separately with a threshold warning if it exceeds 80 lines (the research-backed maximum from SCAFFOLD_FRAMEWORK.md).
 - [ ] **AC-11:** `--model MODEL_ID` flag maps known models to their context window size. Supported models: `claude-opus-4-6[1m]` → 1000000, `claude-opus-4-6` → 200000, `claude-sonnet-4-6` → 200000, `claude-haiku-4-5` → 200000. Unknown models default to 200000 with a warning on stderr.
-- [ ] **AC-12:** The JSON output includes a `context` object: `{model: "<model_id or null>", context_window: <tokens>, budget_ceiling: <tokens>, source: "flag|model|default"}` so the user knows how the budget was determined.
+- [ ] **AC-12:** The JSON output includes a `context` object: `{model: "<model_id or null>", context_window: <tokens>, budget_ceiling: <tokens>, source: "flag|model|context-window|default"}` so the user knows how the budget was determined.
 
 ## Affected Files
 

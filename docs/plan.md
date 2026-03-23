@@ -1,88 +1,76 @@
-# Implementation Plan: Permissions Security Audit
+# Implementation Plan: Context Budget Measurement
 
-> Feature: permissions-audit
-> Created: 1774230545
-> Spec hash: 36e70665
+> Feature: context-budget
+> Created: 1774235150
+> Spec hash: 9889e126
 > Based on: docs/spec.md
 
 ## Objective
 
-Build a deterministic permissions audit script that classifies every Bash permission entry as DANGER/UNREVIEWED/REVIEWED, with a tracked decision log for rationale.
+Build a deterministic bash script that measures token cost of always-loaded scaffold files and reports budget utilization with model-aware thresholds.
 
 ## Sequence
 
-### Step 1: Script skeleton + entry parsing (AC-1 partial)
-- **Test:** `permissions-audit.sh check` with a fixture `settings.json` containing 3 allow entries outputs valid JSON with `entries` array, each having `permission`, `source`, `status` fields, plus `danger`, `unreviewed`, `reviewed` counts.
-- **Implement:** Create `scripts/permissions-audit.sh` following `security-audit.sh` structure — `set -euo pipefail`, argument dispatch (`check` subcommand), parse `permissions.allow[]` and `permissions.deny[]` via jq, assemble JSON output.
-- **Files:** `scripts/permissions-audit.sh`, `tests/permissions-audit.bats`
-- **Verify:** `bats tests/permissions-audit.bats`
+### Step 1: Script skeleton with usage and arg parsing
+- **Test:** `context-budget.sh` with no args prints usage and exits 2. `context-budget.sh check` exits 0 with valid JSON.
+- **Implement:** Script boilerplate: `set -euo pipefail`, usage function, argument parsing loop (check command, --text, --budget, --context-window, --model flags), dispatch.
+- **Files:** `scripts/context-budget.sh`, `tests/context-budget.bats`
+- **Verify:** bats tests pass
 
-### Step 2: Parse both settings files + deduplication (AC-1 complete, AC-10)
-- **Test:** Fixture with entries in both `settings.json` and `settings.local.json`. Same entry in both → one entry with `"source": ["settings.json", "settings.local.json"]`. Unique entries report their single source. Missing `settings.local.json` → no error, only `settings.json` parsed.
-- **Implement:** Add `settings.local.json` parsing. Merge by permission string, collecting sources into arrays. Count unique entries for totals.
-- **Files:** `scripts/permissions-audit.sh`, `tests/permissions-audit.bats`
-- **Verify:** `bats tests/permissions-audit.bats`
+### Step 2: File discovery and per-file measurement (AC-1, AC-2)
+- **Test:** `check` outputs JSON with `files` array containing entries for project CLAUDE.md, rules/*.md, settings.json, .claudeignore. Each entry has `path`, `lines`, `chars`, `estimated_tokens`. Token estimate = ceil(chars/4).
+- **Implement:** Glob for always-loaded files, `wc -c` and `wc -l` for each, compute tokens, build JSON array.
+- **Files:** `scripts/context-budget.sh`, `tests/context-budget.bats`
+- **Verify:** bats tests pass
 
-### Step 3: Dangerous pattern detection (AC-3)
-- **Test:** Fixture with entries matching each dangerous pattern category: broad wildcard (`echo:*`), compound operator (`cmd;cmd`), env-prefix (`VAR=val cmd`), redirect (`> file`), `find -exec`, loop primitives (`for `, `done`), file mutation (`git branch -D`), arbitrary execution (`xargs -I`). All classified as `DANGER`.
-- **Implement:** Add `DANGER_PATTERNS` array with regex/substring patterns. Classify each entry against patterns before log lookup. DANGER status includes which pattern matched.
-- **Files:** `scripts/permissions-audit.sh`, `tests/permissions-audit.bats`
-- **Verify:** `bats tests/permissions-audit.bats`
+### Step 3: Budget computation and exit codes (AC-3, AC-5, AC-12)
+- **Test:** Default budget = 200000 * 0.04 = 8000. JSON includes `totals` with aggregate counts and `budget_percent`. JSON includes `context` object with model/context_window/budget_ceiling/source. Exit 0 when under 70%, exit 1 when 70-90%, exit 2 when over 90%.
+- **Implement:** Compute totals from file array, compute budget_percent, determine status and exit code, add context object.
+- **Files:** `scripts/context-budget.sh`, `tests/context-budget.bats`
+- **Verify:** bats tests pass
 
-### Step 4: Log-based status classification (AC-4, AC-6)
-- **Test:** Fixture log with: (a) fully-reviewed entry (all fields non-empty, non-TODO) → REVIEWED; (b) stub entry (rationale: "TODO") → UNREVIEWED; (c) entry not in log → UNREVIEWED. Log follows schema: `{"entries": {"<permission>": {"risk", "rationale", "efficiency_justification", "reviewer", "reviewed_epoch"}}}`.
-- **Implement:** Read `.claude/permissions-log.json`, look up each non-DANGER entry by exact key match, check all required fields are present, non-empty, and non-"TODO".
-- **Files:** `scripts/permissions-audit.sh`, `tests/permissions-audit.bats`
-- **Verify:** `bats tests/permissions-audit.bats`
+### Step 4: --context-window, --model, --budget flags (AC-3, AC-6, AC-11)
+- **Test:** `--context-window 1000000` sets budget to 40000. `--model claude-opus-4-6[1m]` sets window to 1000000. `--budget 5000` overrides computed ceiling. Unknown model warns on stderr and defaults to 200K. Flag precedence: budget > context-window > model > default.
+- **Implement:** Model lookup via case statement (bash 3 compatible), flag precedence logic, source tracking.
+- **Files:** `scripts/context-budget.sh`, `tests/context-budget.bats`
+- **Verify:** bats tests pass
 
-### Step 5: Exit codes (AC-2)
-- **Test:** Three fixture scenarios: (a) all REVIEWED, no DANGER → exit 0; (b) UNREVIEWED exists, no DANGER → exit 1; (c) DANGER exists (even with some REVIEWED) → exit 2.
-- **Implement:** Exit code logic after classification: DANGER present → 2; else UNREVIEWED present → 1; else → 0.
-- **Files:** `scripts/permissions-audit.sh`, `tests/permissions-audit.bats`
-- **Verify:** `bats tests/permissions-audit.bats`
+### Step 5: Global CLAUDE.md and missing file handling (AC-7, AC-8)
+- **Test:** When global CLAUDE.md exists, it appears in files array. When it doesn't exist, it's silently skipped. When project CLAUDE.md is missing, a warning entry appears.
+- **Implement:** Check `~/.claude/CLAUDE.md` existence, add to file list if present. Mark project CLAUDE.md as expected; report warning if missing.
+- **Files:** `scripts/context-budget.sh`, `tests/context-budget.bats`
+- **Verify:** bats tests pass
 
-### Step 6: Error handling — missing and invalid log (AC-8, AC-9)
-- **Test:** (a) No log file → all entries UNREVIEWED, exit 1, stderr contains "NOTE: permissions-log.json not found — run permissions-audit.sh init". (b) Invalid JSON log → stderr "ERROR: permissions-log.json is not valid JSON", exit 2.
-- **Implement:** Add log file existence check with stderr note. Add `jq empty` validation before parsing. Invalid JSON exits 2 immediately.
-- **Files:** `scripts/permissions-audit.sh`, `tests/permissions-audit.bats`
-- **Verify:** `bats tests/permissions-audit.bats`
+### Step 6: CLAUDE.md line count warning (AC-10)
+- **Test:** JSON includes `warnings` array. When CLAUDE.md exceeds 80 lines, a warning entry appears with the line count.
+- **Implement:** Check line count of project CLAUDE.md, add warning to output if > 80.
+- **Files:** `scripts/context-budget.sh`, `tests/context-budget.bats`
+- **Verify:** bats tests pass
 
-### Step 7: Text output mode (AC-5)
-- **Test:** `check --text` outputs grouped report: DANGER first (with matched pattern name), then UNREVIEWED, then REVIEWED. REVIEWED suppressed unless `--verbose` also passed.
-- **Implement:** Add `--text` and `--verbose` flags. Group and format entries by status category.
-- **Files:** `scripts/permissions-audit.sh`, `tests/permissions-audit.bats`
-- **Verify:** `bats tests/permissions-audit.bats`
+### Step 7: Text output mode (AC-4)
+- **Test:** `--text` outputs table with File/Lines/Tokens/% columns, total row, status line (HEALTHY/WARNING/CRITICAL), and context window info.
+- **Implement:** Format file array as aligned table, compute and display status.
+- **Files:** `scripts/context-budget.sh`, `tests/context-budget.bats`
+- **Verify:** bats tests pass
 
-### Step 8: Init command (AC-7)
-- **Test:** (a) `init` with no existing log → creates log with all current entries as stubs (risk: "", rationale: "TODO"). (b) `init` with existing reviewed entries → preserves them, adds stubs for new entries only. (c) `init` twice → idempotent, no reviewed data lost.
-- **Implement:** Add `init` subcommand. Read both settings files, diff against existing log, create/merge stubs. Use jq for merge.
-- **Files:** `scripts/permissions-audit.sh`, `tests/permissions-audit.bats`
-- **Verify:** `bats tests/permissions-audit.bats`
-
-### Step 9: Scaffold-audit integration (AC-11)
-- **Test:** N/A (command file, not scriptable). Manual review.
-- **Implement:** Add a "Permissions" step to `.claude/commands/scaffold-audit.md`: run `permissions-audit.sh check`, if exit non-zero include danger/unreviewed counts and all DANGER permission strings in the audit report.
-- **Files:** `.claude/commands/scaffold-audit.md`
-- **Verify:** Read command file, confirm step is present and correct.
-
-### Step 10: Documentation + settings update
-- **Test:** N/A (documentation). Full suite run for regression.
-- **Implement:** Add `permissions-audit.sh` commands to CLAUDE.md commands block. Add to GUIDE.md utility commands table. Add `Bash(scripts/permissions-audit.sh:*)` to settings.json allow list.
-- **Files:** `CLAUDE.md`, `GUIDE.md`, `.claude/settings.json`
-- **Verify:** `bash -n scripts/permissions-audit.sh`, `bats tests/` (full suite)
+### Step 8: Scaffold-audit integration + docs updates (AC-9)
+- **Test:** Verify scaffold-audit command references context-budget.sh.
+- **Implement:** Add context budget check step to scaffold-audit command. Update CLAUDE.md command reference and GUIDE.md tables.
+- **Files:** `.claude/commands/scaffold-audit.md`, `CLAUDE.md`, `GUIDE.md`
+- **Verify:** bats tests pass, full test suite passes
 
 ## Risks
 
-- **Pattern false positives:** Entries like `Bash(bash -n scripts/foo.sh)` contain "bash" but aren't dangerous — the pattern must match `bash:*` (broad wildcard), not `bash -n` (specific syntax check). Need careful regex boundaries.
-- **jq pipeline complexity:** Multiple jq merges for dedup + log lookup. Mitigation: keep each jq expression simple and tested independently.
-- **settings.local.json absence:** Won't exist in downstream nodes or fresh clones. Script must skip gracefully — already planned in Step 2.
-- **Real settings validation:** Must test against the actual `settings.json` + `settings.local.json` to catch pattern edge cases before shipping. Run against real files as a final sanity check.
+- **macOS wc padding:** `wc` on macOS pads output with spaces. Use `awk` or `tr -d ' '` to normalize.
+- **Bash 3 on macOS:** macOS ships bash 3 which lacks associative arrays. Use `case` statement for model lookup instead.
+- **Test isolation:** Tests need fixture directories with known file content to get deterministic token counts. Use bats `setup`/`teardown` with temp dirs.
 
 ## Definition of Done
 
-- [ ] All 11 acceptance criteria from spec pass
-- [ ] All existing tests still pass (222 + new)
-- [ ] No syntax errors (`bash -n scripts/permissions-audit.sh`)
+- [ ] All 12 acceptance criteria from spec pass
+- [ ] All existing tests still pass (256 baseline)
 - [ ] Code reviewed (run /review)
-- [ ] GUIDE.md and CLAUDE.md updated
-- [ ] Linear issue ZWR-11 status updated
+
+<!-- NODE-SPECIFIC-START -->
+<!-- Add project-specific content below this line. -->
+<!-- Hub content above is updated via /scaffold-pull. -->

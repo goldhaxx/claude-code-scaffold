@@ -16,6 +16,9 @@ bats tests/feature-lifecycle.bats    # Run feature lifecycle tests only
 bash scripts/security-audit.sh       # Run PII/secrets scan
 bash scripts/permissions-audit.sh check --settings-dir .claude  # Audit permissions
 bash scripts/permissions-audit.sh init --settings-dir .claude   # Init decision log
+bash scripts/context-budget.sh check                            # Context budget (JSON)
+bash scripts/context-budget.sh check --text                     # Context budget (human)
+bash scripts/context-budget.sh check --model claude-opus-4-6[1m] --text  # With model
 bash scripts/docs-check.sh list-specs    # List specs in backlog
 bash scripts/docs-check.sh activate <id> # Activate a spec → create branch
 bash scripts/docs-check.sh complete <id> # Mark spec complete
