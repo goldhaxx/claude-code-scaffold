@@ -194,6 +194,14 @@ cmd_check() {
     perm=$(echo "$all_entries" | jq -r ".[$i].permission")
     sources=$(echo "$all_entries" | jq -c ".[$i].source")
 
+    # Skip non-Bash entries — out of scope per spec
+    if [[ "$perm" != Bash\(* ]]; then
+      unreviewed_count=$((unreviewed_count + 1))
+      classified=$(echo "$classified" | jq --arg p "$perm" --argjson s "$sources" \
+        '. + [{permission: $p, source: $s, status: "UNREVIEWED"}]')
+      continue
+    fi
+
     local inner matched_pattern
     inner=$(strip_bash_wrapper "$perm")
     matched_pattern=$(check_danger "$inner" || true)
@@ -205,9 +213,9 @@ cmd_check() {
         '. + [{permission: $p, source: $s, status: "DANGER", matched_pattern: $mp}]')
     else
       # Check log for review status
-      local is_reviewed
-      is_reviewed=$(echo "$log_data" | jq --arg p "$perm" '
-        .[$p] // null |
+      local log_entry is_reviewed
+      log_entry=$(echo "$log_data" | jq -c --arg p "$perm" '.[$p] // null')
+      is_reviewed=$(echo "$log_entry" | jq '
         if . == null then false
         elif .risk == "" or .risk == "TODO" then false
         elif .rationale == "" or .rationale == "TODO" then false
@@ -219,8 +227,12 @@ cmd_check() {
 
       if [[ "$is_reviewed" == "true" ]]; then
         reviewed_count=$((reviewed_count + 1))
+        local risk rationale
+        risk=$(echo "$log_entry" | jq -r '.risk')
+        rationale=$(echo "$log_entry" | jq -r '.rationale')
         classified=$(echo "$classified" | jq --arg p "$perm" --argjson s "$sources" \
-          '. + [{permission: $p, source: $s, status: "REVIEWED"}]')
+          --arg risk "$risk" --arg rationale "$rationale" \
+          '. + [{permission: $p, source: $s, status: "REVIEWED", risk: $risk, rationale: $rationale}]')
       else
         unreviewed_count=$((unreviewed_count + 1))
         classified=$(echo "$classified" | jq --arg p "$perm" --argjson s "$sources" \
@@ -288,7 +300,7 @@ print_text_report() {
     echo "--- REVIEWED ---"
     echo "$entries" | jq -r '
       [.[] | select(.status == "REVIEWED")] | .[] |
-      "  \(.permission)  (from: \(.source | join(", ")))"
+      "  \(.permission)  [\(.risk // "?")] \(.rationale // "")  (from: \(.source | join(", ")))"
     '
     echo ""
   fi

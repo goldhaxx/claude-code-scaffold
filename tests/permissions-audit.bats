@@ -582,6 +582,9 @@ EOF
   run bash "$SCRIPT" check --settings-dir "$FIXTURE" --text --verbose
   echo "$output" | grep -q "REVIEWED"
   echo "$output" | grep -q "Bash(git status:\*)"
+  # AC-5: verbose shows risk and rationale
+  echo "$output" | grep -q "LOW"
+  echo "$output" | grep -q "Read-only"
 }
 
 
