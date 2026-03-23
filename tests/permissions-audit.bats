@@ -493,3 +493,93 @@ EOF
   [ "$status" -eq 2 ]
   echo "$output" | grep -q "ERROR: .*not valid JSON"
 }
+
+
+# =========================================================================
+# Step 7: Text output mode (AC-5)
+# =========================================================================
+
+@test "check --text outputs DANGER entries first" {
+  cat > "$FIXTURE/settings.json" <<'EOF'
+{
+  "permissions": {
+    "allow": ["Bash(git status:*)", "Bash(echo:*)"]
+  }
+}
+EOF
+
+  run bash "$SCRIPT" check --settings-dir "$FIXTURE" --text
+  echo "$output" | grep -q "DANGER"
+  # DANGER section header appears before UNREVIEWED section header
+  local danger_line unreviewed_line
+  danger_line=$(echo "$output" | grep -n "^--- DANGER" | head -1 | cut -d: -f1)
+  unreviewed_line=$(echo "$output" | grep -n "^--- UNREVIEWED" | head -1 | cut -d: -f1)
+  [ "$danger_line" -lt "$unreviewed_line" ]
+}
+
+@test "check --text shows matched pattern for DANGER entries" {
+  cat > "$FIXTURE/settings.json" <<'EOF'
+{
+  "permissions": {
+    "allow": ["Bash(echo:*)"]
+  }
+}
+EOF
+
+  run bash "$SCRIPT" check --settings-dir "$FIXTURE" --text
+  echo "$output" | grep -q "broad-wildcard"
+}
+
+@test "check --text suppresses REVIEWED without --verbose" {
+  cat > "$FIXTURE/settings.json" <<'EOF'
+{
+  "permissions": {
+    "allow": ["Bash(git status:*)"]
+  }
+}
+EOF
+  cat > "$FIXTURE/permissions-log.json" <<'EOF'
+{
+  "entries": {
+    "Bash(git status:*)": {
+      "risk": "LOW",
+      "rationale": "Read-only",
+      "efficiency_justification": "Constant use",
+      "reviewer": "zach",
+      "reviewed_epoch": 1774200000
+    }
+  }
+}
+EOF
+
+  run bash "$SCRIPT" check --settings-dir "$FIXTURE" --text
+  # Should NOT show the reviewed entry details
+  ! echo "$output" | grep -q "Bash(git status:\*)"
+}
+
+@test "check --text --verbose shows REVIEWED entries" {
+  cat > "$FIXTURE/settings.json" <<'EOF'
+{
+  "permissions": {
+    "allow": ["Bash(git status:*)"]
+  }
+}
+EOF
+  cat > "$FIXTURE/permissions-log.json" <<'EOF'
+{
+  "entries": {
+    "Bash(git status:*)": {
+      "risk": "LOW",
+      "rationale": "Read-only",
+      "efficiency_justification": "Constant use",
+      "reviewer": "zach",
+      "reviewed_epoch": 1774200000
+    }
+  }
+}
+EOF
+
+  run bash "$SCRIPT" check --settings-dir "$FIXTURE" --text --verbose
+  echo "$output" | grep -q "REVIEWED"
+  echo "$output" | grep -q "Bash(git status:\*)"
+}

@@ -229,13 +229,14 @@ cmd_check() {
     fi
   done
 
-  # Build final output
-  local result
-  result=$(jq -n --argjson entries "$classified" \
-    --argjson d "$danger_count" --argjson u "$unreviewed_count" --argjson r "$reviewed_count" \
-    '{entries: $entries, danger: $d, unreviewed: $u, reviewed: $r}')
-
-  echo "$result"
+  # Output
+  if [[ "$TEXT_MODE" == "true" ]]; then
+    print_text_report "$classified" "$danger_count" "$unreviewed_count" "$reviewed_count"
+  else
+    jq -n --argjson entries "$classified" \
+      --argjson d "$danger_count" --argjson u "$unreviewed_count" --argjson r "$reviewed_count" \
+      '{entries: $entries, danger: $d, unreviewed: $u, reviewed: $r}'
+  fi
 
   # Exit codes: 2 = DANGER, 1 = UNREVIEWED, 0 = all REVIEWED
   if [[ "$danger_count" -gt 0 ]]; then
@@ -244,6 +245,53 @@ cmd_check() {
     return 1
   fi
   return 0
+}
+
+# ---------------------------------------------------------------------------
+# Text output
+# ---------------------------------------------------------------------------
+
+print_text_report() {
+  local entries="$1"
+  local danger_count="$2"
+  local unreviewed_count="$3"
+  local reviewed_count="$4"
+
+  echo "Permissions Audit"
+  echo "================="
+  echo ""
+  echo "Summary: $danger_count DANGER, $unreviewed_count UNREVIEWED, $reviewed_count REVIEWED"
+  echo ""
+
+  # DANGER entries first
+  if [[ "$danger_count" -gt 0 ]]; then
+    echo "--- DANGER ---"
+    echo "$entries" | jq -r '
+      [.[] | select(.status == "DANGER")] | .[] |
+      "  \(.permission)  [\(.matched_pattern)]  (from: \(.source | join(", ")))"
+    '
+    echo ""
+  fi
+
+  # UNREVIEWED entries
+  if [[ "$unreviewed_count" -gt 0 ]]; then
+    echo "--- UNREVIEWED ---"
+    echo "$entries" | jq -r '
+      [.[] | select(.status == "UNREVIEWED")] | .[] |
+      "  \(.permission)  (from: \(.source | join(", ")))"
+    '
+    echo ""
+  fi
+
+  # REVIEWED entries (only with --verbose)
+  if [[ "$VERBOSE" == "true" && "$reviewed_count" -gt 0 ]]; then
+    echo "--- REVIEWED ---"
+    echo "$entries" | jq -r '
+      [.[] | select(.status == "REVIEWED")] | .[] |
+      "  \(.permission)  (from: \(.source | join(", ")))"
+    '
+    echo ""
+  fi
 }
 
 # ---------------------------------------------------------------------------
