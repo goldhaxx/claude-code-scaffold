@@ -358,6 +358,70 @@ JSON
 # =========================================================================
 
 # =========================================================================
+# Review fixes: JSON safety, hyphenated providers, backlog.get local
+# =========================================================================
+
+@test "backlog.get local adapter includes the feature ID in command" {
+  run bash "$SCRIPT" resolve backlog.get my-feature --project-dir "$PROJECT"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '.invocation.command | test("my-feature")'
+}
+
+@test "hyphenated provider name resolves correctly" {
+  mkdir -p "$PROJECT/.claude"
+  cat > "$PROJECT/.claude/scaffold.json" <<'JSON'
+{
+  "integrations": {
+    "providers": {
+      "my-linear": { "mechanism": "mcp", "project": "P", "team": "T" }
+    },
+    "routing": {
+      "backlog": "my-linear"
+    }
+  }
+}
+JSON
+  run bash "$SCRIPT" resolve backlog.list --project-dir "$PROJECT"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '.provider == "my-linear"'
+}
+
+@test "provider config with special characters in values produces valid JSON" {
+  mkdir -p "$PROJECT/.claude"
+  cat > "$PROJECT/.claude/scaffold.json" <<'JSON'
+{
+  "integrations": {
+    "providers": {
+      "linear": { "mechanism": "mcp", "project": "My \"Quoted\" Project", "team": "Test & Co" }
+    },
+    "routing": {
+      "backlog": "linear"
+    }
+  }
+}
+JSON
+  run bash "$SCRIPT" resolve backlog.list --project-dir "$PROJECT"
+  [ "$status" -eq 0 ]
+  # Output must be valid JSON (jq -e will fail if not)
+  echo "$output" | jq -e '.invocation.params.project'
+  echo "$output" | jq -e '.invocation.params.team == "Test & Co"'
+}
+
+@test "resolve output is always valid JSON" {
+  # Test local adapter
+  run bash "$SCRIPT" resolve backlog.list --project-dir "$PROJECT"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq empty
+
+  # Test with config
+  mkdir -p "$PROJECT/.claude"
+  echo '{}' > "$PROJECT/.claude/scaffold.json"
+  run bash "$SCRIPT" resolve spec.read --project-dir "$PROJECT"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq empty
+}
+
+# =========================================================================
 # Step 10: Wire /catchup command (AC-7)
 # =========================================================================
 

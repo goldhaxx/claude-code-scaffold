@@ -11,7 +11,7 @@
 #   2 — usage error
 #
 # Usage:
-#   operations.sh resolve <operation> [--project-dir DIR]
+#   operations.sh resolve <operation> [args...] [--project-dir DIR]
 
 set -euo pipefail
 
@@ -44,7 +44,7 @@ is_valid_operation() {
 
 usage() {
   cat >&2 <<'EOF'
-Usage: operations.sh resolve <operation> [--project-dir DIR]
+Usage: operations.sh resolve <operation> [args...] [--project-dir DIR]
 
 Operations:
   backlog.{list,create,prioritize,get}
@@ -76,10 +76,10 @@ while [[ $# -gt 0 ]]; do
       if [[ $# -gt 0 && "$1" != --* ]]; then
         OPERATION="$1"; shift
       fi
-      # Remaining positional args before flags are operation arguments
-      while [[ $# -gt 0 && "$1" != --* ]]; do
+      # Next positional arg (if any) is the operation argument (e.g., issue ID)
+      if [[ $# -gt 0 && "$1" != --* ]]; then
         OP_ARGS="$1"; shift
-      done
+      fi
       ;;
     --project-dir)
       PROJECT_DIR="$2"; shift 2 ;;
@@ -143,7 +143,7 @@ local_adapter() {
       output_contract='["feature_id","status","priority"]'
       ;;
     backlog.get)
-      cmd="cat docs/specs/SPEC_ID.md"
+      cmd="cat docs/specs/${OP_ARGS}.md"
       output_contract='["feature_id","status","created","body"]'
       ;;
     # --- spec ---
@@ -205,13 +205,13 @@ local_adapter() {
       ;;
     # --- review ---
     review.run)
-      cmd="echo review"
+      cmd="echo '{\"status\":\"not_implemented\",\"concerns\":[]}'"
       output_contract='["status","concerns"]'
       ;;
   esac
 
-  printf '{"provider":"local","mechanism":"bash","invocation":{"command":"%s"},"contract":{"output":%s}}' \
-    "$cmd" "$output_contract"
+  jq -n --arg cmd "$cmd" --argjson output "$output_contract" \
+    '{"provider":"local","mechanism":"bash","invocation":{"command":$cmd},"contract":{"output":$output}}'
 }
 
 # ---------------------------------------------------------------------------
@@ -220,7 +220,7 @@ local_adapter() {
 
 linear_mcp_adapter() {
   local op="$1" provider_config="$2" op_args="$3"
-  local tool="" params="" output_contract="" field_map=""
+  local tool="" output_contract="" field_map=""
   local project team
   project=$(echo "$provider_config" | jq -r '.project // ""')
   team=$(echo "$provider_config" | jq -r '.team // ""')
@@ -228,25 +228,25 @@ linear_mcp_adapter() {
   case "$op" in
     backlog.list)
       tool="mcp__claude_ai_Linear__list_issues"
-      params=$(printf '{"project":"%s","team":"%s"}' "$project" "$team")
       output_contract='["id","title","status","priority"]'
       field_map='{"identifier":"id","title":"title","state.name":"status","priority":"priority"}'
+      jq -n --arg tool "$tool" --arg project "$project" --arg team "$team" \
+        --argjson output "$output_contract" --argjson fmap "$field_map" \
+        '{"provider":"linear","mechanism":"mcp","invocation":{"tool":$tool,"params":{"project":$project,"team":$team}},"contract":{"output":$output,"field_map":$fmap}}'
       ;;
     backlog.get)
       tool="mcp__claude_ai_Linear__get_issue"
-      params=$(printf '{"id":"%s"}' "$op_args")
       output_contract='["id","title","status","priority","description"]'
       field_map='{"identifier":"id","title":"title","state.name":"status","priority":"priority"}'
+      jq -n --arg tool "$tool" --arg id "$op_args" \
+        --argjson output "$output_contract" --argjson fmap "$field_map" \
+        '{"provider":"linear","mechanism":"mcp","invocation":{"tool":$tool,"params":{"id":$id}},"contract":{"output":$output,"field_map":$fmap}}'
       ;;
     *)
       # Unsupported operation for this provider — fall back to local
       local_adapter "$op"
-      return 0
       ;;
   esac
-
-  printf '{"provider":"linear","mechanism":"mcp","invocation":{"tool":"%s","params":%s},"contract":{"output":%s,"field_map":%s}}' \
-    "$tool" "$params" "$output_contract" "$field_map"
 }
 
 # ---------------------------------------------------------------------------
@@ -262,8 +262,9 @@ external_adapter() {
       ;;
     *)
       # Generic passthrough for unknown providers
-      printf '{"provider":"%s","mechanism":"%s","invocation":{"config":%s},"contract":{"output":[]}}' \
-        "$provider_name" "$mechanism" "$provider_config"
+      jq -n --arg provider "$provider_name" --arg mechanism "$mechanism" \
+        --argjson config "$provider_config" \
+        '{"provider":$provider,"mechanism":$mechanism,"invocation":{"config":$config},"contract":{"output":[]}}'
       ;;
   esac
 }
@@ -294,7 +295,7 @@ cmd_resolve() {
   local group
   group=$(operation_group "$op")
   local routed_provider
-  routed_provider=$(jq -r ".integrations.routing.${group} // \"local\"" "$CONFIG_FILE")
+  routed_provider=$(jq -r --arg g "$group" '.integrations.routing[$g] // "local"' "$CONFIG_FILE")
 
   if [[ "$routed_provider" == "local" ]]; then
     local_adapter "$op"
@@ -303,7 +304,7 @@ cmd_resolve() {
 
   # Look up the provider config
   local provider_config
-  provider_config=$(jq -c ".integrations.providers.${routed_provider} // null" "$CONFIG_FILE")
+  provider_config=$(jq -c --arg p "$routed_provider" '.integrations.providers[$p] // null' "$CONFIG_FILE")
 
   if [[ "$provider_config" == "null" ]]; then
     echo "ERROR: provider \"$routed_provider\" is configured for $group but has no entry in integrations.providers" >&2
