@@ -289,3 +289,47 @@ JSON
   echo "$output" | jq -e '.contract.field_map["state.name"] == "status"'
   echo "$output" | jq -e '.contract.field_map.priority == "priority"'
 }
+
+# =========================================================================
+# Step 8: Extensible mechanism field (AC-12)
+# =========================================================================
+
+@test "unknown mechanism passes through as-is" {
+  mkdir -p "$PROJECT/.claude"
+  cat > "$PROJECT/.claude/scaffold.json" <<'JSON'
+{
+  "integrations": {
+    "providers": {
+      "custom": { "mechanism": "webhook", "url": "https://example.com/hook" }
+    },
+    "routing": {
+      "backlog": "custom"
+    }
+  }
+}
+JSON
+  run bash "$SCRIPT" resolve backlog.list --project-dir "$PROJECT"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '.provider == "custom"'
+  echo "$output" | jq -e '.mechanism == "webhook"'
+}
+
+@test "unknown mechanism with api type passes through" {
+  mkdir -p "$PROJECT/.claude"
+  cat > "$PROJECT/.claude/scaffold.json" <<'JSON'
+{
+  "integrations": {
+    "providers": {
+      "jira": { "mechanism": "api", "base_url": "https://jira.example.com" }
+    },
+    "routing": {
+      "backlog": "jira"
+    }
+  }
+}
+JSON
+  run bash "$SCRIPT" resolve backlog.list --project-dir "$PROJECT"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '.mechanism == "api"'
+  echo "$output" | jq -e '.provider == "jira"'
+}
