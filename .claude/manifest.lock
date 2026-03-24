@@ -1,7 +1,7 @@
 {
   "meta": {
-    "last_verified": 1774216724,
-    "commit": "31526492ca8be67fd40178c1a4b8efda94470024"
+    "last_verified": 1774324188,
+    "commit": "225d758b610513d7aca6e52bdcba99f42b9d8fa6"
   },
   "entries": {
     "GLOBAL_CLAUDE.md": {
@@ -289,10 +289,20 @@
       "verified_at_commit": "31526492ca8be67fd40178c1a4b8efda94470024",
       "verified": 1774216724
     },
-    "GUIDE.md": {
-      "file_hash": "fddfa96f36f8bd2eb679e2a10a4a37b01a2e382dc82ee934dcbb9e6cd6cc26e0",
-      "verified_at_commit": "31526492ca8be67fd40178c1a4b8efda94470024",
-      "verified": 1774216724
+    "docs/scaffold-guide/index.md": {
+      "file_hash": "054bd88976b1b02008c6956e8a2fee18bd2462db52d98598bde6f1e8a3fe04b2",
+      "verified_at_commit": "225d758b610513d7aca6e52bdcba99f42b9d8fa6",
+      "verified": 1774324188
+    },
+    "docs/scaffold-guide/scaffold-framework.md": {
+      "file_hash": "86f37177ec0f643a79bcd92de598a1cef3e25aaffd6975bb156f62075c56d2a0",
+      "verified_at_commit": "225d758b610513d7aca6e52bdcba99f42b9d8fa6",
+      "verified": 1774324188
+    },
+    "docs/scaffold-guide/command-reference.md": {
+      "file_hash": "abbf272f6fa237c6574d5d0f402c2c54d678a2f02f0e3ebe72d28afb53086af6",
+      "verified_at_commit": "225d758b610513d7aca6e52bdcba99f42b9d8fa6",
+      "verified": 1774324188
     }
   }
 }
