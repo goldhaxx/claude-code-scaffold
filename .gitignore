@@ -21,6 +21,7 @@ generated/
 
 # Claude Code local settings (per-user, not shared)
 .claude/settings.local.json
+.claude/scaffold.local.json
 .claude/local/
 
 # Claude Code worktrees (per-session, not shared)

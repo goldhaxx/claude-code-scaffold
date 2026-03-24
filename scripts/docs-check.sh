@@ -766,27 +766,55 @@ cmd_complete() {
 }
 
 # ---------------------------------------------------------------------------
-# cmd_config_get — Read a feature toggle from .claude/scaffold.json.
+# merge_scaffold_config — Merge scaffold.json (hub) with scaffold.local.json (node).
+# Duplicated from operations.sh (both scripts need it; keeping small and tested).
+merge_scaffold_config() {
+  local dir="$1"
+  local hub_file="$dir/.claude/scaffold.json"
+  local local_file="$dir/.claude/scaffold.local.json"
+
+  if [[ ! -f "$hub_file" && ! -f "$local_file" ]]; then
+    echo '{}'
+    return 0
+  fi
+
+  if [[ -f "$hub_file" ]] && ! jq empty "$hub_file" 2>/dev/null; then
+    echo "ERROR: .claude/scaffold.json is not valid JSON" >&2
+    return 1
+  fi
+
+  if [[ -f "$local_file" ]] && ! jq empty "$local_file" 2>/dev/null; then
+    echo "ERROR: .claude/scaffold.local.json is not valid JSON" >&2
+    return 1
+  fi
+
+  if [[ -f "$hub_file" && ! -f "$local_file" ]]; then
+    jq '.' "$hub_file"
+  elif [[ ! -f "$hub_file" && -f "$local_file" ]]; then
+    jq '.' "$local_file"
+  else
+    jq -s '.[0] * .[1]' "$hub_file" "$local_file"
+  fi
+}
+
+# cmd_config_get — Read a feature toggle from merged scaffold config.
 #
 # Usage:
 #   docs-check.sh config-get <key> [project-dir]
 #
-# Returns the value of features.<key> from .claude/scaffold.json.
-# Returns "false" if file is missing, key is missing, or features object
-# doesn't exist.
+# Returns the value of features.<key> from the merged effective config
+# (scaffold.json + scaffold.local.json). Returns "false" if files are
+# missing, key is missing, or features object doesn't exist.
 # ---------------------------------------------------------------------------
 cmd_config_get() {
   local key="${1:?Usage: config-get <key> [project-dir]}"
   local project_dir="${2:-.}"
-  local config_file="$project_dir/.claude/scaffold.json"
 
-  if [[ ! -f "$config_file" ]]; then
-    echo "false"
-    return 0
-  fi
+  local merged
+  merged=$(merge_scaffold_config "$project_dir") || return 1
 
   local value
-  value=$(jq -r --arg k "$key" '.features[$k] // "false"' "$config_file" 2>/dev/null)
+  value=$(echo "$merged" | jq -r --arg k "$key" '.features[$k] // "false"' 2>/dev/null)
 
   if [[ -z "$value" || "$value" == "null" ]]; then
     echo "false"

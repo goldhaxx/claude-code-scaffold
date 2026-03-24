@@ -50,5 +50,8 @@ yarn.lock
 # Scaffold sync state (machine-managed, not useful in context)
 .claude/scaffold.lock
 
+# Scaffold local config (read via scripts, not raw file reads)
+.claude/scaffold.local.json
+
 # Claude Code worktrees (session-specific, not useful in context)
 .claude/worktrees/

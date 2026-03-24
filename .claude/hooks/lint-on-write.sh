@@ -51,6 +51,47 @@ case "$FILE_PATH" in
 esac
 
 # ---------------------------------------------------------------------------
+# File size check — warn on large files that degrade context performance.
+# Claude Code warns at 40k chars for always-loaded files. We block at 40k
+# for known always-loaded files and warn (but allow) at 80k for others.
+# ---------------------------------------------------------------------------
+ALWAYS_LOADED_PATTERNS="CLAUDE.md|GUIDE.md|.claude/rules/*.md"
+MAX_ALWAYS_LOADED=40000
+MAX_GENERAL=80000
+
+char_count=$(wc -c < "$FILE_PATH" 2>/dev/null | tr -d ' ')
+if [[ -n "$char_count" ]]; then
+  is_always_loaded=false
+  FILE_BASENAME=$(basename "$FILE_PATH")
+  FILE_RELPATH="$FILE_PATH"
+  IFS='|' read -ra al_patterns <<< "$ALWAYS_LOADED_PATTERNS"
+  for pat in "${al_patterns[@]}"; do
+    # shellcheck disable=SC2254
+    case "$pat" in
+      */*)
+        # Path pattern (e.g., .claude/rules/*.md) — match against full path
+        case "$FILE_RELPATH" in
+          *$pat) is_always_loaded=true; break ;;
+        esac
+        ;;
+      *)
+        # Filename pattern (e.g., CLAUDE.md) — match against basename only
+        case "$FILE_BASENAME" in
+          $pat) is_always_loaded=true; break ;;
+        esac
+        ;;
+    esac
+  done
+
+  if [[ "$is_always_loaded" == "true" && "$char_count" -gt "$MAX_ALWAYS_LOADED" ]]; then
+    echo "BLOCKED: File too large for always-loaded context — $FILE_PATH (${char_count} chars > ${MAX_ALWAYS_LOADED} limit). See BTS-26." >&2
+    exit 2
+  elif [[ "$char_count" -gt "$MAX_GENERAL" ]]; then
+    echo "WARNING: Large file — $FILE_PATH (${char_count} chars > ${MAX_GENERAL} recommended). Consider splitting." >&2
+  fi
+fi
+
+# ---------------------------------------------------------------------------
 # Project-specific linters (from .claude/lint.json)
 #
 # Format:

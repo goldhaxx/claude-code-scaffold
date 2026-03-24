@@ -1,97 +1,98 @@
-# Implementation Plan: Modular Tool Integration Layer
+# Implementation Plan: scaffold.json Node-Override Strategy
 
-> Feature: tool-integration
-> Created: 1774299081
-> Spec hash: 19d3f4c3
+> Feature: scaffold-json-override
+> Created: 1774312975
+> Spec hash: fdf5f5cf
 > Based on: docs/spec.md
 
 ## Objective
 
-Build `scripts/operations.sh` — a mechanism-agnostic routing layer that resolves scaffold operations to local bash commands or external MCP tool instructions based on `.claude/scaffold.json` config.
+Add `scaffold.local.json` as a gitignored overlay that deep-merges over the hub-tracked `scaffold.json`, wired into all config-reading scripts.
 
 ## Sequence
 
-### Step 1: Script skeleton + unknown operation error (AC-10)
-- **Test:** `operations.sh resolve unknown.op` exits 1 with stderr containing `ERROR: unknown operation "unknown.op"`. `operations.sh` with no args prints usage and exits 2.
-- **Implement:** Create `scripts/operations.sh` with shebang, `set -euo pipefail`, `usage()`, arg parsing (`resolve` subcommand + operation name), and a hardcoded operations registry that rejects unknown operations.
-- **Files:** `scripts/operations.sh` (new), `tests/operations.bats` (new)
+### Step 1: Merge function + core tests (AC-1, AC-3, AC-4, AC-11)
+
+- **Test:** In a new `tests/scaffold-json-override.bats`, write tests for the merge expression: both files present → deep merge; only hub file → hub content; neither file → empty/no-op; deep merge preserves nested keys from both sides (AC-11).
+- **Implement:** Create a standalone helper function `merge_scaffold_config` that takes a project dir, runs `jq -s '.[0] * (.[1] // {})' scaffold.json scaffold.local.json`, and outputs the merged JSON. Place it in `scripts/operations.sh` (primary consumer). The function outputs the effective config JSON to stdout.
+- **Files:** `tests/scaffold-json-override.bats` (new), `scripts/operations.sh` (add function)
+- **Verify:** `bats tests/scaffold-json-override.bats`
+
+### Step 2: Node-wins conflict behavior (AC-2)
+
+- **Test:** Add test: both files define `features.pr_review` with different values → local file's value wins.
+- **Implement:** Already handled by jq `*` operator (right-side wins). This step verifies the behavior, no new code expected.
+- **Files:** `tests/scaffold-json-override.bats`
+- **Verify:** `bats tests/scaffold-json-override.bats`
+
+### Step 3: Invalid local JSON error (AC-7)
+
+- **Test:** Add test: `scaffold.local.json` contains invalid JSON → exit 1, stderr contains `ERROR: .claude/scaffold.local.json is not valid JSON`.
+- **Implement:** Add JSON validation for the local file in `merge_scaffold_config`, matching the existing validation pattern in `read_config`.
+- **Files:** `tests/scaffold-json-override.bats`, `scripts/operations.sh`
+- **Verify:** `bats tests/scaffold-json-override.bats`
+
+### Step 4: Wire operations.sh read_config to use merge (AC-5)
+
+- **Test:** In `tests/operations.bats`, add test: routing config in `scaffold.local.json` only → `operations.sh resolve` uses the merged config and resolves to the configured provider.
+- **Implement:** Modify `read_config()` in `operations.sh` to call `merge_scaffold_config` and use the merged result for all downstream jq queries.
+- **Files:** `tests/operations.bats`, `scripts/operations.sh`
 - **Verify:** `bats tests/operations.bats`
 
-### Step 2: No-config local fallback + invalid JSON error (AC-11, AC-9)
-- **Test 1:** `operations.sh resolve backlog.list` with no `.claude/scaffold.json` present outputs JSON with `"provider":"local","mechanism":"bash"` and a non-empty `invocation.command`. Exit 0.
-- **Test 2:** `operations.sh resolve backlog.list` with invalid JSON in `.claude/scaffold.json` exits 1 with stderr `ERROR: .claude/scaffold.json is not valid JSON`.
-- **Implement:** Config reading logic: check file existence (missing = all local), validate JSON with `jq empty`, extract integrations key (missing = all local). Define local adapter for `backlog.list` with command pointing to `docs-check.sh list-specs`.
-- **Files:** `scripts/operations.sh`, `tests/operations.bats`
-- **Verify:** `bats tests/operations.bats`
+### Step 5: Wire docs-check.sh config-get to use merge (AC-6)
 
-### Step 3: Full operations taxonomy — all 17 local resolves (AC-1)
-- **Test:** For each of the 17 operations (`backlog.{list,create,prioritize,get}`, `spec.{read,write,list,activate,complete}`, `plan.{read,write}`, `checkpoint.{read,write}`, `status.{get,update}`, `pr.{create,list}`, `review.run`), verify `operations.sh resolve <op>` with no config returns JSON with `"provider":"local","mechanism":"bash"` and a non-empty `invocation.command`. Exit 0.
-- **Implement:** Add local adapter definitions for all 17 operations. Map each to the corresponding `docs-check.sh` subcommand or file path. Operations without a current local implementation get placeholder commands.
-- **Files:** `scripts/operations.sh`, `tests/operations.bats`
-- **Verify:** `bats tests/operations.bats`
+- **Test:** Add test: `features.pr_review: true` only in `scaffold.local.json` → `docs-check.sh config-get pr_review` returns `"true"`.
+- **Implement:** Modify `cmd_config_get()` in `docs-check.sh` to merge both files before reading the feature toggle.
+- **Files:** `tests/scaffold-json-override.bats` (add config-get tests), `scripts/docs-check.sh`
+- **Verify:** `bats tests/scaffold-json-override.bats`
 
-### Step 4: Config parsing — MCP resolve for backlog.list (AC-2)
-- **Test:** Given fixture `scaffold.json` with `integrations.routing.backlog: "linear"` and `providers.linear: {mechanism: "mcp", project: "Test", team: "TestTeam"}`, `operations.sh resolve backlog.list` outputs JSON with `"provider":"linear","mechanism":"mcp"`, invocation containing `"tool":"mcp__claude_ai_Linear__list_issues"` and params from provider config, and a contract with output fields.
-- **Implement:** Config-aware routing: read `integrations.routing.<group>` via jq, look up provider in `integrations.providers`, build MCP adapter response with tool name, params, and output contract. Define Linear MCP adapter for `backlog.list`.
-- **Files:** `scripts/operations.sh`, `tests/operations.bats`
-- **Verify:** `bats tests/operations.bats`
+### Step 6: Gitignore and claudeignore (AC-9, AC-10)
 
-### Step 5: Missing provider error + partial routing fallback (AC-3, AC-4)
-- **Test 1:** Fixture with `routing.backlog: "linear"` but no `providers.linear` exits 1 with stderr `ERROR: provider "linear" is configured for backlog but has no entry in integrations.providers`.
-- **Test 2:** Fixture with only `routing.backlog: "linear"` (no other routing entries), `operations.sh resolve spec.read` returns local adapter, `operations.sh resolve backlog.list` returns linear MCP adapter.
-- **Implement:** Provider existence validation before building MCP response. Fallback logic: missing routing entry for a group defaults to local.
-- **Files:** `scripts/operations.sh`, `tests/operations.bats`
-- **Verify:** `bats tests/operations.bats`
+- **Test:** Add tests: `grep -q 'scaffold.local.json' .gitignore` and `grep -q 'scaffold.local.json' .claudeignore` both pass.
+- **Implement:** Add `.claude/scaffold.local.json` to `.gitignore` (next to `settings.local.json`) and `.claudeignore`.
+- **Files:** `.gitignore`, `.claudeignore`, `tests/scaffold-json-override.bats`
+- **Verify:** `bats tests/scaffold-json-override.bats`
 
-### Step 6: Local adapter schema compatibility (AC-5)
-- **Test:** Run `operations.sh resolve backlog.list` (local mode), extract the command from invocation, execute it against a fixture `docs/specs/` directory with test spec files. Compare the output schema against direct `docs-check.sh list-specs` run on the same directory. Both produce arrays of `{feature_id, status, created}`.
-- **Implement:** Ensure the local `backlog.list` command passes `--project-dir` or docs-dir argument so it targets the correct specs directory. Adjust command string if needed.
-- **Files:** `tests/operations.bats`
-- **Verify:** `bats tests/operations.bats`
+### Step 7: Pull safety verification (AC-8)
 
-### Step 7: backlog.get with Linear MCP routing + contract mapping (AC-6)
-- **Test:** Given linear routing config, `operations.sh resolve backlog.get test-id` outputs JSON with `"mechanism":"mcp"`, `"tool":"mcp__claude_ai_Linear__get_issue"`, params including the id argument, and a contract mapping Linear fields (`identifier`, `title`, `state.name`, `priority`) to scaffold fields (`id`, `title`, `status`, `priority`).
-- **Implement:** Add `backlog.get` MCP adapter with parameterized id from the resolve argument. Define field mapping in the contract object.
-- **Files:** `scripts/operations.sh`, `tests/operations.bats`
-- **Verify:** `bats tests/operations.bats`
+- **Test:** Add test: simulate hub change to `scaffold.json` while local copy is clean (no local modifications because overrides live in `scaffold.local.json`) → `pull-plan` classifies it as `auto-update`.
+- **Implement:** No code changes expected — this is a verification that the design works with existing pull-plan logic. If scaffold.json is clean (node edits go to local file), pull-plan already classifies it as auto-update.
+- **Files:** `tests/scaffold-json-override.bats`
+- **Verify:** `bats tests/scaffold-json-override.bats`
 
-### Step 8: Extensible mechanism field (AC-12)
-- **Test:** Given fixture with `providers.custom: {mechanism: "webhook", url: "https://example.com"}` and `routing.backlog: "custom"`, `operations.sh resolve backlog.list` outputs JSON with `"mechanism":"webhook"`. The script does not reject the unknown mechanism value.
-- **Implement:** Ensure mechanism field is read from provider config and passed through as-is. No validation against a closed set. For non-`mcp` external providers, output a generic invocation with the provider config as params.
-- **Files:** `scripts/operations.sh`, `tests/operations.bats`
-- **Verify:** `bats tests/operations.bats`
+### Step 8: Update template (AC-12)
 
-### Step 9: scaffold.json integrations schema + scaffold-sync tracking (AC-8)
-- **Test 1:** `.claude/scaffold.json` with both `features` and `integrations` keys passes `jq empty`.
-- **Test 2:** `grep -q 'scaffold.json' scripts/scaffold-sync.sh` confirms `.claude/scaffold.json` is in TRACKED_PATTERNS.
-- **Implement:** Update `.claude/scaffold.json` to include empty `integrations` key (no routing, no providers — local-only default). Add `.claude/scaffold.json` to `TRACKED_PATTERNS` array in `scaffold-sync.sh`.
-- **Files:** `.claude/scaffold.json`, `scripts/scaffold-sync.sh`, `tests/operations.bats`
-- **Verify:** `bats tests/operations.bats && bats tests/scaffold-sync.bats`
+- **Test:** Add test: `docs/templates/scaffold.json` contains a reference to `scaffold.local.json`.
+- **Implement:** Update the template to include a documentation comment or adjacent README reference explaining the overlay pattern.
+- **Files:** `docs/templates/scaffold.json`, `tests/scaffold-json-override.bats`
+- **Verify:** `bats tests/scaffold-json-override.bats`
 
-### Step 10: Wire /catchup command (AC-7)
-- **Test:** `grep -q "operations.sh resolve backlog.list" .claude/commands/catchup.md` returns 0.
-- **Implement:** Update step 0c in `.claude/commands/catchup.md`: call `operations.sh resolve backlog.list`, check the mechanism in the JSON response, if `bash` execute the command directly, if `mcp` instruct Claude to call the specified MCP tool with the given params.
-- **Files:** `.claude/commands/catchup.md`
-- **Verify:** `grep -q "operations.sh resolve backlog.list" .claude/commands/catchup.md`
+### Step 9: Documentation updates
 
-### Step 11: Documentation update (CLAUDE.md, GUIDE.md)
-- **Test:** `grep -q "operations.sh" CLAUDE.md && grep -q "operations.sh" GUIDE.md`
-- **Implement:** Add `operations.sh resolve <operation>` to CLAUDE.md commands block (node section, above `HUB-MANAGED-START`). Add to GUIDE.md Command Reference table (hub section). Add integrations config schema documentation to GUIDE.md Configuration Layers section.
-- **Files:** `CLAUDE.md`, `GUIDE.md`
-- **Verify:** Full test suite passes: `bats tests/`
+- **Implement:** Update hub documentation to reflect the new overlay pattern:
+  - `CLAUDE.md`: Add `scaffold.local.json` to the Architecture section and document the merge behavior
+  - `GUIDE.md`: **Blocked by BTS-26** — GUIDE.md is over 40k chars and the lint hook now blocks writes to it. Skip GUIDE.md updates in this PR; they'll be incorporated when BTS-26 restructures the file. Document the overlay pattern in CLAUDE.md only.
+- **Files:** `CLAUDE.md`
+- **Verify:** `bats tests/` (all tests pass)
+
+### Step 10: Sync fucina node with hub
+
+- **Context:** The fucina downstream project has not synced with the hub in a while. Multiple features have landed since last sync (permissions-audit, context-budget, tool-integration, and now scaffold-json-override). This step runs after PR merge.
+- **Implement:** In the fucina project directory, run `/scaffold-pull` to pull all hub updates. Resolve any conflicts (scaffold.json will now auto-update cleanly thanks to BTS-24). Verify fucina's node-specific sections are preserved. Run fucina's test suite to confirm nothing broke.
+- **Files:** Fucina project (external — `~/projects/fucina` or equivalent)
+- **Verify:** `/scaffold-status` shows all files clean or node-only in fucina
 
 ## Risks
 
-- **macOS bash 3:** macOS ships bash 3 which lacks associative arrays. Use `case` statements for operation registry and adapter lookups instead.
-- **Config schema evolution:** The `scaffold.json` integrations schema is new and will evolve. Use jq's `// "default"` fallback everywhere — unknown keys ignored, missing keys get defaults.
-- **MCP tool name accuracy:** Linear MCP tool names must match what Claude Code exposes. Verify against `settings.local.json` allowlist entries.
-- **Local adapter fidelity:** The `backlog.list` local command must produce output identical to `docs-check.sh list-specs`. Step 6 directly validates this with schema comparison.
+- **jq `*` operator array behavior:** jq's `*` replaces arrays (right-side wins), it does not concatenate. The current schema has no arrays, but this must be documented as a known limitation with an explicit policy for when arrays are added.
+- **Bash 3 compatibility:** The `jq -s` slurp with two files is standard and works on macOS bash 3. No risk.
+- **Duplicate merge logic:** Two scripts (`operations.sh`, `docs-check.sh`) each need the merge function. Risk of drift. Mitigated by keeping the function small (~10 lines) and testing both paths.
 
 ## Definition of Done
 
 - [ ] All 12 acceptance criteria from spec pass
-- [ ] All existing tests still pass
-- [ ] `operations.sh` follows established script pattern (set -euo pipefail, subcommand dispatch, JSON output)
+- [ ] All existing tests still pass (332 + new)
+- [ ] No type errors
 - [ ] Code reviewed (run /review)
 
 <!-- NODE-SPECIFIC-START -->

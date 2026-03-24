@@ -70,8 +70,8 @@ OP_ARGS=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    resolve)
-      CMD="resolve"; shift
+    resolve|merge-config)
+      CMD="$1"; shift
       # Next positional arg is the operation name
       if [[ $# -gt 0 && "$1" != --* ]]; then
         OPERATION="$1"; shift
@@ -99,20 +99,73 @@ done
 
 CONFIG_FILE=""
 
-read_config() {
-  CONFIG_FILE="$PROJECT_DIR/.claude/scaffold.json"
+# merge_scaffold_config — Merge scaffold.json (hub) with scaffold.local.json (node).
+#
+# Outputs the effective config JSON to stdout. Uses RFC 7396 deep merge
+# via jq's * operator — node wins on conflict (permissive, Option A).
+#
+# Exit 0: success (even if both files are missing — outputs {}).
+# Exit 1: a file exists but contains invalid JSON.
+merge_scaffold_config() {
+  local dir="$1"
+  local hub_file="$dir/.claude/scaffold.json"
+  local local_file="$dir/.claude/scaffold.local.json"
 
-  # No config file → all local (not an error)
-  if [[ ! -f "$CONFIG_FILE" ]]; then
+  # Neither file exists → empty config
+  if [[ ! -f "$hub_file" && ! -f "$local_file" ]]; then
+    echo '{}'
+    return 0
+  fi
+
+  # Validate hub file if it exists
+  if [[ -f "$hub_file" ]]; then
+    if ! jq empty "$hub_file" 2>/dev/null; then
+      echo "ERROR: .claude/scaffold.json is not valid JSON" >&2
+      return 1
+    fi
+  fi
+
+  # Validate local file if it exists
+  if [[ -f "$local_file" ]]; then
+    if ! jq empty "$local_file" 2>/dev/null; then
+      echo "ERROR: .claude/scaffold.local.json is not valid JSON" >&2
+      return 1
+    fi
+  fi
+
+  # Only hub file → return hub content
+  if [[ -f "$hub_file" && ! -f "$local_file" ]]; then
+    jq '.' "$hub_file"
+    return 0
+  fi
+
+  # Only local file → return local content
+  if [[ ! -f "$hub_file" && -f "$local_file" ]]; then
+    jq '.' "$local_file"
+    return 0
+  fi
+
+  # Both files exist → deep merge (node wins on conflict)
+  jq -s '.[0] * .[1]' "$hub_file" "$local_file"
+}
+
+read_config() {
+  local hub_file="$PROJECT_DIR/.claude/scaffold.json"
+  local local_file="$PROJECT_DIR/.claude/scaffold.local.json"
+
+  # No config files → all local (not an error)
+  if [[ ! -f "$hub_file" && ! -f "$local_file" ]]; then
     CONFIG_FILE=""
     return 0
   fi
 
-  # Validate JSON
-  if ! jq empty "$CONFIG_FILE" 2>/dev/null; then
-    echo "ERROR: .claude/scaffold.json is not valid JSON" >&2
-    exit 1
-  fi
+  # Merge configs into a temp file so downstream jq queries work unchanged
+  local merged
+  merged=$(merge_scaffold_config "$PROJECT_DIR") || exit 1
+
+  CONFIG_FILE=$(mktemp)
+  trap 'rm -f "$CONFIG_FILE"' EXIT
+  echo "$merged" > "$CONFIG_FILE"
 }
 
 # Extract the routing group from an operation name (e.g., "backlog.list" → "backlog")
@@ -323,5 +376,6 @@ cmd_resolve() {
 
 case "$CMD" in
   resolve) cmd_resolve "$OPERATION" ;;
+  merge-config) merge_scaffold_config "$PROJECT_DIR" ;;
   *) usage ;;
 esac
