@@ -191,6 +191,14 @@ EOF
   echo "$output" | jq -e '.[] | select(.file == ".claude/scaffold.json") | .action == "auto-update"'
 }
 
+# =========================================================================
+# Step 8: Template updated (AC-12)
+# =========================================================================
+
+@test "AC-12: scaffold.json template has companion doc referencing scaffold.local.json" {
+  grep -q 'scaffold.local.json' "$BATS_TEST_DIRNAME/../docs/templates/scaffold.json.md"
+}
+
 @test "AC-11: deep merge preserves nested keys from both sides" {
   cat > "$PROJECT/.claude/scaffold.json" <<'EOF'
 {"integrations":{"providers":{"github":{"mechanism":"cli"}}}}
