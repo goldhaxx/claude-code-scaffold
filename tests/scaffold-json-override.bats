@@ -107,6 +107,35 @@ EOF
   echo "$output" | jq -e '.mechanism == "mcp"'
 }
 
+# =========================================================================
+# Step 5: Wire docs-check.sh config-get to use merged config (AC-6)
+# =========================================================================
+
+DOCS_CHECK_SCRIPT="$BATS_TEST_DIRNAME/../scripts/docs-check.sh"
+
+@test "AC-6: config-get reads merged config — feature in local file only" {
+  cat > "$PROJECT/.claude/scaffold.json" <<'EOF'
+{"features":{}}
+EOF
+  cat > "$PROJECT/.claude/scaffold.local.json" <<'EOF'
+{"features":{"pr_review":true}}
+EOF
+
+  run bash "$DOCS_CHECK_SCRIPT" config-get pr_review "$PROJECT"
+  [ "$status" -eq 0 ]
+  [ "$output" = "true" ]
+}
+
+@test "AC-6: config-get hub default when no local override" {
+  cat > "$PROJECT/.claude/scaffold.json" <<'EOF'
+{"features":{"pr_review":false}}
+EOF
+
+  run bash "$DOCS_CHECK_SCRIPT" config-get pr_review "$PROJECT"
+  [ "$status" -eq 0 ]
+  [ "$output" = "false" ]
+}
+
 @test "AC-11: deep merge preserves nested keys from both sides" {
   cat > "$PROJECT/.claude/scaffold.json" <<'EOF'
 {"integrations":{"providers":{"github":{"mechanism":"cli"}}}}
