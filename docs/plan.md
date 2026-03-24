@@ -1,97 +1,84 @@
-# Implementation Plan: scaffold.json Node-Override Strategy
+# Implementation Plan: Guide Directory Restructuring
 
-> Feature: scaffold-json-override
-> Created: 1774312975
-> Spec hash: fdf5f5cf
+> Feature: guide-restructuring
+> Created: 1774505400
+> Spec hash: 8bf23e80
 > Based on: docs/spec.md
 
 ## Objective
 
-Add `scaffold.local.json` as a gitignored overlay that deep-merges over the hub-tracked `scaffold.json`, wired into all config-reading scripts.
+Split GUIDE.md into `docs/scaffold-guide/` directory, remove the duplicate Appendix, and move SCAFFOLD_FRAMEWORK.md into `docs/scaffold-guide/`. Update all references, hooks, scripts, and tests.
 
 ## Sequence
 
-### Step 1: Merge function + core tests (AC-1, AC-3, AC-4, AC-11)
+### Step 1: Create docs/scaffold-guide/ directory and split GUIDE.md (AC-1, AC-2, AC-3, AC-4)
+- **Test:** Verify `docs/scaffold-guide/index.md` exists and is under 4k chars; verify each section file exists with correct content; verify Appendix is absent; verify `GUIDE.md` no longer exists at root
+- **Implement:** Split GUIDE.md at `##` heading boundaries into separate files. Index gets the intro + system overview + TOC table. Appendix is dropped entirely. Each file gets `<!-- NODE-SPECIFIC-START -->` delimiter (AC-11).
+- **Files:** `GUIDE.md` (delete), `docs/scaffold-guide/index.md`, `docs/scaffold-guide/getting-started.md`, `docs/scaffold-guide/core-workflow.md`, `docs/scaffold-guide/session-management.md`, `docs/scaffold-guide/scaffold-sync.md`, `docs/scaffold-guide/command-reference.md`, `docs/scaffold-guide/configuration.md`, `docs/scaffold-guide/hooks.md`, `docs/scaffold-guide/decision-guide.md`, `docs/scaffold-guide/parallel-sessions.md`
+- **Verify:** `ls docs/scaffold-guide/`, `wc -c docs/scaffold-guide/index.md`, `! test -f GUIDE.md`
 
-- **Test:** In a new `tests/scaffold-json-override.bats`, write tests for the merge expression: both files present → deep merge; only hub file → hub content; neither file → empty/no-op; deep merge preserves nested keys from both sides (AC-11).
-- **Implement:** Create a standalone helper function `merge_scaffold_config` that takes a project dir, runs `jq -s '.[0] * (.[1] // {})' scaffold.json scaffold.local.json`, and outputs the merged JSON. Place it in `scripts/operations.sh` (primary consumer). The function outputs the effective config JSON to stdout.
-- **Files:** `tests/scaffold-json-override.bats` (new), `scripts/operations.sh` (add function)
-- **Verify:** `bats tests/scaffold-json-override.bats`
+### Step 2: Move SCAFFOLD_FRAMEWORK.md (AC-5)
+- **Test:** Verify `docs/scaffold-guide/scaffold-framework.md` exists with identical content; verify root `SCAFFOLD_FRAMEWORK.md` is gone
+- **Implement:** `git mv SCAFFOLD_FRAMEWORK.md docs/scaffold-guide/scaffold-framework.md`
+- **Files:** `SCAFFOLD_FRAMEWORK.md` (moved to `docs/scaffold-guide/scaffold-framework.md`)
+- **Verify:** `diff` original vs moved (should be identical), `! test -f SCAFFOLD_FRAMEWORK.md`
 
-### Step 2: Node-wins conflict behavior (AC-2)
-
-- **Test:** Add test: both files define `features.pr_review` with different values → local file's value wins.
-- **Implement:** Already handled by jq `*` operator (right-side wins). This step verifies the behavior, no new code expected.
-- **Files:** `tests/scaffold-json-override.bats`
-- **Verify:** `bats tests/scaffold-json-override.bats`
-
-### Step 3: Invalid local JSON error (AC-7)
-
-- **Test:** Add test: `scaffold.local.json` contains invalid JSON → exit 1, stderr contains `ERROR: .claude/scaffold.local.json is not valid JSON`.
-- **Implement:** Add JSON validation for the local file in `merge_scaffold_config`, matching the existing validation pattern in `read_config`.
-- **Files:** `tests/scaffold-json-override.bats`, `scripts/operations.sh`
-- **Verify:** `bats tests/scaffold-json-override.bats`
-
-### Step 4: Wire operations.sh read_config to use merge (AC-5)
-
-- **Test:** In `tests/operations.bats`, add test: routing config in `scaffold.local.json` only → `operations.sh resolve` uses the merged config and resolves to the configured provider.
-- **Implement:** Modify `read_config()` in `operations.sh` to call `merge_scaffold_config` and use the merged result for all downstream jq queries.
-- **Files:** `tests/operations.bats`, `scripts/operations.sh`
-- **Verify:** `bats tests/operations.bats`
-
-### Step 5: Wire docs-check.sh config-get to use merge (AC-6)
-
-- **Test:** Add test: `features.pr_review: true` only in `scaffold.local.json` → `docs-check.sh config-get pr_review` returns `"true"`.
-- **Implement:** Modify `cmd_config_get()` in `docs-check.sh` to merge both files before reading the feature toggle.
-- **Files:** `tests/scaffold-json-override.bats` (add config-get tests), `scripts/docs-check.sh`
-- **Verify:** `bats tests/scaffold-json-override.bats`
-
-### Step 6: Gitignore and claudeignore (AC-9, AC-10)
-
-- **Test:** Add tests: `grep -q 'scaffold.local.json' .gitignore` and `grep -q 'scaffold.local.json' .claudeignore` both pass.
-- **Implement:** Add `.claude/scaffold.local.json` to `.gitignore` (next to `settings.local.json`) and `.claudeignore`.
-- **Files:** `.gitignore`, `.claudeignore`, `tests/scaffold-json-override.bats`
-- **Verify:** `bats tests/scaffold-json-override.bats`
-
-### Step 7: Pull safety verification (AC-8)
-
-- **Test:** Add test: simulate hub change to `scaffold.json` while local copy is clean (no local modifications because overrides live in `scaffold.local.json`) → `pull-plan` classifies it as `auto-update`.
-- **Implement:** No code changes expected — this is a verification that the design works with existing pull-plan logic. If scaffold.json is clean (node edits go to local file), pull-plan already classifies it as auto-update.
-- **Files:** `tests/scaffold-json-override.bats`
-- **Verify:** `bats tests/scaffold-json-override.bats`
-
-### Step 8: Update template (AC-12)
-
-- **Test:** Add test: `docs/templates/scaffold.json` contains a reference to `scaffold.local.json`.
-- **Implement:** Update the template to include a documentation comment or adjacent README reference explaining the overlay pattern.
-- **Files:** `docs/templates/scaffold.json`, `tests/scaffold-json-override.bats`
-- **Verify:** `bats tests/scaffold-json-override.bats`
-
-### Step 9: Documentation updates
-
-- **Implement:** Update hub documentation to reflect the new overlay pattern:
-  - `CLAUDE.md`: Add `scaffold.local.json` to the Architecture section and document the merge behavior
-  - `GUIDE.md`: **Blocked by BTS-26** — GUIDE.md is over 40k chars and the lint hook now blocks writes to it. Skip GUIDE.md updates in this PR; they'll be incorporated when BTS-26 restructures the file. Document the overlay pattern in CLAUDE.md only.
+### Step 3: Update CLAUDE.md reference (AC-6)
+- **Test:** Verify CLAUDE.md references `docs/scaffold-guide/index.md` and does not reference `@GUIDE.md` or `SCAFFOLD_FRAMEWORK.md` (at root)
+- **Implement:** Update Reference Documents section — change `@GUIDE.md` to `docs/scaffold-guide/index.md`, update SCAFFOLD_FRAMEWORK.md reference to new path, update the "Do Not" section
 - **Files:** `CLAUDE.md`
-- **Verify:** `bats tests/` (all tests pass)
+- **Verify:** `grep -c '@GUIDE.md' CLAUDE.md` returns 0
 
-### Step 10: Sync fucina node with hub
+### Step 4: Update scaffold-sync.sh TRACKED_PATTERNS (AC-7)
+- **Test:** Write bats test: given hub with `docs/scaffold-guide/*.md` files and node with same, `pull-plan` correctly identifies them as tracked files
+- **Implement:** Replace `"GUIDE.md"` and `"SCAFFOLD_FRAMEWORK.md"` entries in TRACKED_PATTERNS with `"docs/scaffold-guide/*.md"`
+- **Files:** `scripts/scaffold-sync.sh`
+- **Verify:** `bats tests/scaffold-sync.bats`
 
-- **Context:** The fucina downstream project has not synced with the hub in a while. Multiple features have landed since last sync (permissions-audit, context-budget, tool-integration, and now scaffold-json-override). This step runs after PR merge.
-- **Implement:** In the fucina project directory, run `/scaffold-pull` to pull all hub updates. Resolve any conflicts (scaffold.json will now auto-update cleanly thanks to BTS-24). Verify fucina's node-specific sections are preserved. Run fucina's test suite to confirm nothing broke.
-- **Files:** Fucina project (external — `~/projects/fucina` or equivalent)
-- **Verify:** `/scaffold-status` shows all files clean or node-only in fucina
+### Step 5: Update hooks — lint-on-write.sh and protect-files.sh (AC-8, AC-9)
+- **Test:** Write bats test: lint-on-write enforces 40k limit on `docs/scaffold-guide/index.md`; protect-files blocks writes to `docs/scaffold-guide/scaffold-framework.md`
+- **Implement:** Update ALWAYS_LOADED_PATTERNS in `lint-on-write.sh` (replace `GUIDE.md` with `docs/scaffold-guide/index.md`). Update case pattern in `protect-files.sh` (match `scaffold-framework.md` basename or full path).
+- **Files:** `.claude/hooks/lint-on-write.sh`, `.claude/hooks/protect-files.sh`
+- **Verify:** Echo test JSON through hooks, check exit codes
+
+### Step 6: Update security-audit.sh whitelist (AC-10)
+- **Test:** Verify `docs/scaffold-guide/scaffold-framework.md` is in the whitelist
+- **Implement:** Update WHITELIST entry from `SCAFFOLD_FRAMEWORK.md` to `docs/scaffold-guide/scaffold-framework.md`
+- **Files:** `scripts/security-audit.sh`
+- **Verify:** `bats tests/security-audit.bats`
+
+### Step 7: Update all remaining references (AC-13)
+- **Implement:** Update references in:
+  - `.claude/rules/workflow.md` — GUIDE.md → docs/scaffold-guide/ references
+  - `.claude/rules/code-quality.md` — SCAFFOLD_FRAMEWORK.md → new path
+  - `.claude/rules/deterministic-first.md` — if references exist
+  - `.claude/commands/plan.md` — GUIDE.md → docs/scaffold-guide/ references
+  - `global-commands/init.md` — update file list
+  - `docs/templates/hooks-reference.md` — SCAFFOLD_FRAMEWORK.md → new path
+- **Files:** All files listed above
+- **Verify:** `grep -r 'GUIDE\.md' --include='*.md' .claude/ global-commands/` returns no hits for root GUIDE.md; `grep -r 'SCAFFOLD_FRAMEWORK\.md' --include='*.md' .claude/` returns no root-path hits
+
+### Step 8: Update tests (AC-12)
+- **Test:** All existing tests pass with new paths
+- **Implement:** Update test fixtures in `tests/scaffold-sync.bats`, `tests/operations.bats`, `tests/docs-check.bats` to use `docs/scaffold-guide/` paths instead of root `GUIDE.md` / `SCAFFOLD_FRAMEWORK.md`
+- **Files:** `tests/scaffold-sync.bats`, `tests/operations.bats`, `tests/docs-check.bats`
+- **Verify:** `bats tests/`
+
+### Step 9: Update manifest.lock
+- **Implement:** Remove old `GUIDE.md` entry, run `manifest-check.sh verify` on new paths
+- **Files:** `.claude/manifest.lock`
+- **Verify:** `bash scripts/manifest-check.sh hash-check`
 
 ## Risks
 
-- **jq `*` operator array behavior:** jq's `*` replaces arrays (right-side wins), it does not concatenate. The current schema has no arrays, but this must be documented as a known limitation with an explicit policy for when arrays are added.
-- **Bash 3 compatibility:** The `jq -s` slurp with two files is standard and works on macOS bash 3. No risk.
-- **Duplicate merge logic:** Two scripts (`operations.sh`, `docs-check.sh`) each need the merge function. Risk of drift. Mitigated by keeping the function small (~10 lines) and testing both paths.
+- **Cross-references within GUIDE.md sections:** Internal anchor links (`#section-name`) will break across files. Mitigation: replace with file-path references in the index.
+- **Test fixture complexity:** scaffold-sync.bats creates mock hub/node structures. Changing from single file to directory requires updating multiple test helpers. Mitigation: update systematically, run after each change.
+- **Self-referential content in GUIDE.md:** The Scaffold Sync section documents GUIDE.md's own sync behavior. After the split, `docs/scaffold-guide/scaffold-sync.md` must document its own sync behavior (docs/scaffold-guide/*.md). Update the diagrams and tables.
 
 ## Definition of Done
 
-- [ ] All 12 acceptance criteria from spec pass
-- [ ] All existing tests still pass (332 + new)
+- [ ] All 13 acceptance criteria from spec pass
+- [ ] All existing tests still pass
 - [ ] No type errors
 - [ ] Code reviewed (run /review)
 

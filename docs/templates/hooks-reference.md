@@ -147,7 +147,7 @@ exit 0  # allow
 
 | Hook | Event | Script | What it does |
 |------|-------|--------|-------------|
-| File protection | PreToolUse (Write\|Edit\|MultiEdit) | `protect-files.sh` | Blocks writes to `.env`, credentials, `SCAFFOLD_FRAMEWORK.md`, generated dirs |
+| File protection | PreToolUse (Write\|Edit\|MultiEdit) | `protect-files.sh` | Blocks writes to `.env`, credentials, `scaffold-framework.md`, generated dirs |
 | Auto-format | PostToolUse (Write\|Edit\|MultiEdit) | `format-on-write.sh` | Runs project formatter (uncomment for your stack) |
 
 ## When to Add a Hook vs a Rule

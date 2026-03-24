@@ -55,7 +55,7 @@ esac
 # Claude Code warns at 40k chars for always-loaded files. We block at 40k
 # for known always-loaded files and warn (but allow) at 80k for others.
 # ---------------------------------------------------------------------------
-ALWAYS_LOADED_PATTERNS="CLAUDE.md|GUIDE.md|.claude/rules/*.md"
+ALWAYS_LOADED_PATTERNS="CLAUDE.md|docs/scaffold-guide/index.md|.claude/rules/*.md"
 MAX_ALWAYS_LOADED=40000
 MAX_GENERAL=80000
 

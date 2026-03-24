@@ -64,8 +64,9 @@ Write specs from feature requests.
 <!-- Hub content above is updated via /scaffold-pull. -->
 HUBEOF
 
-  # Create GUIDE.md with NODE-SPECIFIC-START delimiter
-  cat > "$HUB/GUIDE.md" <<'HUBEOF'
+  # Create docs/scaffold-guide/ with NODE-SPECIFIC-START delimiter
+  mkdir -p "$HUB/docs/scaffold-guide"
+  cat > "$HUB/docs/scaffold-guide/index.md" <<'HUBEOF'
 # Scaffold Guide
 
 Hub documentation here.
@@ -110,7 +111,8 @@ HUBEOF
   cp "$HUB/.claude/rules/tdd.md" "$NODE/.claude/rules/tdd.md"
   cp "$HUB/.claude/commands/catchup.md" "$NODE/.claude/commands/catchup.md"
   cp "$HUB/.claude/agents/spec-writer.md" "$NODE/.claude/agents/spec-writer.md"
-  cp "$HUB/GUIDE.md" "$NODE/GUIDE.md"
+  mkdir -p "$NODE/docs/scaffold-guide"
+  cp "$HUB/docs/scaffold-guide/index.md" "$NODE/docs/scaffold-guide/index.md"
   cp "$HUB/CLAUDE.md" "$NODE/CLAUDE.md"
 
   # Initialize node as a git repo (needed for pre-check and pull-finalize)
@@ -947,7 +949,7 @@ EOF
   echo "# Updated by pull" > "$NODE/.claude/rules/tdd.md"
 
   # Modify hub for a version
-  echo "# minor" >> "$HUB/GUIDE.md"
+  echo "# minor" >> "$HUB/docs/scaffold-guide/index.md"
   git -C "$HUB" add -A && git -C "$HUB" commit -q -m "tweak"
 
   local head_before
@@ -966,7 +968,7 @@ EOF
 @test "pull-finalize: outputs commit SHA when commit succeeds" {
   cd "$NODE"
   echo "# Updated by pull" > "$NODE/.claude/rules/tdd.md"
-  echo "# minor" >> "$HUB/GUIDE.md"
+  echo "# minor" >> "$HUB/docs/scaffold-guide/index.md"
   git -C "$HUB" add -A && git -C "$HUB" commit -q -m "tweak"
 
   run bash "$NODE/scripts/scaffold-sync.sh" pull-finalize
@@ -1136,7 +1138,7 @@ EOF
   cd "$NODE"
   # Create a change to commit
   echo "# Updated" > "$NODE/.claude/rules/tdd.md"
-  echo "# minor" >> "$HUB/GUIDE.md"
+  echo "# minor" >> "$HUB/docs/scaffold-guide/index.md"
   git -C "$HUB" add -A && git -C "$HUB" commit -q -m "tweak"
 
   local head_before

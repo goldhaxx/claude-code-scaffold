@@ -28,7 +28,7 @@
 
 ## Protected Files
 
-- `SCAFFOLD_FRAMEWORK.md` is research source material — never modify it without explicit user approval. It documents the foundational research (transformer attention, TDD evidence, context management) that justifies every scaffold design decision. Only update for paradigm shifts, new research findings, or major industry practice changes.
+- `docs/scaffold-guide/scaffold-framework.md` is research source material — never modify it without explicit user approval. It documents the foundational research (transformer attention, TDD evidence, context management) that justifies every scaffold design decision. Only update for paradigm shifts, new research findings, or major industry practice changes.
 
 ## Naming
 

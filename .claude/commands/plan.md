@@ -15,8 +15,8 @@ Create an implementation plan for the feature described in the user's message (o
 6. Order steps so each builds on the previous — earlier steps establish foundations, later steps add features.
 
 7. If any step adds, removes, or modifies scaffold infrastructure (commands, rules, agents, skills, hooks, scripts, or sync behavior), add a final step to update documentation. Read these files only when this step applies:
-   - **Hub-wide changes** (modifying scaffold-shared files): update the hub section of `GUIDE.md` (above `<!-- NODE-SPECIFIC-START -->`). If conventions or "do not" rules changed, update the hub section of `CLAUDE.md` (below `<!-- HUB-MANAGED-START -->`).
-   - **Local-only changes** (adding project-specific commands, rules, agents): update the node-specific section of `GUIDE.md` (below `<!-- NODE-SPECIFIC-START -->`). If the project's tech stack, commands, or architecture changed, update the node section of `CLAUDE.md` (above `<!-- HUB-MANAGED-START -->`).
+   - **Hub-wide changes** (modifying scaffold-shared files): update the relevant file in `docs/scaffold-guide/` (hub section, above `<!-- NODE-SPECIFIC-START -->`). If conventions or "do not" rules changed, update the hub section of `CLAUDE.md` (below `<!-- HUB-MANAGED-START -->`).
+   - **Local-only changes** (adding project-specific commands, rules, agents): update the node-specific section of the relevant `docs/scaffold-guide/` file (below `<!-- NODE-SPECIFIC-START -->`). If the project's tech stack, commands, or architecture changed, update the node section of `CLAUDE.md` (above `<!-- HUB-MANAGED-START -->`).
 
 Do NOT implement anything. Plan only.
 

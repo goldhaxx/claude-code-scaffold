@@ -29,9 +29,8 @@ TRACKED_PATTERNS=(
   ".claude/scaffold.json"
   "docs/templates/*.md"
   "scripts/*.sh"
-  "GUIDE.md"
+  "docs/scaffold-guide/*.md"
   "CLAUDE.md"
-  "SCAFFOLD_FRAMEWORK.md"
 )
 
 # Files to never track

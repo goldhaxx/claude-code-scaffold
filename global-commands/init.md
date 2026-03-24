@@ -6,8 +6,8 @@ Initialize a new project using the Claude Code development scaffold located at ~
    - `.claude/` directory (rules, commands, agents, skills, hooks, settings)
    - `docs/templates/` (persistent format guides, NOT the github/ subdirectory itself)
    - `scripts/` (scaffold-sync.sh, security-audit.sh, fix-cloudflare-certs.sh, fetch-license.sh)
-   - `GUIDE.md` (scaffold guide with visual diagrams)
-   - `SCAFFOLD_FRAMEWORK.md` (foundational research — read-only reference)
+   - `docs/scaffold-guide/` (scaffold guide — split into section files)
+   - `docs/scaffold-guide/scaffold-framework.md` (foundational research — read-only reference)
    - `CLAUDE.md` (project configuration template)
    - GitHub-ready files from `docs/templates/github/`:
      - Copy `README.md` → project root `README.md`
@@ -34,10 +34,10 @@ Initialize a new project using the Claude Code development scaffold located at ~
    - CONTRIBUTING.md (title)
    Also replace `[owner]/[repo]` in README.md with the project directory name.
 7. The tech stack, commands, and architecture will be determined later as we spec and build features. Do not ask me to choose a stack now.
-8. Generate the initial node-specific section of GUIDE.md:
+8. Generate the initial node-specific section of `docs/scaffold-guide/index.md`:
    - Scan `.claude/rules/`, `.claude/commands/`, `.claude/agents/`, `.claude/skills/` for any files that are NOT from the scaffold (pre-existing local files).
-   - If found: replace the placeholder node section with a summary listing each local file and its purpose.
-   - If the project is empty (fresh init): leave the placeholder as-is ("No project-specific features yet").
+   - If found: add a summary listing each local file and its purpose below the `NODE-SPECIFIC-START` delimiter.
+   - If the project is empty (fresh init): leave the placeholder as-is.
 9. Generate the scaffold lockfile by running: `./scripts/scaffold-sync.sh init ~/projects/claude-code-scaffold`
    This creates `.claude/scaffold.lock` which tracks the sync state between this project and the scaffold hub.
 10. Initialize git and install hooks:

@@ -38,6 +38,7 @@ src/
 ├── models/       # Data models, types, schemas
 └── __tests__/    # Test files mirror src/ structure
 docs/
+├── scaffold-guide/ # Scaffold reference docs (synced from hub)
 ├── specs/        # Spec backlog (Draft/Ready/In Progress/Complete)
 ├── spec.md       # Active feature specification (branch-local)
 ├── plan.md       # Implementation plan (branch-local)
@@ -71,8 +72,8 @@ docs/
 - Environment variables: typed in a dedicated config module, never accessed raw.
 
 ## Reference Documents
-### Scaffold Guide — @GUIDE.md
-**Read when:** Adding or modifying scaffold commands, rules, agents, skills, hooks, or scripts. Update its diagrams and tables to reflect the change.
+### Scaffold Guide — docs/scaffold-guide/index.md
+**Read when:** Adding or modifying scaffold commands, rules, agents, skills, hooks, or scripts. Read the index first, then the relevant section file. Update diagrams and tables to reflect the change.
 
 ### Architecture Decisions — @docs/decisions.md
 **Read when:** Making structural changes, adding dependencies, or changing patterns.
@@ -81,7 +82,7 @@ docs/
 **Read when:** Writing tests or debugging test failures.
 
 ## Do Not
-- Do not modify `SCAFFOLD_FRAMEWORK.md` without explicit user approval — it is foundational research source material.
+- Do not modify `docs/scaffold-guide/scaffold-framework.md` without explicit user approval — it is foundational research source material.
 - Do not modify files in `generated/`, `dist/`, or dependency directories.
 - Do not install new dependencies without stating the reason and alternatives considered.
 - Do not suppress type errors — fix the types.

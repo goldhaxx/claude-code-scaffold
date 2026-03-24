@@ -58,7 +58,7 @@
 - **Classify new components at creation time:** When creating a new file in a tracked scaffold directory (`.claude/rules/`, `.claude/commands/`, `.claude/skills/`, `.claude/agents/`, `.claude/hooks/`), ask the user: "Is this project-specific (node-only) or should it sync with the scaffold (tracked)?" Then run the appropriate command: `./scripts/scaffold-sync.sh node-only <file>` or leave as tracked (default).
 - Run `/scaffold-status` periodically to check for scaffold updates.
 - Before starting a new project, pull latest scaffold changes into your current project first.
-- When scaffold structure changes (new/modified commands, rules, agents, skills, hooks, or scripts), `GUIDE.md` must be updated to reflect the change — diagrams, tables, and descriptions must stay accurate.
+- When scaffold structure changes (new/modified commands, rules, agents, skills, hooks, or scripts), the relevant file in `docs/scaffold-guide/` must be updated to reflect the change — diagrams, tables, and descriptions must stay accurate.
 
 ## Error Recovery
 

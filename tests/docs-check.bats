@@ -1086,7 +1086,7 @@ COMMANDS="$BATS_TEST_DIRNAME/../.claude/commands"
 # ===========================================================================
 
 README="$BATS_TEST_DIRNAME/../README.md"
-GUIDE="$BATS_TEST_DIRNAME/../GUIDE.md"
+GUIDE="$BATS_TEST_DIRNAME/../docs/scaffold-guide/command-reference.md"
 
 @test "readme: mentions audit-session in scripts description" {
   run grep -c "audit-session" "$README"

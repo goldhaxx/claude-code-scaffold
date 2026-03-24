@@ -437,8 +437,8 @@ JSON
   grep -q "operations.sh" "$BATS_TEST_DIRNAME/../CLAUDE.md"
 }
 
-@test "GUIDE.md documents operations.sh" {
-  grep -q "operations.sh" "$BATS_TEST_DIRNAME/../GUIDE.md"
+@test "scaffold-guide documents operations.sh" {
+  grep -q "operations.sh" "$BATS_TEST_DIRNAME/../docs/scaffold-guide/command-reference.md"
 }
 
 @test "scaffold.json with integrations key passes jq validation" {
