@@ -71,9 +71,16 @@ Add `scaffold.local.json` as a gitignored overlay that deep-merges over the hub-
 
 - **Implement:** Update hub documentation to reflect the new overlay pattern:
   - `CLAUDE.md`: Add `scaffold.local.json` to the Architecture section and document the merge behavior
-  - `GUIDE.md`: Add to Configuration Layers section (explain the `scaffold.json` + `scaffold.local.json` pattern alongside `settings.json` + `settings.local.json`), update the Scaffold Sync section with the new file's role
-- **Files:** `CLAUDE.md`, `GUIDE.md`
+  - `GUIDE.md`: **Blocked by BTS-26** — GUIDE.md is over 40k chars and the lint hook now blocks writes to it. Skip GUIDE.md updates in this PR; they'll be incorporated when BTS-26 restructures the file. Document the overlay pattern in CLAUDE.md only.
+- **Files:** `CLAUDE.md`
 - **Verify:** `bats tests/` (all tests pass)
+
+### Step 10: Sync fucina node with hub
+
+- **Context:** The fucina downstream project has not synced with the hub in a while. Multiple features have landed since last sync (permissions-audit, context-budget, tool-integration, and now scaffold-json-override). This step runs after PR merge.
+- **Implement:** In the fucina project directory, run `/scaffold-pull` to pull all hub updates. Resolve any conflicts (scaffold.json will now auto-update cleanly thanks to BTS-24). Verify fucina's node-specific sections are preserved. Run fucina's test suite to confirm nothing broke.
+- **Files:** Fucina project (external — `~/projects/fucina` or equivalent)
+- **Verify:** `/scaffold-status` shows all files clean or node-only in fucina
 
 ## Risks
 
