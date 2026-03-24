@@ -62,11 +62,24 @@ MAX_GENERAL=80000
 char_count=$(wc -c < "$FILE_PATH" 2>/dev/null | tr -d ' ')
 if [[ -n "$char_count" ]]; then
   is_always_loaded=false
+  FILE_BASENAME=$(basename "$FILE_PATH")
+  FILE_RELPATH="$FILE_PATH"
   IFS='|' read -ra al_patterns <<< "$ALWAYS_LOADED_PATTERNS"
   for pat in "${al_patterns[@]}"; do
     # shellcheck disable=SC2254
-    case "$FILE_PATH" in
-      *$pat) is_always_loaded=true; break ;;
+    case "$pat" in
+      */*)
+        # Path pattern (e.g., .claude/rules/*.md) — match against full path
+        case "$FILE_RELPATH" in
+          *$pat) is_always_loaded=true; break ;;
+        esac
+        ;;
+      *)
+        # Filename pattern (e.g., CLAUDE.md) — match against basename only
+        case "$FILE_BASENAME" in
+          $pat) is_always_loaded=true; break ;;
+        esac
+        ;;
     esac
   done
 

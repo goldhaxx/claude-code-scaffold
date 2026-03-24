@@ -164,6 +164,7 @@ read_config() {
   merged=$(merge_scaffold_config "$PROJECT_DIR") || exit 1
 
   CONFIG_FILE=$(mktemp)
+  trap 'rm -f "$CONFIG_FILE"' EXIT
   echo "$merged" > "$CONFIG_FILE"
 }
 

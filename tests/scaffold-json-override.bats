@@ -189,6 +189,8 @@ EOF
   run bash "$SYNC_SCRIPT" pull-plan "$HUB"
   [ "$status" -eq 0 ]
   echo "$output" | jq -e '.[] | select(.file == ".claude/scaffold.json") | .action == "auto-update"'
+
+  rm -rf "$HUB" "$NODE"
 }
 
 # =========================================================================
