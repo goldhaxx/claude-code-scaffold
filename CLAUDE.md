@@ -24,6 +24,8 @@ bash scripts/docs-check.sh activate <id> # Activate a spec → create branch
 bash scripts/docs-check.sh complete <id> # Mark spec complete
 bash scripts/operations.sh resolve <operation>              # Resolve operation routing
 bash scripts/operations.sh resolve <operation> --project-dir DIR  # With project dir
+bash scripts/operations.sh merge-config                     # Merged effective config (JSON)
+bash scripts/operations.sh merge-config --project-dir DIR   # With project dir
 bash -n scripts/scaffold-sync.sh     # Syntax check the sync script
 ```
 
@@ -41,6 +43,9 @@ docs/
 ├── plan.md       # Implementation plan (branch-local)
 ├── checkpoint.md # Progress state for session continuity
 └── assumptions.md # Judgment calls made during implementation
+.claude/
+├── scaffold.json       # Hub-tracked config (feature toggles, defaults)
+└── scaffold.local.json # Node-only overrides (gitignored, deep-merged at read time)
 ```
 
 <!-- HUB-MANAGED-START -->
