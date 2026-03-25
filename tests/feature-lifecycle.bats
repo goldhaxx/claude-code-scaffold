@@ -151,7 +151,7 @@ EOF
 ## Summary
 Auth feature.
 EOF
-  git -C "$PROJECT" add -A && git -C "$PROJECT" commit -q -m "add spec"
+  # Spec is uncommitted — activate should handle it
 
   run "$PROJECT/scripts/docs-check.sh" activate auth-system "$PROJECT/docs"
   [ "$status" -eq 0 ]
@@ -173,7 +173,7 @@ EOF
 ## Summary
 Auth feature.
 EOF
-  git -C "$PROJECT" add -A && git -C "$PROJECT" commit -q -m "add spec"
+  # Spec is uncommitted — activate should handle it
 
   "$PROJECT/scripts/docs-check.sh" activate auth-system "$PROJECT/docs"
   [ -f "$PROJECT/docs/spec.md" ]
@@ -193,13 +193,14 @@ EOF
 ## Summary
 Auth feature.
 EOF
-  git -C "$PROJECT" add -A && git -C "$PROJECT" commit -q -m "add spec"
+  # Spec is uncommitted — activate should handle it
 
   "$PROJECT/scripts/docs-check.sh" activate auth-system "$PROJECT/docs"
   grep -q "Status: In Progress" "$PROJECT/docs/specs/auth-system.md"
 }
 
 @test "activate: fails if another spec is In Progress" {
+  # Blocking spec is committed (represents prior activation)
   cat > "$PROJECT/docs/specs/first.md" <<'EOF'
 # Feature: First
 
@@ -210,6 +211,9 @@ EOF
 ## Summary
 First feature.
 EOF
+  git -C "$PROJECT" add -A && git -C "$PROJECT" commit -q -m "add blocking spec"
+
+  # Target spec is uncommitted
   cat > "$PROJECT/docs/specs/second.md" <<'EOF'
 # Feature: Second
 
@@ -220,7 +224,6 @@ EOF
 ## Summary
 Second feature.
 EOF
-  git -C "$PROJECT" add -A && git -C "$PROJECT" commit -q -m "add specs"
 
   run "$PROJECT/scripts/docs-check.sh" activate second "$PROJECT/docs"
   [ "$status" -eq 1 ]
