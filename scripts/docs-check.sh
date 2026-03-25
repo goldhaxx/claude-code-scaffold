@@ -685,13 +685,16 @@ cmd_activate() {
   local docs_rel
   docs_rel=$(cd "$docs_dir" 2>/dev/null && git rev-parse --show-prefix 2>/dev/null)
   docs_rel="${docs_rel%/}"  # strip trailing slash → e.g. "docs"
+  # Build prefix: "docs/" when docs_dir is a subdirectory, "" when it's repo root
+  local docs_prefix="${docs_rel:+${docs_rel}/}"
   while IFS= read -r line; do
     [[ -z "$line" ]] && continue
     # porcelain format: XY <path> or XY <path> -> <path>
+    # Note: only the source path is checked; rename destinations are not evaluated
     local fpath="${line:3}"
     fpath="${fpath%% -> *}"  # strip rename target
     case "$fpath" in
-      "${docs_rel}/specs/"*|"${docs_rel}/spec.md") ;;  # allowed
+      "${docs_prefix}specs/"*|"${docs_prefix}spec.md") ;;  # allowed
       *) dirty_non_spec="$fpath"; break ;;
     esac
   done < <(git -C "$repo_root" status --porcelain --untracked-files=all 2>/dev/null)
@@ -726,7 +729,10 @@ cmd_activate() {
 
   # Auto-commit spec changes on the branch
   git -C "$repo_root" add "$spec_file" "$docs_dir/spec.md"
-  git -C "$repo_root" commit -q -m "docs(lifecycle): activate $feature_id"
+  git -C "$repo_root" commit -q -m "docs(lifecycle): activate $feature_id" || {
+    echo "ERROR: failed to commit spec changes on branch '$branch_name'" >&2
+    exit 1
+  }
 
   echo "Activated spec '$feature_id' on branch '$branch_name'"
 }
