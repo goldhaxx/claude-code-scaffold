@@ -296,6 +296,74 @@ EOF
 }
 
 # ---------------------------------------------------------------------------
+# Step 3c: activate auto-commit (BTS-28 AC-4, AC-5, AC-6)
+# ---------------------------------------------------------------------------
+
+@test "activate: auto-commits spec files on branch (AC-4)" {
+  cat > "$PROJECT/docs/specs/auth-system.md" <<'EOF'
+# Feature: Auth System
+
+> Feature: auth-system
+> Created: 1774200000
+> Status: Ready
+
+## Summary
+Auth feature.
+EOF
+
+  "$PROJECT/scripts/docs-check.sh" activate auth-system "$PROJECT/docs"
+
+  # Branch should have exactly one new commit (beyond init)
+  local count
+  count=$(git -C "$PROJECT" log --oneline main..HEAD | wc -l | tr -d ' ')
+  [ "$count" -eq 1 ]
+
+  # That commit should contain both spec files
+  local files_in_commit
+  files_in_commit=$(git -C "$PROJECT" diff-tree --no-commit-id --name-only -r HEAD)
+  echo "$files_in_commit" | grep -q "docs/specs/auth-system.md"
+  echo "$files_in_commit" | grep -q "docs/spec.md"
+}
+
+@test "activate: auto-commit message follows convention (AC-5)" {
+  cat > "$PROJECT/docs/specs/auth-system.md" <<'EOF'
+# Feature: Auth System
+
+> Feature: auth-system
+> Created: 1774200000
+> Status: Ready
+
+## Summary
+Auth feature.
+EOF
+
+  "$PROJECT/scripts/docs-check.sh" activate auth-system "$PROJECT/docs"
+
+  local msg
+  msg=$(git -C "$PROJECT" log -1 --format=%s)
+  [ "$msg" = "docs(lifecycle): activate auth-system" ]
+}
+
+@test "activate: worktree is clean after activation (AC-6)" {
+  cat > "$PROJECT/docs/specs/auth-system.md" <<'EOF'
+# Feature: Auth System
+
+> Feature: auth-system
+> Created: 1774200000
+> Status: Ready
+
+## Summary
+Auth feature.
+EOF
+
+  "$PROJECT/scripts/docs-check.sh" activate auth-system "$PROJECT/docs"
+
+  local dirty
+  dirty=$(git -C "$PROJECT" status --porcelain)
+  [ -z "$dirty" ]
+}
+
+# ---------------------------------------------------------------------------
 # Step 4: complete (AC-3, AC-18)
 # ---------------------------------------------------------------------------
 

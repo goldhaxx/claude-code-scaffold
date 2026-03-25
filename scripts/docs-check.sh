@@ -724,6 +724,10 @@ cmd_activate() {
   # Copy spec to docs/spec.md (after status update so it gets the new status)
   cp "$spec_file" "$docs_dir/spec.md"
 
+  # Auto-commit spec changes on the branch
+  git -C "$repo_root" add "$spec_file" "$docs_dir/spec.md"
+  git -C "$repo_root" commit -q -m "docs(lifecycle): activate $feature_id"
+
   echo "Activated spec '$feature_id' on branch '$branch_name'"
 }
 
