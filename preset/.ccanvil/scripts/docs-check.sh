@@ -521,7 +521,7 @@ cmd_audit_session() {
     fi
 
     # Check each pattern against added lines (skip allowlisted files)
-    if [[ "$line" =~ ^\+ && ! "$current_file" =~ ^scripts/.*\.sh$ ]]; then
+    if [[ "$line" =~ ^\+ && ! "$current_file" =~ ^\.ccanvil/scripts/.*\.sh$ ]]; then
       for pattern_def in "${AUDIT_PATTERNS[@]}"; do
         local pname="${pattern_def%%|*}"
         local pregex="${pattern_def#*|}"

@@ -3,7 +3,7 @@
 #
 # Each test creates an isolated project directory with fixture configs.
 
-SCRIPT="$BATS_TEST_DIRNAME/../../scripts/operations.sh"
+SCRIPT="$BATS_TEST_DIRNAME/../../.ccanvil/scripts/operations.sh"
 
 setup() {
   export TMPDIR="${BATS_TEST_TMPDIR}"
@@ -241,7 +241,7 @@ SPEC
   echo "$resolved_cmd" | grep -q "docs-check.sh list-specs"
 
   # Run docs-check.sh directly against the fixture
-  local DOCS_SCRIPT="$BATS_TEST_DIRNAME/../../scripts/docs-check.sh"
+  local DOCS_SCRIPT="$BATS_TEST_DIRNAME/../../.ccanvil/scripts/docs-check.sh"
   local direct_output
   direct_output=$(bash "$DOCS_SCRIPT" list-specs "$FIXTURE_DIR/docs" 2>/dev/null)
 
@@ -438,7 +438,7 @@ JSON
 }
 
 @test "scaffold-guide documents operations.sh" {
-  grep -q "operations.sh" "$BATS_TEST_DIRNAME/../../docs/scaffold-guide/command-reference.md"
+  grep -q "operations.sh" "$BATS_TEST_DIRNAME/../../.ccanvil/guide/command-reference.md"
 }
 
 @test "scaffold.json with integrations key passes jq validation" {
@@ -447,5 +447,5 @@ JSON
 }
 
 @test "scaffold.json is tracked in scaffold-sync TRACKED_PATTERNS" {
-  grep -q 'scaffold.json' "$BATS_TEST_DIRNAME/../../scripts/scaffold-sync.sh"
+  grep -q 'scaffold.json' "$BATS_TEST_DIRNAME/../../.ccanvil/scripts/scaffold-sync.sh"
 }

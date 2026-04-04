@@ -4,7 +4,7 @@
 # Each test creates isolated temp directories with mock docs.
 # Metadata lives in blockquote lines (> Key: value) after the heading.
 
-SCRIPT="$BATS_TEST_DIRNAME/../../scripts/docs-check.sh"
+SCRIPT="$BATS_TEST_DIRNAME/../../.ccanvil/scripts/docs-check.sh"
 
 # ---------------------------------------------------------------------------
 # Fixtures: create mock docs directory
@@ -556,7 +556,7 @@ EOF
 # Step 6: template metadata fields
 # ===========================================================================
 
-TEMPLATES="$BATS_TEST_DIRNAME/../../docs/templates"
+TEMPLATES="$BATS_TEST_DIRNAME/../../.ccanvil/templates"
 
 @test "template: spec.md has Feature placeholder" {
   run grep -c "^> Feature: \[" "$TEMPLATES/spec.md"
@@ -890,15 +890,15 @@ SCRIPT
   repo=$(create_audit_repo)
 
   # Create a scripts/ dir with patterns that should be allowlisted
-  mkdir -p "$repo/scripts"
-  cat > "$repo/scripts/sync.sh" <<'SCRIPT'
+  mkdir -p "$repo/.ccanvil/scripts"
+  cat > "$repo/.ccanvil/scripts/sync.sh" <<'SCRIPT'
 #!/bin/bash
 cp "$hub_file" "$node_file"
 jq '.status' lockfile.json
 shasum -a 256 "$file"
 git -C "$other_repo" status
 SCRIPT
-  git -C "$repo" add scripts/sync.sh
+  git -C "$repo" add .ccanvil/scripts/sync.sh
   git -C "$repo" commit -q -m "add sync script"
 
   run bash "$SCRIPT" audit-session --since HEAD~1 "$repo"
@@ -915,8 +915,8 @@ SCRIPT
   repo=$(create_audit_repo)
 
   # Same patterns but in a non-scripts directory
-  mkdir -p "$repo/scripts"
-  cat > "$repo/scripts/sync.sh" <<'SCRIPT'
+  mkdir -p "$repo/.ccanvil/scripts"
+  cat > "$repo/.ccanvil/scripts/sync.sh" <<'SCRIPT'
 #!/bin/bash
 cp "$hub_file" "$node_file"
 SCRIPT
@@ -924,7 +924,7 @@ SCRIPT
 #!/bin/bash
 cp src/config.json dist/
 SCRIPT
-  git -C "$repo" add scripts/sync.sh deploy.sh
+  git -C "$repo" add .ccanvil/scripts/sync.sh deploy.sh
   git -C "$repo" commit -q -m "add both"
 
   run bash "$SCRIPT" audit-session --since HEAD~1 "$repo"
@@ -1086,7 +1086,7 @@ COMMANDS="$BATS_TEST_DIRNAME/../../.claude/commands"
 # ===========================================================================
 
 README="$BATS_TEST_DIRNAME/../../README.md"
-GUIDE="$BATS_TEST_DIRNAME/../../docs/scaffold-guide/command-reference.md"
+GUIDE="$BATS_TEST_DIRNAME/../../.ccanvil/guide/command-reference.md"
 
 @test "readme: mentions audit-session in scripts description" {
   run grep -c "audit-session" "$README"

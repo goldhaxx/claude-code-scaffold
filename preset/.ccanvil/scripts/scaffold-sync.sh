@@ -16,7 +16,7 @@ set -euo pipefail
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
-LOCKFILE=".claude/scaffold.lock"
+LOCKFILE=".ccanvil/ccanvil.lock"
 
 # Directories and patterns to track (relative to project root)
 TRACKED_PATTERNS=(
@@ -27,15 +27,15 @@ TRACKED_PATTERNS=(
   ".claude/hooks/*.sh"
   ".claude/settings.json"
   ".claude/scaffold.json"
-  "docs/templates/*.md"
-  "scripts/*.sh"
-  "docs/scaffold-guide/*.md"
+  ".ccanvil/templates/*.md"
+  ".ccanvil/scripts/*.sh"
+  ".ccanvil/guide/*.md"
   "CLAUDE.md"
 )
 
 # Files to never track
 EXCLUDED_FILES=(
-  ".claude/scaffold.lock"
+  ".ccanvil/ccanvil.lock"
 )
 
 # ---------------------------------------------------------------------------
@@ -72,9 +72,17 @@ require_lockfile() {
   [[ -f "$LOCKFILE" ]] || die "No $LOCKFILE found. Run: scaffold-sync.sh init"
 }
 
-get_scaffold_source() {
-  # Returns absolute path (for filesystem operations)
+get_scaffold_source_raw() {
+  # Returns absolute path to the hub root (for git operations on the hub)
   jq -r '.scaffold_source' "$LOCKFILE" | sed "s|^~|$HOME|"
+}
+
+get_scaffold_source() {
+  # Returns absolute path to the distributable root within the hub.
+  # If hub has preset/, distributable files live there; otherwise hub root.
+  local src
+  src=$(get_scaffold_source_raw)
+  scaffold_dist_root "$src"
 }
 
 get_scaffold_source_display() {
@@ -135,17 +143,31 @@ scan_tracked_files() {
   printf '%s\n' "${files[@]}" | sort -u
 }
 
+# Resolve the distributable root within a scaffold hub.
+# If the hub has a preset/ directory, distributable files live there.
+# Otherwise (legacy or non-hub), scan from the path directly.
+scaffold_dist_root() {
+  local scaffold_path="$1"
+  if [[ -d "$scaffold_path/preset" ]]; then
+    echo "$scaffold_path/preset"
+  else
+    echo "$scaffold_path"
+  fi
+}
+
 # Scan scaffold for all files matching tracked patterns
 scan_scaffold_files() {
   local scaffold_path="$1"
+  local dist_root
+  dist_root=$(scaffold_dist_root "$scaffold_path")
   local files=()
   for pattern in "${TRACKED_PATTERNS[@]}"; do
     local matches
-    matches=( "$scaffold_path"/$pattern ) 2>/dev/null || true
+    matches=( "$dist_root"/$pattern ) 2>/dev/null || true
     for f in "${matches[@]}"; do
       if [[ -f "$f" ]]; then
-        # Convert to relative path (strip scaffold_path prefix)
-        local rel="${f#$scaffold_path/}"
+        # Convert to relative path (strip dist_root prefix)
+        local rel="${f#$dist_root/}"
         ! is_excluded "$rel" && files+=("$rel")
       fi
     done
@@ -231,6 +253,8 @@ cmd_status() {
 
   local scaffold_source
   scaffold_source=$(get_scaffold_source)
+  local scaffold_hub
+  scaffold_hub=$(get_scaffold_source_raw)
   local scaffold_version
   scaffold_version=$(jq -r '.scaffold_version' "$LOCKFILE")
   local synced_at
@@ -241,9 +265,9 @@ cmd_status() {
   echo ""
 
   # Check if scaffold has new commits since last sync
-  if git -C "$scaffold_source" rev-parse HEAD >/dev/null 2>&1; then
+  if git -C "$scaffold_hub" rev-parse HEAD >/dev/null 2>&1; then
     local current_scaffold_version
-    current_scaffold_version=$(git -C "$scaffold_source" rev-parse --short HEAD)
+    current_scaffold_version=$(git -C "$scaffold_hub" rev-parse --short HEAD)
     if [[ "$current_scaffold_version" != "$scaffold_version" ]]; then
       echo "NOTE: Scaffold has new commits ($scaffold_version → $current_scaffold_version)"
       echo ""
@@ -552,13 +576,15 @@ cmd_pre_check() {
   require_lockfile
   local scaffold_source
   scaffold_source=$(get_scaffold_source)
+  local scaffold_hub
+  scaffold_hub=$(get_scaffold_source_raw)
 
   [[ -d "$scaffold_source" ]] || die "Scaffold not found at: $scaffold_source"
 
   # Check hub (scaffold) is clean
-  if git -C "$scaffold_source" rev-parse HEAD >/dev/null 2>&1; then
+  if git -C "$scaffold_hub" rev-parse HEAD >/dev/null 2>&1; then
     local dirty
-    dirty=$(git -C "$scaffold_source" status --porcelain 2>/dev/null)
+    dirty=$(git -C "$scaffold_hub" status --porcelain 2>/dev/null)
     if [[ -n "$dirty" ]]; then
       echo "ERROR: Scaffold repo has uncommitted changes:" >&2
       echo "$dirty" >&2
@@ -582,15 +608,15 @@ cmd_pre_check() {
   fi
 
   # Bootstrap: if the hub has a newer sync script, copy it before proceeding
-  local hub_script="$scaffold_source/scripts/scaffold-sync.sh"
-  local local_script="scripts/scaffold-sync.sh"
+  local hub_script="$scaffold_source/.ccanvil/scripts/scaffold-sync.sh"
+  local local_script=".ccanvil/scripts/scaffold-sync.sh"
   if [[ -f "$hub_script" && -f "$local_script" ]]; then
     local hub_hash local_hash
     hub_hash=$(file_hash "$hub_script")
     local_hash=$(file_hash "$local_script")
     if [[ "$hub_hash" != "$local_hash" ]]; then
       cp "$hub_script" "$local_script"
-      echo "BOOTSTRAPPED: Updated scripts/scaffold-sync.sh from hub"
+      echo "BOOTSTRAPPED: Updated .ccanvil/scripts/scaffold-sync.sh from hub"
       echo "  Re-run your command to use the updated script."
       exit 0
     fi
@@ -739,7 +765,7 @@ cmd_pull_auto() {
   # Skip this script itself to avoid replacing a running process mid-execution.
   # Bootstrap in pre-check handles sync script updates separately.
   echo "$plan" | jq -r '.[] | select(.action == "auto-update" or .action == "adopt-clean") | .file' | while IFS= read -r file; do
-    if [[ "$file" == "scripts/scaffold-sync.sh" ]]; then
+    if [[ "$file" == ".ccanvil/scripts/scaffold-sync.sh" ]]; then
       if $dry_run; then
         echo "DRY-RUN: would skip $file (updated via bootstrap)"
       else
@@ -948,10 +974,12 @@ cmd_pull_finalize() {
   require_lockfile
   local scaffold_source
   scaffold_source=$(get_scaffold_source)
+  local scaffold_hub
+  scaffold_hub=$(get_scaffold_source_raw)
 
   local new_version
-  if git -C "$scaffold_source" rev-parse HEAD >/dev/null 2>&1; then
-    new_version=$(git -C "$scaffold_source" rev-parse --short HEAD)
+  if git -C "$scaffold_hub" rev-parse HEAD >/dev/null 2>&1; then
+    new_version=$(git -C "$scaffold_hub" rev-parse --short HEAD)
   else
     new_version="unknown"
   fi
@@ -1140,6 +1168,8 @@ cmd_push_finalize() {
 
   local scaffold_source
   scaffold_source=$(get_scaffold_source)
+  local scaffold_hub
+  scaffold_hub=$(get_scaffold_source_raw)
 
   if $dry_run; then
     echo "DRY-RUN: would commit in scaffold with message: $message"
@@ -1149,21 +1179,21 @@ cmd_push_finalize() {
 
   # Stage and commit in scaffold
   local head_before
-  head_before=$(git -C "$scaffold_source" rev-parse HEAD)
-  git -C "$scaffold_source" add -A
-  git -C "$scaffold_source" commit -m "$message" || true
+  head_before=$(git -C "$scaffold_hub" rev-parse HEAD)
+  git -C "$scaffold_hub" add -A
+  git -C "$scaffold_hub" commit -m "$message" || true
   local head_after
-  head_after=$(git -C "$scaffold_source" rev-parse HEAD)
+  head_after=$(git -C "$scaffold_hub" rev-parse HEAD)
   if [[ "$head_before" != "$head_after" ]]; then
-    echo "Committed in scaffold: $(git -C "$scaffold_source" rev-parse --short HEAD)"
+    echo "Committed in scaffold: $(git -C "$scaffold_hub" rev-parse --short HEAD)"
   else
     echo "WARNING: git commit in scaffold produced no new commit." >&2
   fi
 
   # Update version
   local new_version
-  if git -C "$scaffold_source" rev-parse HEAD >/dev/null 2>&1; then
-    new_version=$(git -C "$scaffold_source" rev-parse --short HEAD)
+  if git -C "$scaffold_hub" rev-parse HEAD >/dev/null 2>&1; then
+    new_version=$(git -C "$scaffold_hub" rev-parse --short HEAD)
   else
     new_version="unknown"
   fi
@@ -1195,6 +1225,8 @@ cmd_promote() {
 
   local scaffold_source
   scaffold_source=$(get_scaffold_source)
+  local scaffold_hub
+  scaffold_hub=$(get_scaffold_source_raw)
 
   # Copy to scaffold
   mkdir -p "$(dirname "$scaffold_source/$file")"
@@ -1210,12 +1242,12 @@ cmd_promote() {
   safe_lock_mv "$tmp" "$LOCKFILE" "promote $file"
 
   # Commit in scaffold
-  git -C "$scaffold_source" add -A
-  git -C "$scaffold_source" commit -m "chore(scaffold): add $(basename "$file") from $(basename "$(pwd)")"
+  git -C "$scaffold_hub" add -A
+  git -C "$scaffold_hub" commit -m "chore(scaffold): add $(basename "$file") from $(basename "$(pwd)")"
 
   # Update version
   local new_version
-  new_version=$(git -C "$scaffold_source" rev-parse --short HEAD 2>/dev/null || echo "unknown")
+  new_version=$(git -C "$scaffold_hub" rev-parse --short HEAD 2>/dev/null || echo "unknown")
   cmd_lock_set_version "$new_version"
 
   echo "PROMOTED: $file → scaffold @ $new_version"

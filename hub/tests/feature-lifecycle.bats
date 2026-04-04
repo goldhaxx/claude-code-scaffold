@@ -4,7 +4,7 @@
 # Covers: scaffold config, list-specs, activate, complete, validate/recommend
 # multi-spec, hooks, and worktree compatibility.
 
-SCRIPT="$BATS_TEST_DIRNAME/../../scripts/docs-check.sh"
+SCRIPT="$BATS_TEST_DIRNAME/../../.ccanvil/scripts/docs-check.sh"
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -24,11 +24,9 @@ setup() {
   mkdir -p "$PROJECT/.claude"
 
   # Copy the real script
-  cp "$SCRIPT" "$PROJECT/scripts/docs-check.sh" 2>/dev/null || {
-    mkdir -p "$PROJECT/scripts"
-    cp "$SCRIPT" "$PROJECT/scripts/docs-check.sh"
-  }
-  chmod +x "$PROJECT/scripts/docs-check.sh"
+  mkdir -p "$PROJECT/.ccanvil/scripts"
+  cp "$SCRIPT" "$PROJECT/.ccanvil/scripts/docs-check.sh"
+  chmod +x "$PROJECT/.ccanvil/scripts/docs-check.sh"
 
   # Initial commit so we have a branch
   touch "$PROJECT/.gitkeep"
@@ -48,7 +46,7 @@ teardown() {
   cat > "$PROJECT/.claude/scaffold.json" <<'EOF'
 {"features": {"pr_review": true}}
 EOF
-  run "$PROJECT/scripts/docs-check.sh" config-get pr_review "$PROJECT"
+  run "$PROJECT/.ccanvil/scripts/docs-check.sh" config-get pr_review "$PROJECT"
   [ "$status" -eq 0 ]
   [ "$output" = "true" ]
 }
@@ -57,14 +55,14 @@ EOF
   cat > "$PROJECT/.claude/scaffold.json" <<'EOF'
 {"features": {"pr_review": true}}
 EOF
-  run "$PROJECT/scripts/docs-check.sh" config-get nonexistent "$PROJECT"
+  run "$PROJECT/.ccanvil/scripts/docs-check.sh" config-get nonexistent "$PROJECT"
   [ "$status" -eq 0 ]
   [ "$output" = "false" ]
 }
 
 @test "scaffold-config: returns false when scaffold.json missing" {
   # No scaffold.json created
-  run "$PROJECT/scripts/docs-check.sh" config-get pr_review "$PROJECT"
+  run "$PROJECT/.ccanvil/scripts/docs-check.sh" config-get pr_review "$PROJECT"
   [ "$status" -eq 0 ]
   [ "$output" = "false" ]
 }
@@ -73,7 +71,7 @@ EOF
   cat > "$PROJECT/.claude/scaffold.json" <<'EOF'
 {}
 EOF
-  run "$PROJECT/scripts/docs-check.sh" config-get pr_review "$PROJECT"
+  run "$PROJECT/.ccanvil/scripts/docs-check.sh" config-get pr_review "$PROJECT"
   [ "$status" -eq 0 ]
   [ "$output" = "false" ]
 }
@@ -93,7 +91,7 @@ EOF
 ## Summary
 Auth feature.
 EOF
-  run "$PROJECT/scripts/docs-check.sh" list-specs "$PROJECT/docs"
+  run "$PROJECT/.ccanvil/scripts/docs-check.sh" list-specs "$PROJECT/docs"
   [ "$status" -eq 0 ]
   echo "$output" | jq -e '.[0].feature_id == "auth-system"'
   echo "$output" | jq -e '.[0].status == "Draft"'
@@ -115,7 +113,7 @@ EOF
 > Created: 1774200100
 > Status: Draft
 EOF
-  run "$PROJECT/scripts/docs-check.sh" list-specs "$PROJECT/docs"
+  run "$PROJECT/.ccanvil/scripts/docs-check.sh" list-specs "$PROJECT/docs"
   [ "$status" -eq 0 ]
   local count
   count=$(echo "$output" | jq 'length')
@@ -124,14 +122,14 @@ EOF
 
 @test "list-specs: empty specs directory returns empty array" {
   # docs/specs/ exists but is empty
-  run "$PROJECT/scripts/docs-check.sh" list-specs "$PROJECT/docs"
+  run "$PROJECT/.ccanvil/scripts/docs-check.sh" list-specs "$PROJECT/docs"
   [ "$status" -eq 0 ]
   [ "$output" = "[]" ]
 }
 
 @test "list-specs: missing specs directory returns empty array" {
   rmdir "$PROJECT/docs/specs"
-  run "$PROJECT/scripts/docs-check.sh" list-specs "$PROJECT/docs"
+  run "$PROJECT/.ccanvil/scripts/docs-check.sh" list-specs "$PROJECT/docs"
   [ "$status" -eq 0 ]
   [ "$output" = "[]" ]
 }
@@ -153,7 +151,7 @@ Auth feature.
 EOF
   # Spec is uncommitted — activate should handle it
 
-  run "$PROJECT/scripts/docs-check.sh" activate auth-system "$PROJECT/docs"
+  run "$PROJECT/.ccanvil/scripts/docs-check.sh" activate auth-system "$PROJECT/docs"
   [ "$status" -eq 0 ]
 
   # Verify branch name follows convention
@@ -175,7 +173,7 @@ Auth feature.
 EOF
   # Spec is uncommitted — activate should handle it
 
-  "$PROJECT/scripts/docs-check.sh" activate auth-system "$PROJECT/docs"
+  "$PROJECT/.ccanvil/scripts/docs-check.sh" activate auth-system "$PROJECT/docs"
   [ -f "$PROJECT/docs/spec.md" ]
   grep -q "auth-system" "$PROJECT/docs/spec.md"
   # docs/spec.md should have the updated status, not the original
@@ -195,7 +193,7 @@ Auth feature.
 EOF
   # Spec is uncommitted — activate should handle it
 
-  "$PROJECT/scripts/docs-check.sh" activate auth-system "$PROJECT/docs"
+  "$PROJECT/.ccanvil/scripts/docs-check.sh" activate auth-system "$PROJECT/docs"
   grep -q "Status: In Progress" "$PROJECT/docs/specs/auth-system.md"
 }
 
@@ -225,13 +223,13 @@ EOF
 Second feature.
 EOF
 
-  run "$PROJECT/scripts/docs-check.sh" activate second "$PROJECT/docs"
+  run "$PROJECT/.ccanvil/scripts/docs-check.sh" activate second "$PROJECT/docs"
   [ "$status" -eq 1 ]
   echo "$output" | grep -q "first"
 }
 
 @test "activate: fails if feature-id not found" {
-  run "$PROJECT/scripts/docs-check.sh" activate nonexistent "$PROJECT/docs"
+  run "$PROJECT/.ccanvil/scripts/docs-check.sh" activate nonexistent "$PROJECT/docs"
   [ "$status" -eq 1 ]
 }
 
@@ -252,7 +250,7 @@ EOF
 Auth feature.
 EOF
 
-  run "$PROJECT/scripts/docs-check.sh" activate auth-system "$PROJECT/docs"
+  run "$PROJECT/.ccanvil/scripts/docs-check.sh" activate auth-system "$PROJECT/docs"
   [ "$status" -eq 0 ]
   echo "$output" | grep -q "Activated spec 'auth-system'"
 }
@@ -271,7 +269,7 @@ Auth feature.
 EOF
   echo "stale spec" > "$PROJECT/docs/spec.md"
 
-  run "$PROJECT/scripts/docs-check.sh" activate auth-system "$PROJECT/docs"
+  run "$PROJECT/.ccanvil/scripts/docs-check.sh" activate auth-system "$PROJECT/docs"
   [ "$status" -eq 0 ]
   echo "$output" | grep -q "Activated spec 'auth-system'"
 }
@@ -293,7 +291,7 @@ EOF
   # Create an uncommitted non-spec file
   echo "dirty" > "$PROJECT/README.md"
 
-  run "$PROJECT/scripts/docs-check.sh" activate auth-system "$PROJECT/docs"
+  run "$PROJECT/.ccanvil/scripts/docs-check.sh" activate auth-system "$PROJECT/docs"
   [ "$status" -eq 1 ]
   echo "$output" | grep -q "uncommitted changes"
 }
@@ -314,7 +312,7 @@ EOF
 Auth feature.
 EOF
 
-  "$PROJECT/scripts/docs-check.sh" activate auth-system "$PROJECT/docs"
+  "$PROJECT/.ccanvil/scripts/docs-check.sh" activate auth-system "$PROJECT/docs"
 
   # Branch should have exactly one new commit (beyond init)
   local count
@@ -340,7 +338,7 @@ EOF
 Auth feature.
 EOF
 
-  "$PROJECT/scripts/docs-check.sh" activate auth-system "$PROJECT/docs"
+  "$PROJECT/.ccanvil/scripts/docs-check.sh" activate auth-system "$PROJECT/docs"
 
   local msg
   msg=$(git -C "$PROJECT" log -1 --format=%s)
@@ -359,7 +357,7 @@ EOF
 Auth feature.
 EOF
 
-  "$PROJECT/scripts/docs-check.sh" activate auth-system "$PROJECT/docs"
+  "$PROJECT/.ccanvil/scripts/docs-check.sh" activate auth-system "$PROJECT/docs"
 
   local dirty
   dirty=$(git -C "$PROJECT" status --porcelain)
@@ -384,7 +382,7 @@ Auth feature.
 EOF
 
   # 2. Activate — creates branch, auto-commits spec
-  "$PROJECT/scripts/docs-check.sh" activate auth-system "$PROJECT/docs"
+  "$PROJECT/.ccanvil/scripts/docs-check.sh" activate auth-system "$PROJECT/docs"
 
   # 3. Simulate implementation work on the branch
   echo "impl" > "$PROJECT/src.sh"
@@ -432,7 +430,7 @@ Auth feature.
 EOF
   git -C "$PROJECT" add -A && git -C "$PROJECT" commit -q -m "add spec"
 
-  run "$PROJECT/scripts/docs-check.sh" complete auth-system "$PROJECT/docs"
+  run "$PROJECT/.ccanvil/scripts/docs-check.sh" complete auth-system "$PROJECT/docs"
   [ "$status" -eq 0 ]
   grep -q "Status: Complete" "$PROJECT/docs/specs/auth-system.md"
 }
@@ -451,7 +449,7 @@ EOF
   echo "- **Auth**: Chose JWT over sessions" > "$PROJECT/docs/assumptions.md"
   git -C "$PROJECT" add -A && git -C "$PROJECT" commit -q -m "add spec"
 
-  "$PROJECT/scripts/docs-check.sh" complete auth-system "$PROJECT/docs"
+  "$PROJECT/.ccanvil/scripts/docs-check.sh" complete auth-system "$PROJECT/docs"
   # File should exist but be empty
   [ -f "$PROJECT/docs/assumptions.md" ]
   [ ! -s "$PROJECT/docs/assumptions.md" ]
@@ -470,12 +468,12 @@ Auth feature.
 EOF
   git -C "$PROJECT" add -A && git -C "$PROJECT" commit -q -m "add spec"
 
-  run "$PROJECT/scripts/docs-check.sh" complete auth-system "$PROJECT/docs"
+  run "$PROJECT/.ccanvil/scripts/docs-check.sh" complete auth-system "$PROJECT/docs"
   [ "$status" -eq 1 ]
 }
 
 @test "complete: fails if feature-id not found" {
-  run "$PROJECT/scripts/docs-check.sh" complete nonexistent "$PROJECT/docs"
+  run "$PROJECT/.ccanvil/scripts/docs-check.sh" complete nonexistent "$PROJECT/docs"
   [ "$status" -eq 1 ]
 }
 
@@ -495,7 +493,7 @@ EOF
 ## Summary
 Auth feature.
 EOF
-  run "$PROJECT/scripts/docs-check.sh" validate "$PROJECT/docs"
+  run "$PROJECT/.ccanvil/scripts/docs-check.sh" validate "$PROJECT/docs"
   [ "$status" -eq 0 ]
   echo "$output" | jq -e '.result == "no-active-spec"'
 }
@@ -523,7 +521,7 @@ EOF
 ## Objective
 Test.
 EOF
-  run "$PROJECT/scripts/docs-check.sh" validate "$PROJECT/docs"
+  run "$PROJECT/.ccanvil/scripts/docs-check.sh" validate "$PROJECT/docs"
   [ "$status" -eq 0 ]
   # Should NOT be no-active-spec since spec.md exists
   local result
@@ -542,14 +540,14 @@ EOF
 ## Summary
 Auth feature.
 EOF
-  run "$PROJECT/scripts/docs-check.sh" recommend "$PROJECT/docs"
+  run "$PROJECT/.ccanvil/scripts/docs-check.sh" recommend "$PROJECT/docs"
   [ "$status" -eq 0 ]
   echo "$output" | jq -e '.next_action | test("activate")'
 }
 
 @test "recommend: no spec.md and no Ready specs suggests describe" {
   # Empty specs dir, no spec.md
-  run "$PROJECT/scripts/docs-check.sh" recommend "$PROJECT/docs"
+  run "$PROJECT/.ccanvil/scripts/docs-check.sh" recommend "$PROJECT/docs"
   [ "$status" -eq 0 ]
   echo "$output" | jq -e '.next_action | test("Describe|describe")'
 }
@@ -662,7 +660,7 @@ Test.
 EOF
   mkdir -p "$PROJECT/src"
   # Run from a subdirectory — should still find docs relative to project root
-  run "$PROJECT/scripts/docs-check.sh" validate "$PROJECT/docs"
+  run "$PROJECT/.ccanvil/scripts/docs-check.sh" validate "$PROJECT/docs"
   [ "$status" -eq 0 ]
 }
 
@@ -680,6 +678,6 @@ EOF
   git -C "$PROJECT" add -A && git -C "$PROJECT" commit -q -m "add spec"
   # Create a non-spec dirty file
   echo "dirty" > "$PROJECT/README.md"
-  run "$PROJECT/scripts/docs-check.sh" activate auth-system "$PROJECT/docs"
+  run "$PROJECT/.ccanvil/scripts/docs-check.sh" activate auth-system "$PROJECT/docs"
   [ "$status" -eq 1 ]
 }

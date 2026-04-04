@@ -3,7 +3,7 @@
 #
 # Each test creates an isolated git repo with specific scenarios.
 
-SCRIPT="$BATS_TEST_DIRNAME/../../scripts/security-audit.sh"
+SCRIPT="$BATS_TEST_DIRNAME/../../.ccanvil/scripts/security-audit.sh"
 
 setup() {
   REPO=$(mktemp -d)

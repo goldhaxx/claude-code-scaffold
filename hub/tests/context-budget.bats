@@ -4,7 +4,7 @@
 # Each test creates an isolated fixture directory with known file content
 # to get deterministic token counts.
 
-SCRIPT="$BATS_TEST_DIRNAME/../../scripts/context-budget.sh"
+SCRIPT="$BATS_TEST_DIRNAME/../../.ccanvil/scripts/context-budget.sh"
 
 setup() {
   FIXTURE=$(mktemp -d)

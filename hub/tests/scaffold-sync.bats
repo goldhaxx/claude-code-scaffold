@@ -4,7 +4,7 @@
 # Each test creates isolated temp directories simulating hub + node repos.
 # No real git remotes — everything is local and deterministic.
 
-SCRIPT="$BATS_TEST_DIRNAME/../../scripts/scaffold-sync.sh"
+SCRIPT="$BATS_TEST_DIRNAME/../../.ccanvil/scripts/scaffold-sync.sh"
 
 # ---------------------------------------------------------------------------
 # Fixtures: create mock hub and node directories
@@ -20,11 +20,11 @@ setup() {
   mkdir -p "$HUB/.claude/commands"
   mkdir -p "$HUB/.claude/agents"
   mkdir -p "$HUB/.claude/skills/tdd"
-  mkdir -p "$HUB/docs/templates"
-  mkdir -p "$HUB/scripts"
+  mkdir -p "$HUB/.ccanvil/templates"
+  mkdir -p "$HUB/.ccanvil/scripts" "$HUB/scripts"
 
   # Copy the real script to the hub
-  cp "$SCRIPT" "$HUB/scripts/scaffold-sync.sh"
+  cp "$SCRIPT" "$HUB/.ccanvil/scripts/scaffold-sync.sh"
 
   # Create a sample hub rule with delimiter
   cat > "$HUB/.claude/rules/tdd.md" <<'HUBEOF'
@@ -65,8 +65,8 @@ Write specs from feature requests.
 HUBEOF
 
   # Create docs/scaffold-guide/ with NODE-SPECIFIC-START delimiter
-  mkdir -p "$HUB/docs/scaffold-guide"
-  cat > "$HUB/docs/scaffold-guide/index.md" <<'HUBEOF'
+  mkdir -p "$HUB/.ccanvil/guide"
+  cat > "$HUB/.ccanvil/guide/index.md" <<'HUBEOF'
 # Scaffold Guide
 
 Hub documentation here.
@@ -93,7 +93,7 @@ Hub methodology here.
 HUBEOF
 
   # Copy the real sync script to the hub (so bootstrap doesn't fire on every test)
-  cp "$SCRIPT" "$HUB/scripts/scaffold-sync.sh"
+  cp "$SCRIPT" "$HUB/.ccanvil/scripts/scaffold-sync.sh"
 
   # Create SCAFFOLD_CHANGELOG.md in hub (required by push-apply and promote)
   echo "# Scaffold Changelog" > "$HUB/SCAFFOLD_CHANGELOG.md"
@@ -106,13 +106,13 @@ HUBEOF
   # Set up node as a copy of hub, then init lockfile
   cp -R "$HUB/.claude" "$NODE/.claude"
   cp -R "$HUB/docs" "$NODE/docs" 2>/dev/null || true
-  mkdir -p "$NODE/scripts"
-  cp "$SCRIPT" "$NODE/scripts/scaffold-sync.sh"
+  mkdir -p "$NODE/.ccanvil/scripts"
+  cp "$SCRIPT" "$NODE/.ccanvil/scripts/scaffold-sync.sh"
   cp "$HUB/.claude/rules/tdd.md" "$NODE/.claude/rules/tdd.md"
   cp "$HUB/.claude/commands/catchup.md" "$NODE/.claude/commands/catchup.md"
   cp "$HUB/.claude/agents/spec-writer.md" "$NODE/.claude/agents/spec-writer.md"
-  mkdir -p "$NODE/docs/scaffold-guide"
-  cp "$HUB/docs/scaffold-guide/index.md" "$NODE/docs/scaffold-guide/index.md"
+  mkdir -p "$NODE/.ccanvil/guide"
+  cp "$HUB/.ccanvil/guide/index.md" "$NODE/.ccanvil/guide/index.md"
   cp "$HUB/CLAUDE.md" "$NODE/CLAUDE.md"
 
   # Initialize node as a git repo (needed for pre-check and pull-finalize)
@@ -122,7 +122,7 @@ HUBEOF
 
   # Run scaffold init in node
   cd "$NODE"
-  bash "$NODE/scripts/scaffold-sync.sh" init "$HUB"
+  bash "$NODE/.ccanvil/scripts/scaffold-sync.sh" init "$HUB"
 
   # Commit the lockfile so the node is clean
   git -C "$NODE" add -A
@@ -165,7 +165,7 @@ Always test first. New hub content.
 <!-- Hub content above is updated via /scaffold-pull. -->
 EOF
 
-  result=$(bash "$NODE/scripts/scaffold-sync.sh" section-merge "$HUB/.claude/rules/tdd.md" "$NODE/.claude/rules/tdd.md")
+  result=$(bash "$NODE/.ccanvil/scripts/scaffold-sync.sh" section-merge "$HUB/.claude/rules/tdd.md" "$NODE/.claude/rules/tdd.md")
 
   # Hub section should be from hub (v2)
   echo "$result" | grep -q "TDD Rules v2"
@@ -182,7 +182,7 @@ EOF
 My old custom content.
 EOF
 
-  result=$(bash "$NODE/scripts/scaffold-sync.sh" section-merge "$HUB/.claude/rules/tdd.md" "$NODE/.claude/rules/tdd.md")
+  result=$(bash "$NODE/.ccanvil/scripts/scaffold-sync.sh" section-merge "$HUB/.claude/rules/tdd.md" "$NODE/.claude/rules/tdd.md")
 
   # Hub section should be from hub
   echo "$result" | grep -q "Always test first"
@@ -219,7 +219,7 @@ Node identity here.
 Updated hub methodology.
 EOF
 
-  result=$(bash "$NODE/scripts/scaffold-sync.sh" section-merge "$HUB/CLAUDE.md" "$NODE/CLAUDE.md")
+  result=$(bash "$NODE/.ccanvil/scripts/scaffold-sync.sh" section-merge "$HUB/CLAUDE.md" "$NODE/CLAUDE.md")
 
   # Node section should be preserved (from local)
   echo "$result" | grep -q "My Awesome App"
@@ -252,7 +252,7 @@ New hub content.
 <!-- Hub content above is updated via /scaffold-pull. -->
 EOF
 
-  result=$(bash "$NODE/scripts/scaffold-sync.sh" section-merge "$HUB/.claude/rules/tdd.md" "$NODE/.claude/rules/tdd.md")
+  result=$(bash "$NODE/.ccanvil/scripts/scaffold-sync.sh" section-merge "$HUB/.claude/rules/tdd.md" "$NODE/.claude/rules/tdd.md")
 
   # Should have v2 content
   echo "$result" | grep -q "TDD Rules v2"
@@ -273,7 +273,7 @@ EOF
 Local version.
 EOF
 
-  run bash "$NODE/scripts/scaffold-sync.sh" section-merge "$HUB/.claude/rules/no-delim.md" "$NODE/.claude/rules/no-delim.md"
+  run bash "$NODE/.ccanvil/scripts/scaffold-sync.sh" section-merge "$HUB/.claude/rules/no-delim.md" "$NODE/.claude/rules/no-delim.md"
   [ "$status" -ne 0 ]
   echo "$output" | grep -qi "no section delimiter"
 }
@@ -315,7 +315,7 @@ Write specs from feature requests.
 This project uses domain-driven design.
 EOF
 
-  result=$(bash "$NODE/scripts/scaffold-sync.sh" section-merge "$HUB/.claude/agents/spec-writer.md" "$NODE/.claude/agents/spec-writer.md")
+  result=$(bash "$NODE/.ccanvil/scripts/scaffold-sync.sh" section-merge "$HUB/.claude/agents/spec-writer.md" "$NODE/.claude/agents/spec-writer.md")
 
   # Hub section should have v2 (including updated frontmatter from hub)
   echo "$result" | grep -q "Spec Writer v2"
@@ -331,7 +331,7 @@ EOF
 
 @test "pull-plan: unchanged files produce empty plan" {
   cd "$NODE"
-  result=$(bash "$NODE/scripts/scaffold-sync.sh" pull-plan)
+  result=$(bash "$NODE/.ccanvil/scripts/scaffold-sync.sh" pull-plan)
 
   # Should be an empty JSON array
   [ "$(echo "$result" | jq 'length')" -eq 0 ]
@@ -344,7 +344,7 @@ EOF
   echo "# Updated TDD Rules" > "$HUB/.claude/rules/tdd.md"
   git -C "$HUB" add -A && git -C "$HUB" commit -q -m "update tdd"
 
-  result=$(bash "$NODE/scripts/scaffold-sync.sh" pull-plan)
+  result=$(bash "$NODE/.ccanvil/scripts/scaffold-sync.sh" pull-plan)
 
   echo "$result" | jq -e '.[] | select(.file == ".claude/rules/tdd.md" and .action == "auto-update")'
 }
@@ -378,7 +378,7 @@ Always test first.
 Use vitest.
 EOF
 
-  result=$(bash "$NODE/scripts/scaffold-sync.sh" pull-plan)
+  result=$(bash "$NODE/.ccanvil/scripts/scaffold-sync.sh" pull-plan)
 
   echo "$result" | jq -e '.[] | select(.file == ".claude/rules/tdd.md" and .action == "section-merge")'
 }
@@ -388,8 +388,8 @@ EOF
 
   # Create a separate .sh file that contains the delimiter as a literal string
   # (We can't overwrite scaffold-sync.sh since we need it to run pull-plan)
-  mkdir -p "$HUB/scripts"
-  cat > "$HUB/scripts/other-script.sh" <<'SEOF'
+  mkdir -p "$HUB/.ccanvil/scripts" "$HUB/scripts"
+  cat > "$HUB/.ccanvil/scripts/other-script.sh" <<'SEOF'
 #!/usr/bin/env bash
 # This script references <!-- NODE-SPECIFIC-START --> as a string literal
 echo "hub version"
@@ -397,26 +397,26 @@ SEOF
   git -C "$HUB" add -A && git -C "$HUB" commit -q -m "add other-script"
 
   # Copy to node and init to get it in the lockfile
-  cp "$HUB/scripts/other-script.sh" "$NODE/scripts/other-script.sh"
-  bash "$NODE/scripts/scaffold-sync.sh" init "$HUB"
+  cp "$HUB/.ccanvil/scripts/other-script.sh" "$NODE/.ccanvil/scripts/other-script.sh"
+  bash "$NODE/.ccanvil/scripts/scaffold-sync.sh" init "$HUB"
 
   # Now modify both sides so pull-plan sees a conflict
-  cat > "$HUB/scripts/other-script.sh" <<'SEOF'
+  cat > "$HUB/.ccanvil/scripts/other-script.sh" <<'SEOF'
 #!/usr/bin/env bash
 # Updated with <!-- NODE-SPECIFIC-START --> literal
 echo "hub v2"
 SEOF
   git -C "$HUB" add -A && git -C "$HUB" commit -q -m "update other-script"
 
-  cat > "$NODE/scripts/other-script.sh" <<'SEOF'
+  cat > "$NODE/.ccanvil/scripts/other-script.sh" <<'SEOF'
 #!/usr/bin/env bash
 echo "local version"
 SEOF
 
-  result=$(bash "$NODE/scripts/scaffold-sync.sh" pull-plan)
+  result=$(bash "$NODE/.ccanvil/scripts/scaffold-sync.sh" pull-plan)
 
   # Should be conflict, NOT section-merge (because .sh is not .md)
-  action=$(echo "$result" | jq -r '.[] | select(.file == "scripts/other-script.sh") | .action')
+  action=$(echo "$result" | jq -r '.[] | select(.file == ".ccanvil/scripts/other-script.sh") | .action')
   [ "$action" = "conflict" ]
 }
 
@@ -424,13 +424,13 @@ SEOF
   cd "$NODE"
 
   # Mark tdd.md as node-only
-  bash "$NODE/scripts/scaffold-sync.sh" node-only ".claude/rules/tdd.md"
+  bash "$NODE/.ccanvil/scripts/scaffold-sync.sh" node-only ".claude/rules/tdd.md"
 
   # Modify hub version
   echo "# Changed" > "$HUB/.claude/rules/tdd.md"
   git -C "$HUB" add -A && git -C "$HUB" commit -q -m "update"
 
-  result=$(bash "$NODE/scripts/scaffold-sync.sh" pull-plan)
+  result=$(bash "$NODE/.ccanvil/scripts/scaffold-sync.sh" pull-plan)
 
   # tdd.md should NOT appear in the plan
   count=$(echo "$result" | jq '[.[] | select(.file == ".claude/rules/tdd.md")] | length')
@@ -452,7 +452,7 @@ Brand new content.
 EOF
   git -C "$HUB" add -A && git -C "$HUB" commit -q -m "add new rule"
 
-  result=$(bash "$NODE/scripts/scaffold-sync.sh" pull-plan)
+  result=$(bash "$NODE/.ccanvil/scripts/scaffold-sync.sh" pull-plan)
 
   echo "$result" | jq -e '.[] | select(.file == ".claude/rules/new-rule.md" and .action == "new")'
 }
@@ -464,32 +464,32 @@ EOF
 
 @test "node-only: marks file as node-only in lockfile" {
   cd "$NODE"
-  bash "$NODE/scripts/scaffold-sync.sh" node-only ".claude/rules/tdd.md"
+  bash "$NODE/.ccanvil/scripts/scaffold-sync.sh" node-only ".claude/rules/tdd.md"
 
-  sync=$(jq -r '.files[".claude/rules/tdd.md"].sync' "$NODE/.claude/scaffold.lock")
+  sync=$(jq -r '.files[".claude/rules/tdd.md"].sync' "$NODE/.ccanvil/ccanvil.lock")
   [ "$sync" = "node-only" ]
 }
 
 @test "node-only: idempotent — running twice doesn't error" {
   cd "$NODE"
-  bash "$NODE/scripts/scaffold-sync.sh" node-only ".claude/rules/tdd.md"
-  run bash "$NODE/scripts/scaffold-sync.sh" node-only ".claude/rules/tdd.md"
+  bash "$NODE/.ccanvil/scripts/scaffold-sync.sh" node-only ".claude/rules/tdd.md"
+  run bash "$NODE/.ccanvil/scripts/scaffold-sync.sh" node-only ".claude/rules/tdd.md"
   [ "$status" -eq 0 ]
   echo "$output" | grep -qi "already node-only"
 }
 
 @test "track: restores node-only file to tracked state" {
   cd "$NODE"
-  bash "$NODE/scripts/scaffold-sync.sh" node-only ".claude/rules/tdd.md"
-  bash "$NODE/scripts/scaffold-sync.sh" track ".claude/rules/tdd.md"
+  bash "$NODE/.ccanvil/scripts/scaffold-sync.sh" node-only ".claude/rules/tdd.md"
+  bash "$NODE/.ccanvil/scripts/scaffold-sync.sh" track ".claude/rules/tdd.md"
 
-  sync=$(jq -r '.files[".claude/rules/tdd.md"].sync' "$NODE/.claude/scaffold.lock")
+  sync=$(jq -r '.files[".claude/rules/tdd.md"].sync' "$NODE/.ccanvil/ccanvil.lock")
   [ "$sync" = "tracked" ]
 }
 
 @test "node-only: file not in lockfile → error" {
   cd "$NODE"
-  run bash "$NODE/scripts/scaffold-sync.sh" node-only "nonexistent.md"
+  run bash "$NODE/.ccanvil/scripts/scaffold-sync.sh" node-only "nonexistent.md"
   [ "$status" -ne 0 ]
   echo "$output" | grep -qi "not tracked"
 }
@@ -516,7 +516,7 @@ EOF
 Different content from hub.
 EOF
 
-  run bash "$NODE/scripts/scaffold-sync.sh" pull-apply ".claude/rules/existing.md" accept-new
+  run bash "$NODE/.ccanvil/scripts/scaffold-sync.sh" pull-apply ".claude/rules/existing.md" accept-new
   [ "$status" -ne 0 ]
   echo "$output" | grep -qi "already exists"
 
@@ -534,15 +534,15 @@ EOF
 Fresh content.
 EOF
 
-  bash "$NODE/scripts/scaffold-sync.sh" pull-apply ".claude/rules/new-rule.md" accept-new
+  bash "$NODE/.ccanvil/scripts/scaffold-sync.sh" pull-apply ".claude/rules/new-rule.md" accept-new
 
   # File should exist locally
   [ -f "$NODE/.claude/rules/new-rule.md" ]
   grep -q "Fresh content" "$NODE/.claude/rules/new-rule.md"
 
   # Lockfile should have entry
-  jq -e '.files[".claude/rules/new-rule.md"]' "$NODE/.claude/scaffold.lock"
-  status=$(jq -r '.files[".claude/rules/new-rule.md"].status' "$NODE/.claude/scaffold.lock")
+  jq -e '.files[".claude/rules/new-rule.md"]' "$NODE/.ccanvil/ccanvil.lock"
+  status=$(jq -r '.files[".claude/rules/new-rule.md"].status' "$NODE/.ccanvil/ccanvil.lock")
   [ "$status" = "clean" ]
 }
 
@@ -553,32 +553,32 @@ EOF
 
 @test "init: creates lockfile with correct structure" {
   cd "$NODE"
-  [ -f "$NODE/.claude/scaffold.lock" ]
+  [ -f "$NODE/.ccanvil/ccanvil.lock" ]
 
   # Check required top-level fields
-  jq -e '.scaffold_source' "$NODE/.claude/scaffold.lock"
-  jq -e '.scaffold_version' "$NODE/.claude/scaffold.lock"
-  jq -e '.synced_at' "$NODE/.claude/scaffold.lock"
-  jq -e '.files' "$NODE/.claude/scaffold.lock"
+  jq -e '.scaffold_source' "$NODE/.ccanvil/ccanvil.lock"
+  jq -e '.scaffold_version' "$NODE/.ccanvil/ccanvil.lock"
+  jq -e '.synced_at' "$NODE/.ccanvil/ccanvil.lock"
+  jq -e '.files' "$NODE/.ccanvil/ccanvil.lock"
 }
 
 @test "init: files matching tracked patterns are in lockfile" {
   cd "$NODE"
 
   # Our setup created tdd.md, catchup.md, spec-writer.md — all should be tracked
-  jq -e '.files[".claude/rules/tdd.md"]' "$NODE/.claude/scaffold.lock"
-  jq -e '.files[".claude/commands/catchup.md"]' "$NODE/.claude/scaffold.lock"
-  jq -e '.files[".claude/agents/spec-writer.md"]' "$NODE/.claude/scaffold.lock"
+  jq -e '.files[".claude/rules/tdd.md"]' "$NODE/.ccanvil/ccanvil.lock"
+  jq -e '.files[".claude/commands/catchup.md"]' "$NODE/.ccanvil/ccanvil.lock"
+  jq -e '.files[".claude/agents/spec-writer.md"]' "$NODE/.ccanvil/ccanvil.lock"
 }
 
 @test "init: clean files have matching hashes" {
   cd "$NODE"
 
-  status=$(jq -r '.files[".claude/rules/tdd.md"].status' "$NODE/.claude/scaffold.lock")
+  status=$(jq -r '.files[".claude/rules/tdd.md"].status' "$NODE/.ccanvil/ccanvil.lock")
   [ "$status" = "clean" ]
 
-  scaffold_hash=$(jq -r '.files[".claude/rules/tdd.md"].scaffold_hash' "$NODE/.claude/scaffold.lock")
-  local_hash=$(jq -r '.files[".claude/rules/tdd.md"].local_hash' "$NODE/.claude/scaffold.lock")
+  scaffold_hash=$(jq -r '.files[".claude/rules/tdd.md"].scaffold_hash' "$NODE/.ccanvil/ccanvil.lock")
+  local_hash=$(jq -r '.files[".claude/rules/tdd.md"].local_hash' "$NODE/.ccanvil/ccanvil.lock")
   [ "$scaffold_hash" = "$local_hash" ]
 }
 
@@ -590,7 +590,7 @@ EOF
 @test "hash: returns sha256 for existing file" {
   echo "test content" > "$NODE/test.txt"
   cd "$NODE"
-  result=$(bash "$NODE/scripts/scaffold-sync.sh" hash "$NODE/test.txt")
+  result=$(bash "$NODE/.ccanvil/scripts/scaffold-sync.sh" hash "$NODE/test.txt")
   # Output format is: <hash>  <filepath>
   hash_part=$(echo "$result" | awk '{print $1}')
   [ -n "$hash_part" ]
@@ -599,7 +599,7 @@ EOF
 
 @test "hash: returns MISSING for nonexistent file" {
   cd "$NODE"
-  result=$(bash "$NODE/scripts/scaffold-sync.sh" hash "$NODE/nonexistent.txt")
+  result=$(bash "$NODE/.ccanvil/scripts/scaffold-sync.sh" hash "$NODE/nonexistent.txt")
   # Output format is: MISSING  <filepath>
   hash_part=$(echo "$result" | awk '{print $1}')
   [ "$hash_part" = "MISSING" ]
@@ -612,7 +612,7 @@ EOF
 
 @test "pre-check: passes when both repos are clean" {
   cd "$NODE"
-  run bash "$NODE/scripts/scaffold-sync.sh" pre-check
+  run bash "$NODE/.ccanvil/scripts/scaffold-sync.sh" pre-check
   [ "$status" -eq 0 ]
   echo "$output" | grep -q "OK"
 }
@@ -620,7 +620,7 @@ EOF
 @test "pre-check: fails when hub has uncommitted changes" {
   cd "$NODE"
   echo "dirty" > "$HUB/dirty.txt"
-  run bash "$NODE/scripts/scaffold-sync.sh" pre-check
+  run bash "$NODE/.ccanvil/scripts/scaffold-sync.sh" pre-check
   [ "$status" -ne 0 ]
   echo "$output" | grep -qi "scaffold repo has uncommitted"
 }
@@ -628,7 +628,7 @@ EOF
 @test "pre-check: fails when node has uncommitted changes" {
   cd "$NODE"
   echo "dirty" > "$NODE/dirty.txt"
-  run bash "$NODE/scripts/scaffold-sync.sh" pre-check
+  run bash "$NODE/.ccanvil/scripts/scaffold-sync.sh" pre-check
   [ "$status" -ne 0 ]
   echo "$output" | grep -qi "this project has uncommitted"
 }
@@ -653,10 +653,10 @@ Updated hub content.
 EOF
   git -C "$HUB" add -A && git -C "$HUB" commit -q -m "update tdd"
 
-  bash "$NODE/scripts/scaffold-sync.sh" pull-auto
+  bash "$NODE/.ccanvil/scripts/scaffold-sync.sh" pull-auto
 
   # Finalize should commit
-  bash "$NODE/scripts/scaffold-sync.sh" pull-finalize
+  bash "$NODE/.ccanvil/scripts/scaffold-sync.sh" pull-finalize
 
   # Verify a commit was created
   local last_msg
@@ -682,8 +682,8 @@ Updated catchup command.
 EOF
   git -C "$HUB" add -A && git -C "$HUB" commit -q -m "update catchup"
 
-  bash "$NODE/scripts/scaffold-sync.sh" pull-auto
-  bash "$NODE/scripts/scaffold-sync.sh" pull-finalize
+  bash "$NODE/.ccanvil/scripts/scaffold-sync.sh" pull-auto
+  bash "$NODE/.ccanvil/scripts/scaffold-sync.sh" pull-finalize
 
   # Commit body should list the changed file
   local body
@@ -710,7 +710,7 @@ EOF
   cp "$HUB/.claude/rules/new-rule.md" "$NODE/.claude/rules/new-rule.md"
   git -C "$NODE" add -A && git -C "$NODE" commit -q -m "manual copy"
 
-  result=$(bash "$NODE/scripts/scaffold-sync.sh" pull-plan)
+  result=$(bash "$NODE/.ccanvil/scripts/scaffold-sync.sh" pull-plan)
 
   echo "$result" | jq -e '.[] | select(.file == ".claude/rules/new-rule.md" and .action == "adopt-clean")'
 }
@@ -732,7 +732,7 @@ Local version with custom content.
 EOF
   git -C "$NODE" add -A && git -C "$NODE" commit -q -m "local version"
 
-  result=$(bash "$NODE/scripts/scaffold-sync.sh" pull-plan)
+  result=$(bash "$NODE/.ccanvil/scripts/scaffold-sync.sh" pull-plan)
 
   echo "$result" | jq -e '.[] | select(.file == ".claude/rules/new-rule.md" and .action == "adopt-conflict")'
 }
@@ -751,10 +751,10 @@ EOF
   cp "$HUB/.claude/rules/new-rule.md" "$NODE/.claude/rules/new-rule.md"
   git -C "$NODE" add -A && git -C "$NODE" commit -q -m "manual copy"
 
-  bash "$NODE/scripts/scaffold-sync.sh" pull-auto
+  bash "$NODE/.ccanvil/scripts/scaffold-sync.sh" pull-auto
 
   # Should now be in lockfile as clean
-  status=$(jq -r '.files[".claude/rules/new-rule.md"].status' "$NODE/.claude/scaffold.lock")
+  status=$(jq -r '.files[".claude/rules/new-rule.md"].status' "$NODE/.ccanvil/ccanvil.lock")
   [ "$status" = "clean" ]
 }
 
@@ -767,18 +767,18 @@ EOF
   cd "$NODE"
 
   # Modify the hub's sync script (simulate newer version)
-  echo '# updated' >> "$HUB/scripts/scaffold-sync.sh"
+  echo '# updated' >> "$HUB/.ccanvil/scripts/scaffold-sync.sh"
   git -C "$HUB" add -A && git -C "$HUB" commit -q -m "update sync script"
 
   # Node's script is now stale
-  run bash "$NODE/scripts/scaffold-sync.sh" pre-check
+  run bash "$NODE/.ccanvil/scripts/scaffold-sync.sh" pre-check
   [ "$status" -eq 0 ]
   echo "$output" | grep -q "BOOTSTRAPPED"
 
   # Local script should now match hub
   local hub_h node_h
-  hub_h=$(shasum -a 256 "$HUB/scripts/scaffold-sync.sh" | awk '{print $1}')
-  node_h=$(shasum -a 256 "$NODE/scripts/scaffold-sync.sh" | awk '{print $1}')
+  hub_h=$(shasum -a 256 "$HUB/.ccanvil/scripts/scaffold-sync.sh" | awk '{print $1}')
+  node_h=$(shasum -a 256 "$NODE/.ccanvil/scripts/scaffold-sync.sh" | awk '{print $1}')
   [ "$hub_h" = "$node_h" ]
 }
 
@@ -789,7 +789,7 @@ EOF
 
 @test "push-candidates: clean files are not candidates" {
   cd "$NODE"
-  result=$(bash "$NODE/scripts/scaffold-sync.sh" push-candidates)
+  result=$(bash "$NODE/.ccanvil/scripts/scaffold-sync.sh" push-candidates)
   # All files should be clean from init, so no candidates
   [ "$(echo "$result" | jq 'length')" -eq 0 ]
 }
@@ -801,9 +801,9 @@ EOF
   echo "# Local improvement" >> "$NODE/.claude/rules/tdd.md"
 
   # Demote first to mark as modified
-  bash "$NODE/scripts/scaffold-sync.sh" demote ".claude/rules/tdd.md"
+  bash "$NODE/.ccanvil/scripts/scaffold-sync.sh" demote ".claude/rules/tdd.md"
 
-  result=$(bash "$NODE/scripts/scaffold-sync.sh" push-candidates)
+  result=$(bash "$NODE/.ccanvil/scripts/scaffold-sync.sh" push-candidates)
   echo "$result" | jq -e '.[] | select(.file == ".claude/rules/tdd.md" and .has_diff == true)'
 }
 
@@ -811,10 +811,10 @@ EOF
   cd "$NODE"
 
   # Mark as node-only then modify
-  bash "$NODE/scripts/scaffold-sync.sh" node-only ".claude/rules/tdd.md"
+  bash "$NODE/.ccanvil/scripts/scaffold-sync.sh" node-only ".claude/rules/tdd.md"
   echo "# Local only" >> "$NODE/.claude/rules/tdd.md"
 
-  result=$(bash "$NODE/scripts/scaffold-sync.sh" push-candidates)
+  result=$(bash "$NODE/.ccanvil/scripts/scaffold-sync.sh" push-candidates)
   count=$(echo "$result" | jq '[.[] | select(.file == ".claude/rules/tdd.md")] | length')
   [ "$count" -eq 0 ]
 }
@@ -823,10 +823,10 @@ EOF
   cd "$NODE"
 
   # Demote two files
-  bash "$NODE/scripts/scaffold-sync.sh" demote ".claude/rules/tdd.md"
-  bash "$NODE/scripts/scaffold-sync.sh" demote ".claude/commands/catchup.md"
+  bash "$NODE/.ccanvil/scripts/scaffold-sync.sh" demote ".claude/rules/tdd.md"
+  bash "$NODE/.ccanvil/scripts/scaffold-sync.sh" demote ".claude/commands/catchup.md"
 
-  result=$(bash "$NODE/scripts/scaffold-sync.sh" push-candidates ".claude/rules/tdd.md")
+  result=$(bash "$NODE/.ccanvil/scripts/scaffold-sync.sh" push-candidates ".claude/rules/tdd.md")
   count=$(echo "$result" | jq 'length')
   [ "$count" -eq 1 ]
   echo "$result" | jq -e '.[] | select(.file == ".claude/rules/tdd.md")'
@@ -842,15 +842,15 @@ EOF
 
   # Modify locally and demote
   echo "# Enhanced TDD" >> "$NODE/.claude/rules/tdd.md"
-  bash "$NODE/scripts/scaffold-sync.sh" demote ".claude/rules/tdd.md"
+  bash "$NODE/.ccanvil/scripts/scaffold-sync.sh" demote ".claude/rules/tdd.md"
 
-  bash "$NODE/scripts/scaffold-sync.sh" push-apply ".claude/rules/tdd.md" "enhanced TDD rules"
+  bash "$NODE/.ccanvil/scripts/scaffold-sync.sh" push-apply ".claude/rules/tdd.md" "enhanced TDD rules"
 
   # File should be in scaffold
   grep -q "Enhanced TDD" "$HUB/.claude/rules/tdd.md"
 
   # Lockfile should be updated
-  status=$(jq -r '.files[".claude/rules/tdd.md"].status' "$NODE/.claude/scaffold.lock")
+  status=$(jq -r '.files[".claude/rules/tdd.md"].status' "$NODE/.ccanvil/ccanvil.lock")
   [ "$status" = "clean" ]
 }
 
@@ -875,17 +875,17 @@ EOF
   local tmp; tmp=$(mktemp)
   jq --arg f ".claude/rules/local-rule.md" --arg h "$h" \
     '.files[$f] = {"origin": "local", "scaffold_hash": null, "local_hash": $h, "status": "local-only", "sync": "tracked"}' \
-    "$NODE/.claude/scaffold.lock" > "$tmp"
-  mv "$tmp" "$NODE/.claude/scaffold.lock"
+    "$NODE/.ccanvil/ccanvil.lock" > "$tmp"
+  mv "$tmp" "$NODE/.ccanvil/ccanvil.lock"
 
-  bash "$NODE/scripts/scaffold-sync.sh" promote ".claude/rules/local-rule.md"
+  bash "$NODE/.ccanvil/scripts/scaffold-sync.sh" promote ".claude/rules/local-rule.md"
 
   # File should exist in scaffold
   [ -f "$HUB/.claude/rules/local-rule.md" ]
   grep -q "A useful rule" "$HUB/.claude/rules/local-rule.md"
 
   # Lockfile should show promoted
-  status=$(jq -r '.files[".claude/rules/local-rule.md"].status' "$NODE/.claude/scaffold.lock")
+  status=$(jq -r '.files[".claude/rules/local-rule.md"].status' "$NODE/.ccanvil/ccanvil.lock")
   [ "$status" = "promoted" ]
 
   # Scaffold should have a new commit
@@ -894,7 +894,7 @@ EOF
 
 @test "promote: skips already-clean files" {
   cd "$NODE"
-  run bash "$NODE/scripts/scaffold-sync.sh" promote ".claude/rules/tdd.md"
+  run bash "$NODE/.ccanvil/scripts/scaffold-sync.sh" promote ".claude/rules/tdd.md"
   [ "$status" -eq 0 ]
   echo "$output" | grep -qi "SKIP\|already"
 }
@@ -907,21 +907,21 @@ EOF
 @test "demote: marks clean file as modified" {
   cd "$NODE"
 
-  status_before=$(jq -r '.files[".claude/rules/tdd.md"].status' "$NODE/.claude/scaffold.lock")
+  status_before=$(jq -r '.files[".claude/rules/tdd.md"].status' "$NODE/.ccanvil/ccanvil.lock")
   [ "$status_before" = "clean" ]
 
-  bash "$NODE/scripts/scaffold-sync.sh" demote ".claude/rules/tdd.md"
+  bash "$NODE/.ccanvil/scripts/scaffold-sync.sh" demote ".claude/rules/tdd.md"
 
-  status_after=$(jq -r '.files[".claude/rules/tdd.md"].status' "$NODE/.claude/scaffold.lock")
+  status_after=$(jq -r '.files[".claude/rules/tdd.md"].status' "$NODE/.ccanvil/ccanvil.lock")
   [ "$status_after" = "modified" ]
 }
 
 @test "demote: rejects non-clean files" {
   cd "$NODE"
   # Demote first to make it modified
-  bash "$NODE/scripts/scaffold-sync.sh" demote ".claude/rules/tdd.md"
+  bash "$NODE/.ccanvil/scripts/scaffold-sync.sh" demote ".claude/rules/tdd.md"
   # Try to demote again
-  run bash "$NODE/scripts/scaffold-sync.sh" demote ".claude/rules/tdd.md"
+  run bash "$NODE/.ccanvil/scripts/scaffold-sync.sh" demote ".claude/rules/tdd.md"
   [ "$status" -eq 0 ]
   echo "$output" | grep -qi "already.*modified\|effectively demoted"
 }
@@ -934,7 +934,7 @@ EOF
 @test "guard_fail: exits with code 3 and GUARD_FAIL prefix" {
   cd "$NODE"
   # Source the script to access guard_fail directly, then call it
-  run bash -c 'source "$1" --source-only 2>/dev/null; guard_fail "cp" ".claude/rules/tdd.md" "test reason"' _ "$NODE/scripts/scaffold-sync.sh"
+  run bash -c 'source "$1" --source-only 2>/dev/null; guard_fail "cp" ".claude/rules/tdd.md" "test reason"' _ "$NODE/.ccanvil/scripts/scaffold-sync.sh"
   [ "$status" -eq 3 ]
   echo "$output" | grep -q "GUARD_FAIL: cp on .claude/rules/tdd.md: test reason"
 }
@@ -949,13 +949,13 @@ EOF
   echo "# Updated by pull" > "$NODE/.claude/rules/tdd.md"
 
   # Modify hub for a version
-  echo "# minor" >> "$HUB/docs/scaffold-guide/index.md"
+  echo "# minor" >> "$HUB/.ccanvil/guide/index.md"
   git -C "$HUB" add -A && git -C "$HUB" commit -q -m "tweak"
 
   local head_before
   head_before=$(git -C "$NODE" rev-parse HEAD)
 
-  run bash "$NODE/scripts/scaffold-sync.sh" pull-finalize
+  run bash "$NODE/.ccanvil/scripts/scaffold-sync.sh" pull-finalize
   [ "$status" -eq 0 ]
 
   # HEAD should have changed — commit was created
@@ -968,10 +968,10 @@ EOF
 @test "pull-finalize: outputs commit SHA when commit succeeds" {
   cd "$NODE"
   echo "# Updated by pull" > "$NODE/.claude/rules/tdd.md"
-  echo "# minor" >> "$HUB/docs/scaffold-guide/index.md"
+  echo "# minor" >> "$HUB/.ccanvil/guide/index.md"
   git -C "$HUB" add -A && git -C "$HUB" commit -q -m "tweak"
 
-  run bash "$NODE/scripts/scaffold-sync.sh" pull-finalize
+  run bash "$NODE/.ccanvil/scripts/scaffold-sync.sh" pull-finalize
   [ "$status" -eq 0 ]
   # Should show the commit SHA
   echo "$output" | grep -q "Committed:"
@@ -985,15 +985,15 @@ EOF
   cd "$NODE"
   # Create a file that we'll plan to delete
   echo "# Extra rule" > "$NODE/.claude/rules/extra.md"
-  bash "$NODE/scripts/scaffold-sync.sh" lock-add ".claude/rules/extra.md" "scaffold" "abc123" "$(shasum -a 256 "$NODE/.claude/rules/extra.md" | awk '{print $1}')" "clean"
+  bash "$NODE/.ccanvil/scripts/scaffold-sync.sh" lock-add ".claude/rules/extra.md" "scaffold" "abc123" "$(shasum -a 256 "$NODE/.claude/rules/extra.md" | awk '{print $1}')" "clean"
   git -C "$NODE" add -A && git -C "$NODE" commit -q -m "add extra rule"
 
   # Simulate: plan says file is "clean" at plan time, but between plan and apply
   # someone demotes it to "modified"
-  bash "$NODE/scripts/scaffold-sync.sh" demote ".claude/rules/extra.md"
+  bash "$NODE/.ccanvil/scripts/scaffold-sync.sh" demote ".claude/rules/extra.md"
 
   # Now try to delete — the status changed from clean to modified
-  run env PLAN_LOCAL_STATUS="clean" bash "$NODE/scripts/scaffold-sync.sh" pull-apply ".claude/rules/extra.md" delete
+  run env PLAN_LOCAL_STATUS="clean" bash "$NODE/.ccanvil/scripts/scaffold-sync.sh" pull-apply ".claude/rules/extra.md" delete
   [ "$status" -eq 3 ]
   echo "$output" | grep -q "GUARD_FAIL:"
 
@@ -1016,7 +1016,7 @@ EOF
   git -C "$HUB" add -A && git -C "$HUB" commit -q -m "update rule"
 
   local plan
-  plan=$(bash "$NODE/scripts/scaffold-sync.sh" pull-plan)
+  plan=$(bash "$NODE/.ccanvil/scripts/scaffold-sync.sh" pull-plan)
 
   # Plan should have the tdd.md entry with a local_hash field
   local local_hash
@@ -1041,12 +1041,12 @@ EOF
   git -C "$HUB" add -A && git -C "$HUB" commit -q -m "update rule"
 
   # Demote first so it becomes a conflict (modified status)
-  bash "$NODE/scripts/scaffold-sync.sh" demote ".claude/rules/tdd.md"
+  bash "$NODE/.ccanvil/scripts/scaffold-sync.sh" demote ".claude/rules/tdd.md"
   git -C "$NODE" add -A && git -C "$NODE" commit -q -m "demote"
 
   # Get plan — captures local_hash at this point
   local plan
-  plan=$(bash "$NODE/scripts/scaffold-sync.sh" pull-plan)
+  plan=$(bash "$NODE/.ccanvil/scripts/scaffold-sync.sh" pull-plan)
   local plan_hash
   plan_hash=$(echo "$plan" | jq -r '.[] | select(.file == ".claude/rules/tdd.md") | .local_hash')
 
@@ -1054,7 +1054,7 @@ EOF
   echo "# Sneaky local change after plan" > "$NODE/.claude/rules/tdd.md"
 
   # pull-apply should detect hash mismatch and guard_fail
-  run env PLAN_LOCAL_HASH="$plan_hash" bash "$NODE/scripts/scaffold-sync.sh" pull-apply ".claude/rules/tdd.md" take-scaffold
+  run env PLAN_LOCAL_HASH="$plan_hash" bash "$NODE/.ccanvil/scripts/scaffold-sync.sh" pull-apply ".claude/rules/tdd.md" take-scaffold
   [ "$status" -eq 3 ]
   echo "$output" | grep -q "GUARD_FAIL:"
 }
@@ -1077,9 +1077,9 @@ EOF
   local hash_before
   hash_before=$(shasum -a 256 "$NODE/.claude/rules/tdd.md" | awk '{print $1}')
   local lock_before
-  lock_before=$(cat "$NODE/.claude/scaffold.lock")
+  lock_before=$(cat "$NODE/.ccanvil/ccanvil.lock")
 
-  run bash "$NODE/scripts/scaffold-sync.sh" pull-auto --dry-run
+  run bash "$NODE/.ccanvil/scripts/scaffold-sync.sh" pull-auto --dry-run
   [ "$status" -eq 0 ]
 
   # Should have DRY-RUN prefix output
@@ -1092,7 +1092,7 @@ EOF
 
   # Lockfile should NOT have changed
   local lock_after
-  lock_after=$(cat "$NODE/.claude/scaffold.lock")
+  lock_after=$(cat "$NODE/.ccanvil/ccanvil.lock")
   [ "$lock_before" = "$lock_after" ]
 }
 
@@ -1118,13 +1118,13 @@ EOF
   echo "# Hub v2" > "$HUB/.claude/rules/tdd.md"
   git -C "$HUB" add -A && git -C "$HUB" commit -q -m "update"
   # Demote to create conflict
-  bash "$NODE/scripts/scaffold-sync.sh" demote ".claude/rules/tdd.md"
+  bash "$NODE/.ccanvil/scripts/scaffold-sync.sh" demote ".claude/rules/tdd.md"
   git -C "$NODE" add -A && git -C "$NODE" commit -q -m "demote"
 
   local hash_before
   hash_before=$(shasum -a 256 "$NODE/.claude/rules/tdd.md" | awk '{print $1}')
 
-  run bash "$NODE/scripts/scaffold-sync.sh" pull-apply ".claude/rules/tdd.md" take-scaffold --dry-run
+  run bash "$NODE/.ccanvil/scripts/scaffold-sync.sh" pull-apply ".claude/rules/tdd.md" take-scaffold --dry-run
   [ "$status" -eq 0 ]
   echo "$output" | grep -q "DRY-RUN: would take-scaffold .claude/rules/tdd.md"
 
@@ -1138,13 +1138,13 @@ EOF
   cd "$NODE"
   # Create a change to commit
   echo "# Updated" > "$NODE/.claude/rules/tdd.md"
-  echo "# minor" >> "$HUB/docs/scaffold-guide/index.md"
+  echo "# minor" >> "$HUB/.ccanvil/guide/index.md"
   git -C "$HUB" add -A && git -C "$HUB" commit -q -m "tweak"
 
   local head_before
   head_before=$(git -C "$NODE" rev-parse HEAD)
 
-  run bash "$NODE/scripts/scaffold-sync.sh" pull-finalize --dry-run
+  run bash "$NODE/.ccanvil/scripts/scaffold-sync.sh" pull-finalize --dry-run
   [ "$status" -eq 0 ]
   echo "$output" | grep -q "DRY-RUN:"
 
@@ -1158,12 +1158,12 @@ EOF
   cd "$NODE"
   # Modify a tracked file to make it pushable
   echo "# Local improvement" > "$NODE/.claude/rules/tdd.md"
-  bash "$NODE/scripts/scaffold-sync.sh" lock-update ".claude/rules/tdd.md" "status" "modified"
+  bash "$NODE/.ccanvil/scripts/scaffold-sync.sh" lock-update ".claude/rules/tdd.md" "status" "modified"
 
   local hub_hash_before
   hub_hash_before=$(shasum -a 256 "$HUB/.claude/rules/tdd.md" | awk '{print $1}')
 
-  run bash "$NODE/scripts/scaffold-sync.sh" push-apply ".claude/rules/tdd.md" --dry-run
+  run bash "$NODE/.ccanvil/scripts/scaffold-sync.sh" push-apply ".claude/rules/tdd.md" --dry-run
   [ "$status" -eq 0 ]
   echo "$output" | grep -q "DRY-RUN: would push .claude/rules/tdd.md"
 
@@ -1181,7 +1181,7 @@ EOF
   local hub_head_before
   hub_head_before=$(git -C "$HUB" rev-parse HEAD)
 
-  run bash "$NODE/scripts/scaffold-sync.sh" push-finalize "test push" --dry-run
+  run bash "$NODE/.ccanvil/scripts/scaffold-sync.sh" push-finalize "test push" --dry-run
   [ "$status" -eq 0 ]
   echo "$output" | grep -q "DRY-RUN:"
 
@@ -1194,34 +1194,34 @@ EOF
 @test "all guards: exit code 3 and GUARD_FAIL prefix" {
   cd "$NODE"
   # Test 1: guard_fail directly
-  run bash -c 'source "$1" --source-only 2>/dev/null; guard_fail "test" "test.md" "reason"' _ "$NODE/scripts/scaffold-sync.sh"
+  run bash -c 'source "$1" --source-only 2>/dev/null; guard_fail "test" "test.md" "reason"' _ "$NODE/.ccanvil/scripts/scaffold-sync.sh"
   [ "$status" -eq 3 ]
   echo "$output" | grep -q "^GUARD_FAIL: test on test.md: reason"
 
   # Test 2: jq guard (corrupt lockfile)
-  echo "NOT JSON" > "$NODE/.claude/scaffold.lock"
-  run bash "$NODE/scripts/scaffold-sync.sh" lock-update ".claude/rules/tdd.md" "status" "modified"
+  echo "NOT JSON" > "$NODE/.ccanvil/ccanvil.lock"
+  run bash "$NODE/.ccanvil/scripts/scaffold-sync.sh" lock-update ".claude/rules/tdd.md" "status" "modified"
   [ "$status" -eq 3 ]
   echo "$output" | grep -q "^GUARD_FAIL: jq on"
 
   # Restore lockfile for next test
   cd "$NODE"
-  git checkout -- .claude/scaffold.lock
+  git checkout -- .ccanvil/ccanvil.lock
 
   # Test 3: hash mismatch guard
   echo "# Hub v2" > "$HUB/.claude/rules/tdd.md"
   git -C "$HUB" add -A && git -C "$HUB" commit -q -m "update"
-  bash "$NODE/scripts/scaffold-sync.sh" demote ".claude/rules/tdd.md"
+  bash "$NODE/.ccanvil/scripts/scaffold-sync.sh" demote ".claude/rules/tdd.md"
   git -C "$NODE" add -A && git -C "$NODE" commit -q -m "demote"
   local plan_hash
-  plan_hash=$(bash "$NODE/scripts/scaffold-sync.sh" pull-plan | jq -r '.[] | select(.file == ".claude/rules/tdd.md") | .local_hash')
+  plan_hash=$(bash "$NODE/.ccanvil/scripts/scaffold-sync.sh" pull-plan | jq -r '.[] | select(.file == ".claude/rules/tdd.md") | .local_hash')
   echo "# changed after plan" > "$NODE/.claude/rules/tdd.md"
-  run env PLAN_LOCAL_HASH="$plan_hash" bash "$NODE/scripts/scaffold-sync.sh" pull-apply ".claude/rules/tdd.md" take-scaffold
+  run env PLAN_LOCAL_HASH="$plan_hash" bash "$NODE/.ccanvil/scripts/scaffold-sync.sh" pull-apply ".claude/rules/tdd.md" take-scaffold
   [ "$status" -eq 3 ]
   echo "$output" | grep -q "^GUARD_FAIL: cp on"
 
   # Test 4: status mismatch guard (delete)
-  run env PLAN_LOCAL_STATUS="clean" bash "$NODE/scripts/scaffold-sync.sh" pull-apply ".claude/rules/tdd.md" delete
+  run env PLAN_LOCAL_STATUS="clean" bash "$NODE/.ccanvil/scripts/scaffold-sync.sh" pull-apply ".claude/rules/tdd.md" delete
   [ "$status" -eq 3 ]
   echo "$output" | grep -q "^GUARD_FAIL: rm on"
 }
@@ -1230,16 +1230,16 @@ EOF
   cd "$NODE"
   # Save original lockfile for comparison
   local original_hash
-  original_hash=$(shasum -a 256 "$NODE/.claude/scaffold.lock" | awk '{print $1}')
+  original_hash=$(shasum -a 256 "$NODE/.ccanvil/ccanvil.lock" | awk '{print $1}')
 
   # Corrupt the lockfile to invalid JSON so jq output will be invalid
-  echo "NOT JSON" > "$NODE/.claude/scaffold.lock"
+  echo "NOT JSON" > "$NODE/.ccanvil/ccanvil.lock"
 
   # Attempt a lock-update — should guard_fail because jq produces invalid output
-  run bash "$NODE/scripts/scaffold-sync.sh" lock-update ".claude/rules/tdd.md" "status" "modified"
+  run bash "$NODE/.ccanvil/scripts/scaffold-sync.sh" lock-update ".claude/rules/tdd.md" "status" "modified"
   [ "$status" -eq 3 ]
   echo "$output" | grep -q "GUARD_FAIL:"
 
   # Lockfile should still be the corrupted version (not replaced with jq garbage)
-  [ "$(cat "$NODE/.claude/scaffold.lock")" = "NOT JSON" ]
+  [ "$(cat "$NODE/.ccanvil/ccanvil.lock")" = "NOT JSON" ]
 }

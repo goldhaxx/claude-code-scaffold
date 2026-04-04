@@ -13,20 +13,20 @@ bats hub/tests/                          # Run all tests
 bats hub/tests/scaffold-sync.bats        # Run scaffold sync tests only
 bats hub/tests/security-audit.bats       # Run security audit tests only
 bats hub/tests/feature-lifecycle.bats    # Run feature lifecycle tests only
-bash .ccanvil/scripts/security-audit.sh       # Run PII/secrets scan
-bash .ccanvil/scripts/permissions-audit.sh check --settings-dir .claude  # Audit permissions
-bash .ccanvil/scripts/permissions-audit.sh init --settings-dir .claude   # Init decision log
-bash .ccanvil/scripts/context-budget.sh check                            # Context budget (JSON)
-bash .ccanvil/scripts/context-budget.sh check --text                     # Context budget (human)
-bash .ccanvil/scripts/context-budget.sh check --model claude-opus-4-6[1m] --text  # With model
-bash .ccanvil/scripts/docs-check.sh list-specs    # List specs in backlog
-bash .ccanvil/scripts/docs-check.sh activate <id> # Activate a spec → create branch
-bash .ccanvil/scripts/docs-check.sh complete <id> # Mark spec complete
-bash .ccanvil/scripts/operations.sh resolve <operation>              # Resolve operation routing
-bash .ccanvil/scripts/operations.sh resolve <operation> --project-dir DIR  # With project dir
-bash .ccanvil/scripts/operations.sh merge-config                     # Merged effective config (JSON)
-bash .ccanvil/scripts/operations.sh merge-config --project-dir DIR   # With project dir
-bash -n .ccanvil/scripts/scaffold-sync.sh     # Syntax check the sync script
+bash scripts/security-audit.sh       # Run PII/secrets scan
+bash scripts/permissions-audit.sh check --settings-dir .claude  # Audit permissions
+bash scripts/permissions-audit.sh init --settings-dir .claude   # Init decision log
+bash scripts/context-budget.sh check                            # Context budget (JSON)
+bash scripts/context-budget.sh check --text                     # Context budget (human)
+bash scripts/context-budget.sh check --model claude-opus-4-6[1m] --text  # With model
+bash scripts/docs-check.sh list-specs    # List specs in backlog
+bash scripts/docs-check.sh activate <id> # Activate a spec → create branch
+bash scripts/docs-check.sh complete <id> # Mark spec complete
+bash scripts/operations.sh resolve <operation>              # Resolve operation routing
+bash scripts/operations.sh resolve <operation> --project-dir DIR  # With project dir
+bash scripts/operations.sh merge-config                     # Merged effective config (JSON)
+bash scripts/operations.sh merge-config --project-dir DIR   # With project dir
+bash -n scripts/scaffold-sync.sh     # Syntax check the sync script
 ```
 
 ## Architecture

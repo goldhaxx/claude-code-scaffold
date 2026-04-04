@@ -3,7 +3,7 @@
 #
 # Each test creates an isolated directory with fixture settings files.
 
-SCRIPT="$BATS_TEST_DIRNAME/../../scripts/permissions-audit.sh"
+SCRIPT="$BATS_TEST_DIRNAME/../../.ccanvil/scripts/permissions-audit.sh"
 
 setup() {
   FIXTURE=$(mktemp -d)
