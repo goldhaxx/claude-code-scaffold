@@ -1,0 +1,57 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+vendor/
+__pycache__/
+.venv/
+venv/
+
+# Build outputs
+dist/
+build/
+.next/
+out/
+.nuxt/
+.output/
+coverage/
+
+# Generated files
+generated/
+*.generated.*
+*.min.js
+*.min.css
+*.map
+
+# Large data
+*.sqlite
+*.db
+data/
+fixtures/large/
+
+# IDE and OS
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Secrets (should never be read)
+.env
+.env.*
+*.pem
+*.key
+
+# Package lock files (huge, rarely needed in context)
+package-lock.json
+pnpm-lock.yaml
+yarn.lock
+
+# Scaffold sync state (machine-managed, not useful in context)
+.claude/scaffold.lock
+
+# Scaffold local config (read via scripts, not raw file reads)
+.claude/scaffold.local.json
+
+# Claude Code worktrees (session-specific, not useful in context)
+.claude/worktrees/

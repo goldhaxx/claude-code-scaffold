@@ -1,57 +1,55 @@
-# [Project Name]
+# ccanvil
 
-[One-line description.]
+Configuration preset hub for Claude Code — spec-driven development, deterministic-first automation, bi-directional sync between hub and downstream project nodes.
 
 ## Tech Stack
-- Runtime: Bash (scaffold automation scripts)
+- Runtime: Bash (preset automation scripts)
 - Testing: bats-core 1.13.0
 - Package Manager: Homebrew (brew install bats-core)
 
 ## Commands
 ```bash
-bats tests/                          # Run all tests
-bats tests/scaffold-sync.bats        # Run scaffold sync tests only
-bats tests/security-audit.bats       # Run security audit tests only
-bats tests/feature-lifecycle.bats    # Run feature lifecycle tests only
-bash scripts/security-audit.sh       # Run PII/secrets scan
-bash scripts/permissions-audit.sh check --settings-dir .claude  # Audit permissions
-bash scripts/permissions-audit.sh init --settings-dir .claude   # Init decision log
-bash scripts/context-budget.sh check                            # Context budget (JSON)
-bash scripts/context-budget.sh check --text                     # Context budget (human)
-bash scripts/context-budget.sh check --model claude-opus-4-6[1m] --text  # With model
-bash scripts/docs-check.sh list-specs    # List specs in backlog
-bash scripts/docs-check.sh activate <id> # Activate a spec → create branch
-bash scripts/docs-check.sh complete <id> # Mark spec complete
-bash scripts/operations.sh resolve <operation>              # Resolve operation routing
-bash scripts/operations.sh resolve <operation> --project-dir DIR  # With project dir
-bash scripts/operations.sh merge-config                     # Merged effective config (JSON)
-bash scripts/operations.sh merge-config --project-dir DIR   # With project dir
-bash -n scripts/scaffold-sync.sh     # Syntax check the sync script
+bats hub/tests/                          # Run all tests
+bats hub/tests/scaffold-sync.bats        # Run scaffold sync tests only
+bats hub/tests/security-audit.bats       # Run security audit tests only
+bats hub/tests/feature-lifecycle.bats    # Run feature lifecycle tests only
+bash .ccanvil/scripts/security-audit.sh       # Run PII/secrets scan
+bash .ccanvil/scripts/permissions-audit.sh check --settings-dir .claude  # Audit permissions
+bash .ccanvil/scripts/context-budget.sh check --text                     # Context budget
+bash .ccanvil/scripts/docs-check.sh list-specs    # List specs in backlog
+bash .ccanvil/scripts/docs-check.sh activate <id> # Activate a spec → create branch
+bash .ccanvil/scripts/docs-check.sh complete <id> # Mark spec complete
+bash .ccanvil/scripts/operations.sh resolve <operation>   # Resolve operation routing
+bash .ccanvil/scripts/operations.sh merge-config          # Merged effective config (JSON)
+bash -n .ccanvil/scripts/ccanvil-sync.sh                 # Syntax check the sync script
 ```
 
 ## Architecture
 ```
-src/
-├── app/          # Entry points, routes, pages
-├── lib/          # Shared utilities and helpers
-├── services/     # Business logic (one file per domain)
-├── models/       # Data models, types, schemas
-└── __tests__/    # Test files mirror src/ structure
+preset/                   # Distributable artifacts ONLY — /init copies from here
+├── .claude/              # Rules, commands, agents, skills, hooks, settings (framework-agnostic)
+├── .ccanvil/
+│   ├── scripts/          # ccanvil-sync.sh, docs-check.sh, operations.sh, etc.
+│   ├── guide/            # Split guide section files
+│   └── templates/        # Format guides, GitHub templates
+├── CLAUDE.md             # Project template (NODE-SPECIFIC placeholders)
+└── .claudeignore
+hub/                      # Hub-only — NOT distributed to downstream projects
+├── tests/                # bats-core test suite (11 .bats files)
+├── specs/                # Spec backlog for ccanvil development
+├── research/             # Foundational research documents
+└── meta/                 # INIT_PROMPT.md, HOW_TO_USE.md, etc.
+.ccanvil → preset/.ccanvil  # Symlink so .ccanvil/scripts/ works in hub too
+.claude/                  # Hub's own Claude Code config (has bats, TLS — not distributed)
 docs/
-├── scaffold-guide/ # Scaffold reference docs (synced from hub)
-├── specs/        # Spec backlog (Draft/Ready/In Progress/Complete)
-├── spec.md       # Active feature specification (branch-local)
-├── plan.md       # Implementation plan (branch-local)
-├── checkpoint.md # Progress state for session continuity
-└── assumptions.md # Judgment calls made during implementation
-.claude/
-├── scaffold.json       # Hub-tracked config (feature toggles, defaults)
-└── scaffold.local.json # Node-only overrides (gitignored, deep-merged at read time)
+├── spec.md               # Active feature specification (branch-local)
+├── plan.md               # Implementation plan (branch-local)
+└── checkpoint.md         # Progress state for session continuity
 ```
 
 <!-- HUB-MANAGED-START -->
 <!-- Everything above is project-specific (name, stack, commands, architecture). -->
-<!-- Everything below is managed by the scaffold hub and updated via /scaffold-pull. -->
+<!-- Everything below is managed by the preset hub and updated via /ccanvil-pull. -->
 
 ## Workflow: Specification → Test → Implement → Verify
 
@@ -72,8 +70,8 @@ docs/
 - Environment variables: typed in a dedicated config module, never accessed raw.
 
 ## Reference Documents
-### Scaffold Guide — docs/scaffold-guide/index.md
-**Read when:** Adding or modifying scaffold commands, rules, agents, skills, hooks, or scripts. Read the index first, then the relevant section file. Update diagrams and tables to reflect the change.
+### Preset Guide — .ccanvil/guide/index.md
+**Read when:** Adding or modifying preset commands, rules, agents, skills, hooks, or scripts. Read the index first, then the relevant section file. Update diagrams and tables to reflect the change.
 
 ### Architecture Decisions — @docs/decisions.md
 **Read when:** Making structural changes, adding dependencies, or changing patterns.
@@ -82,7 +80,7 @@ docs/
 **Read when:** Writing tests or debugging test failures.
 
 ## Do Not
-- Do not modify `docs/scaffold-guide/scaffold-framework.md` without explicit user approval — it is foundational research source material.
+- Do not modify `.ccanvil/guide/scaffold-framework.md` without explicit user approval — it is foundational research source material.
 - Do not modify files in `generated/`, `dist/`, or dependency directories.
 - Do not install new dependencies without stating the reason and alternatives considered.
 - Do not suppress type errors — fix the types.

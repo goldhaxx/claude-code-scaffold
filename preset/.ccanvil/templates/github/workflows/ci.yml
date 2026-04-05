@@ -1,0 +1,31 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # NODE-SPECIFIC: Replace with your project's test setup and command.
+      # Example (Node.js): npm ci && npm test
+      # Example (Python): pip install -r requirements.txt && pytest
+      # Example (Go): go test ./...
+      - name: Run tests
+        run: "echo TODO: Replace with your project test command"
+
+  security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Security audit
+        run: bash .ccanvil/scripts/security-audit.sh

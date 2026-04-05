@@ -159,7 +159,7 @@
       "verified_at_commit": "1d8809373b7ae78ded095def50f5227becd53db5",
       "verified": 1774210892
     },
-    "scripts/scaffold-sync.sh": {
+    "scripts/ccanvil-sync.sh": {
       "file_hash": "6764d7b99bee997a354526ea80de88b169ce4e5baaf6e46c5ef7e7d1e5ad0ab9",
       "verified_at_commit": "31526492ca8be67fd40178c1a4b8efda94470024",
       "verified": 1774216724

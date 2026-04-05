@@ -39,12 +39,12 @@
       "Bash(npx:*)",
       "Bash(bats:*)",
       "Bash(bash -n:*)",
-      "Bash(scripts/docs-check.sh:*)",
-      "Bash(scripts/security-audit.sh:*)",
-      "Bash(scripts/permissions-audit.sh:*)",
-      "Bash(scripts/context-budget.sh:*)",
-      "Bash(scripts/manifest-check.sh:*)",
-      "Bash(./scripts/scaffold-sync.sh:*)"
+      "Bash(.ccanvil/scripts/docs-check.sh:*)",
+      "Bash(.ccanvil/scripts/security-audit.sh:*)",
+      "Bash(.ccanvil/scripts/permissions-audit.sh:*)",
+      "Bash(.ccanvil/scripts/context-budget.sh:*)",
+      "Bash(.ccanvil/scripts/manifest-check.sh:*)",
+      "Bash(./.ccanvil/scripts/ccanvil-sync.sh:*)"
     ],
     "deny": [
       "Bash(rm -rf /)*",

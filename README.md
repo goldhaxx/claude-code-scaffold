@@ -1,4 +1,4 @@
-# Claude Code Scaffold
+# ccanvil
 
 A development scaffold for [Claude Code](https://docs.anthropic.com/en/docs/claude-code) that makes AI-assisted development reliable and repeatable. Spec-driven, test-first, with bi-directional sync between a central hub and any number of downstream projects.
 
@@ -37,7 +37,7 @@ Each level is optional. The scaffold never requires external tools — it adapts
 ```bash
 # One-time setup
 mkdir -p ~/.claude/commands
-cp GLOBAL_CLAUDE.md ~/.claude/CLAUDE.md
+cp hub/meta/GLOBAL_CLAUDE.md ~/.claude/CLAUDE.md
 cp global-commands/init.md ~/.claude/commands/init.md
 
 # Initialize a new project
@@ -62,10 +62,10 @@ mkdir -p ~/.claude
 mkdir -p ~/.claude/commands
 
 # Copy your personal preferences file — loads for every project
-cp ~/projects/claude-code-scaffold/GLOBAL_CLAUDE.md ~/.claude/CLAUDE.md
+cp ~/projects/ccanvil/hub/meta/GLOBAL_CLAUDE.md ~/.claude/CLAUDE.md
 
 # Copy the /init slash command — lets you type /init in any new project
-cp ~/projects/claude-code-scaffold/global-commands/init.md ~/.claude/commands/init.md
+cp ~/projects/ccanvil/global-commands/init.md ~/.claude/commands/init.md
 
 ```
 
@@ -126,8 +126,8 @@ Every file and directory in this scaffold is listed below, grouped by where it g
 
 | File in zip | Copy to | What it does | Customize? |
 |---|---|---|---|
-| `GLOBAL_CLAUDE.md` | `~/.claude/CLAUDE.md` | Your personal preferences — name, communication style, workflow defaults. Claude Code loads this for every project on your machine. | Yes. Edit after copying to match your preferences. |
-| `global-commands/init.md` | `~/.claude/commands/init.md` | The `/init` slash command. Type `/init` in any new project directory and Claude Code reads the scaffold README, copies the files, and asks about your stack to customize. Deterministic — fires exactly when you invoke it, not probabilistically like a skill. | No. Works out of the box as long as the scaffold lives at `~/projects/claude-code-scaffold`. If you store the scaffold elsewhere, update the paths in this file. |
+| `hub/meta/GLOBAL_CLAUDE.md` | `~/.claude/CLAUDE.md` | Your personal preferences — name, communication style, workflow defaults. Claude Code loads this for every project on your machine. | Yes. Edit after copying to match your preferences. |
+| `global-commands/init.md` | `~/.claude/commands/init.md` | The `/init` slash command. Type `/init` in any new project directory and Claude Code reads the scaffold README, copies the files, and asks about your stack to customize. Deterministic — fires exactly when you invoke it, not probabilistically like a skill. | No. Works out of the box as long as the scaffold lives at `~/projects/ccanvil`. If you store the scaffold elsewhere, update the paths in this file. |
 
 ### Files that go to your project root (per-project setup)
 
@@ -151,59 +151,55 @@ Copy the whole directory with `cp -r .claude ./.claude`. Here's what's inside:
 | `.claude/rules/workflow.md` | `./.claude/rules/workflow.md` | Session discipline and context management rules. Defines session objectives, context preservation via checkpoints, commit practices, when to use sub-agents, and error recovery (stop after 2 failed attempts). Loaded alongside CLAUDE.md at launch. | Rarely. These are general best practices. Modify if your team has specific workflow requirements. |
 | `.claude/rules/code-quality.md` | `./.claude/rules/code-quality.md` | Code standards rules. Covers pattern-following, error handling, dependency management, code organization, and naming conventions. Loaded alongside CLAUDE.md at launch. | Sometimes. Adjust naming conventions or error handling patterns to match your project's standards. |
 | `.claude/rules/deterministic-first.md` | `./.claude/rules/deterministic-first.md` | Deterministic-first principle. Hierarchy: hooks → scripts → commands → reasoning. Core architecture governance. | Rarely. Foundational design principle. |
-| `.claude/rules/tls-troubleshooting.md` | `./.claude/rules/tls-troubleshooting.md` | TLS certificate troubleshooting for Cloudflare WARP. Auto-remediation steps and cert bundle setup. | Rarely. Only if your environment uses a different VPN. |
-| `.claude/rules/self-review.md` | `./.claude/rules/self-review.md` | Continuous determinism analysis during checkpoints and reviews. Lightweight version of `/scaffold-audit`. | Rarely. Supports deterministic-first principle. |
+| `.claude/rules/tls-troubleshooting.md` | _(hub-only)_ | TLS certificate troubleshooting for Cloudflare WARP. Not distributed to downstream projects — add to your global `~/.claude/rules/` if needed. | N/A. |
+| `.claude/rules/self-review.md` | `./.claude/rules/self-review.md` | Continuous determinism analysis during checkpoints and reviews. Lightweight version of `/ccanvil-audit`. | Rarely. Supports deterministic-first principle. |
 | `.claude/skills/tdd/SKILL.md` | `./.claude/skills/tdd/SKILL.md` | The full TDD workflow skill. When triggered (by saying "tdd" or "test first"), Claude follows a structured specification → red → green → refactor → commit procedure. Skills load on-demand, not at startup, so they don't consume context when unused. | Sometimes. Replace `$TEST_COMMAND` references if you want the skill to reference your exact test command. |
 | `.claude/agents/code-reviewer.md` | `./.claude/agents/code-reviewer.md` | A sub-agent that reviews uncommitted changes for correctness, test coverage, security issues, performance, and convention adherence. Runs in its own isolated context window. Invoked by the `/review` command. | Rarely. Modify if you want to add project-specific review criteria. |
 | `.claude/agents/spec-writer.md` | `./.claude/agents/spec-writer.md` | A sub-agent that analyzes feature requests and produces structured specifications with testable acceptance criteria. Runs in its own isolated context window. Writes output to `docs/spec.md`. | Rarely. Modify if your team uses a different specification format. |
-| `.claude/agents/scaffold-differ.md` | `./.claude/agents/scaffold-differ.md` | A sub-agent that classifies project changes as generalizable vs project-specific. Used by `/scaffold-push` to determine what should be upstreamed. | Rarely. Modify if you want to change classification heuristics. |
+| `.claude/agents/ccanvil-differ.md` | `./.claude/agents/ccanvil-differ.md` | A sub-agent that classifies project changes as generalizable vs project-specific. Used by `/ccanvil-push` to determine what should be upstreamed. | Rarely. Modify if you want to change classification heuristics. |
 | `.claude/commands/catchup.md` | `./.claude/commands/catchup.md` | Defines the `/catchup` slash command. When invoked, reads `docs/checkpoint.md`, recent git history, and current diff to orient after a `/clear` reset. Does NOT implement anything — it only reports status. | No. This is workflow infrastructure. |
 | `.claude/commands/plan.md` | `./.claude/commands/plan.md` | Defines the `/plan` slash command. When invoked, reads the spec and codebase, then writes an ordered implementation plan to `docs/plan.md`. Each step is sized for one TDD cycle. Does NOT implement anything — it only plans. | No. This is workflow infrastructure. |
 | `.claude/commands/review.md` | `./.claude/commands/review.md` | Defines the `/review` slash command. When invoked, delegates to the code-reviewer sub-agent to review all uncommitted changes. | No. This is workflow infrastructure. |
-| `.claude/commands/scaffold-status.md` | `./.claude/commands/scaffold-status.md` | `/scaffold-status` — show sync state between project and scaffold hub. | No. Scaffold sync infrastructure. |
-| `.claude/commands/scaffold-pull.md` | `./.claude/commands/scaffold-pull.md` | `/scaffold-pull` — pull updates from scaffold into this project with conflict review. | No. Scaffold sync infrastructure. |
-| `.claude/commands/scaffold-push.md` | `./.claude/commands/scaffold-push.md` | `/scaffold-push` — push generalizable project changes to the scaffold hub. | No. Scaffold sync infrastructure. |
-| `.claude/commands/scaffold-promote.md` | `./.claude/commands/scaffold-promote.md` | `/scaffold-promote <file>` — promote a local-only file to the scaffold. | No. Scaffold sync infrastructure. |
-| `.claude/commands/scaffold-demote.md` | `./.claude/commands/scaffold-demote.md` | `/scaffold-demote <file>` — mark a scaffold file as local override. | No. Scaffold sync infrastructure. |
-| `.claude/commands/scaffold-ignore.md` | `./.claude/commands/scaffold-ignore.md` | `/scaffold-ignore <file>` — permanently exclude file from sync. | No. Scaffold sync infrastructure. |
-| `.claude/commands/scaffold-audit.md` | `./.claude/commands/scaffold-audit.md` | `/scaffold-audit` — analyze stochastic vs deterministic surface area. | No. Self-review infrastructure. |
+| `.claude/commands/ccanvil-status.md` | `./.claude/commands/ccanvil-status.md` | `/ccanvil-status` — show sync state between project and scaffold hub. | No. Scaffold sync infrastructure. |
+| `.claude/commands/ccanvil-pull.md` | `./.claude/commands/ccanvil-pull.md` | `/ccanvil-pull` — pull updates from scaffold into this project with conflict review. | No. Scaffold sync infrastructure. |
+| `.claude/commands/ccanvil-push.md` | `./.claude/commands/ccanvil-push.md` | `/ccanvil-push` — push generalizable project changes to the scaffold hub. | No. Scaffold sync infrastructure. |
+| `.claude/commands/ccanvil-promote.md` | `./.claude/commands/ccanvil-promote.md` | `/ccanvil-promote <file>` — promote a local-only file to the scaffold. | No. Scaffold sync infrastructure. |
+| `.claude/commands/ccanvil-demote.md` | `./.claude/commands/ccanvil-demote.md` | `/ccanvil-demote <file>` — mark a scaffold file as local override. | No. Scaffold sync infrastructure. |
+| `.claude/commands/ccanvil-ignore.md` | `./.claude/commands/ccanvil-ignore.md` | `/ccanvil-ignore <file>` — permanently exclude file from sync. | No. Scaffold sync infrastructure. |
+| `.claude/commands/ccanvil-audit.md` | `./.claude/commands/ccanvil-audit.md` | `/ccanvil-audit` — analyze stochastic vs deterministic surface area. | No. Self-review infrastructure. |
 | `.claude/commands/security-audit.md` | `./.claude/commands/security-audit.md` | `/security-audit` — scan for PII, secrets, sensitive information. | No. Security infrastructure. |
 | `.claude/commands/fix-certs.md` | `./.claude/commands/fix-certs.md` | `/fix-certs` — diagnose and fix Cloudflare WARP TLS issues. | No. TLS troubleshooting. |
 
-### The `scripts/` directory (copy entire directory to project root)
+### The `.ccanvil/` directory (preset infrastructure — copied by `/init`)
 
-Copy the whole directory with `cp -r scripts ./scripts`. Contains deterministic automation scripts:
+Distributed via `preset/.ccanvil/`. Contains scripts, guide docs, and templates:
 
-| File in zip | Copy to | What it does | Customize? |
+| File in preset | Copy to | What it does | Customize? |
 |---|---|---|---|
-| `scripts/scaffold-sync.sh` | `./scripts/scaffold-sync.sh` | Core scaffold sync engine. Provides all deterministic operations: init, pull-plan, pull-auto, section-merge, promote, demote, push-candidates, push-apply. Includes defensive guards (exit 3 on precondition failure) and `--dry-run` mode for pull/push commands. Called by scaffold slash commands. | No. Updated automatically via bootstrap on pull. |
-| `scripts/security-audit.sh` | `./scripts/security-audit.sh` | Deterministic PII/secrets scanner. Checks files and git history for tokens, keys, credentials, and PII. Called by `/security-audit` and the pre-push hook. | Rarely. Add project-specific allowlist patterns. |
-| `scripts/fix-cloudflare-certs.sh` | `./scripts/fix-cloudflare-certs.sh` | Diagnoses and repairs Cloudflare WARP TLS certificate issues. Creates combined CA bundle. Called by `/fix-certs`. | No. Only relevant for Cloudflare WARP environments. |
-| `scripts/fetch-license.sh` | `./scripts/fetch-license.sh` | Fetches license templates from GitHub API. Called by `/init` during project setup. Supports MIT, Apache 2.0, GPL-3.0, BSD, Unlicense. | No. Deterministic license fetcher. |
-| `scripts/manifest-check.sh` | `./scripts/manifest-check.sh` | Deterministic README manifest verification. Parses tables, checks file existence, compares hashes against lockfile, generates diffs for stale entries, extracts identity for untracked files. Called by `/scaffold-audit`. | No. Updated via scaffold sync. |
-| `scripts/docs-check.sh` | `./scripts/docs-check.sh` | Deterministic docs lifecycle validation. Extracts metadata, computes content hashes, validates spec↔plan↔checkpoint alignment, recommends next action via state machine. Includes `audit-session` subcommand for post-hoc stochastic pattern detection. Called by `/catchup`. | No. Updated via scaffold sync. |
+| `.ccanvil/scripts/ccanvil-sync.sh` | `./.ccanvil/scripts/ccanvil-sync.sh` | Core sync engine — init, pull, push, promote, demote, section-merge, conflict detection. | No. Updated via bootstrap. |
+| `.ccanvil/scripts/security-audit.sh` | `./.ccanvil/scripts/security-audit.sh` | PII/secrets scanner for files and git history. | Rarely. Add allowlist patterns. |
+| `.ccanvil/scripts/docs-check.sh` | `./.ccanvil/scripts/docs-check.sh` | Docs lifecycle — metadata, hashes, spec↔plan alignment. Includes `audit-session` for stochastic pattern detection. | No. |
+| `.ccanvil/scripts/operations.sh` | `./.ccanvil/scripts/operations.sh` | Operation routing — resolves to local scripts or MCP tools. | No. |
+| `.ccanvil/scripts/context-budget.sh` | `./.ccanvil/scripts/context-budget.sh` | Context window budget analysis. | No. |
+| `.ccanvil/scripts/permissions-audit.sh` | `./.ccanvil/scripts/permissions-audit.sh` | File permissions auditing. | No. |
+| `.ccanvil/scripts/manifest-check.sh` | `./.ccanvil/scripts/manifest-check.sh` | README manifest verification. | No. |
+| `.ccanvil/scripts/fetch-license.sh` | `./.ccanvil/scripts/fetch-license.sh` | Fetches license templates from GitHub API. | No. |
+| `.ccanvil/scripts/fix-cloudflare-certs.sh` | `./.ccanvil/scripts/fix-cloudflare-certs.sh` | Cloudflare WARP TLS cert fix. | No. |
+| `.ccanvil/guide/*.md` | `./.ccanvil/guide/*.md` | Split guide section files (12 files). | Rarely. |
+| `.ccanvil/templates/*.md` | `./.ccanvil/templates/*.md` | Persistent format guides for specs, plans, checkpoints. | Rarely. |
+| `.ccanvil/templates/lint.json` | `./.claude/lint.json` | Linter/formatter configuration template. | Yes. |
+| `.ccanvil/templates/github/*` | `./.github/`, `./README.md`, `./CONTRIBUTING.md` | GitHub-ready templates (README, CONTRIBUTING, PR/issue templates, CI, pre-push hook). | Yes. |
 
-### The `docs/` directory (copy entire directory to project root)
+### The `docs/` directory (project-owned — created by `/init`)
 
-Copy the whole directory with `cp -r docs ./docs`. Contains **templates** (persistent format guides) and **active docs** (overwritten during use):
+These are project-owned files, not preset artifacts. Created as empty placeholders by `/init`:
 
-| File in zip | Copy to | What it does | Customize? |
-|---|---|---|---|
-| `docs/templates/spec.md` | `./docs/templates/spec.md` | Persistent format guide for feature specifications. Agents and commands reference this for structure. Never overwritten. | Rarely. Modify if your team uses a different spec format. |
-| `docs/templates/checkpoint.md` | `./docs/templates/checkpoint.md` | Persistent format guide for session checkpoints. Referenced when writing checkpoints. Never overwritten. | Rarely. Modify if you need different checkpoint sections. |
-| `docs/templates/plan.md` | `./docs/templates/plan.md` | Persistent format guide for implementation plans. Referenced by `/plan`. Never overwritten. | Rarely. Modify if you need different plan structure. |
-| `docs/templates/hooks-reference.md` | `./docs/templates/hooks-reference.md` | Complete hooks documentation — events, exit codes, JSON schemas, writing conventions. | Rarely. Reference when adding hooks. |
-| `docs/templates/lint.json` | `./.claude/lint.json` | Template for project-specific linter/formatter configuration. | Yes. Add entries for your stack. |
-| `docs/templates/github/README.md` | `./README.md` | Project README template with placeholder name. Copied to project root by /init. | Yes. Customize for your project. |
-| `docs/templates/github/CONTRIBUTING.md` | `./CONTRIBUTING.md` | Contributing guide template. Copied to project root by /init. | Yes. Customize for your project. |
-| `docs/templates/github/PULL_REQUEST_TEMPLATE.md` | `./.github/PULL_REQUEST_TEMPLATE.md` | PR template with summary, test plan, and checklist sections. Copied by /init. | Yes. Customize for your project. |
-| `docs/templates/github/ISSUE_TEMPLATE/bug_report.md` | `./.github/ISSUE_TEMPLATE/bug_report.md` | Bug report issue template. Copied by /init. | Yes. Customize for your project. |
-| `docs/templates/github/ISSUE_TEMPLATE/feature_request.md` | `./.github/ISSUE_TEMPLATE/feature_request.md` | Feature request issue template. Copied by /init. | Yes. Customize for your project. |
-| `docs/templates/github/workflows/ci.yml` | `./.github/workflows/ci.yml` | GitHub Actions CI workflow — runs bats tests + security audit. Copied by /init. | Yes. Customize for your stack. |
-| `docs/templates/github/pre-push` | `./.git/hooks/pre-push` | Git pre-push hook — runs security audit before allowing push. Copied by /init. | Rarely. |
-| `docs/spec.md` | `./docs/spec.md` | Active spec — overwritten each time you spec a new feature. Starts as a placeholder pointing to the template. | No. Claude fills this in. |
-| `docs/checkpoint.md` | `./docs/checkpoint.md` | Active checkpoint — overwritten when Claude checkpoints progress. | No. Claude fills this in. |
-| `docs/plan.md` | `./docs/plan.md` | Active plan — overwritten by `/plan`. | No. Claude fills this in. |
+| File | What it does | Customize? |
+|---|---|---|
+| `docs/spec.md` | Active spec — overwritten each time you spec a new feature. | No. Claude fills this in. |
+| `docs/plan.md` | Active plan — overwritten by `/plan`. | No. Claude fills this in. |
+| `docs/checkpoint.md` | Active checkpoint — overwritten when Claude checkpoints progress. | No. Claude fills this in. |
+| `docs/specs/` | Spec backlog directory. | No. Managed by lifecycle tools. |
 
 ### Files that stay outside your project (reference materials only)
 
@@ -211,10 +207,11 @@ These files are for you and for LLMs you ask to customize the scaffold. Do NOT c
 
 | File in zip | What to do with it | What it does |
 |---|---|---|
-| `README.md` | Keep wherever you store reference documentation. | Setup guide and file manifest — how to install and configure the scaffold. |
-| `HOW_TO_USE.md` | Read this first after running `/init`. Keep in the scaffold directory for reference. | User manual for the scaffold — how to describe features, what the iteration cycle looks like, when to use commands vs. natural language, and what you're responsible for vs. what Claude Code handles. |
-| `SCAFFOLD_SYSTEM_PROMPT.md` | Keep wherever you store reference documentation. Feed it to any LLM when asking it to customize the scaffold for a new project. | A meta-prompt that teaches LLMs the scaffold's architecture, constraints, and customization procedure. Paste or reference it when you want Claude (or any AI) to set up or modify the scaffold for a specific project. |
-| `INIT_PROMPT.md` | Keep in the scaffold directory. | Fallback for project initialization if the global `/init` command isn't installed. Paste its contents into Claude Code after opening it in an empty project directory. Does the same thing as `/init` — tells Claude Code where the scaffold lives and to follow the README's setup instructions. |
+| `README.md` | Keep in the hub. | Setup guide and file manifest. |
+| `hub/meta/HOW_TO_USE.md` | Read after running `/init`. | User manual — iteration cycle, commands vs. natural language. |
+| `hub/meta/SCAFFOLD_SYSTEM_PROMPT.md` | Feed to LLMs customizing the preset. | Meta-prompt for scaffold architecture and constraints. |
+| `hub/meta/INIT_PROMPT.md` | Keep in the hub. | Fallback for init if the global `/init` command isn't installed. |
+| `hub/meta/GLOBAL_CLAUDE.md` | Copied to `~/.claude/CLAUDE.md` during one-time setup. | Personal preferences template. |
 
 ---
 
@@ -296,19 +293,19 @@ You:  "Fix the billing calculation bug: invoice totals are off by 1 cent
 ### Syncing scaffold changes between projects
 
 ```
-You:  /scaffold-status
+You:  /ccanvil-status
 
-Claude: "Scaffold: ~/projects/claude-code-scaffold @ a3f82c1
+Claude: "Scaffold: ~/projects/ccanvil @ a3f82c1
          Last synced: 2026-03-15
 
          CLEAN       .claude/rules/tdd.md
          MODIFIED    .claude/rules/workflow.md (local changes)
          LOCAL       .claude/rules/sketches.md
-         SCAFFOLD-ONLY  .claude/commands/scaffold-status.md (new in scaffold)
+         SCAFFOLD-ONLY  .claude/commands/ccanvil-status.md (new in scaffold)
 
          Scaffold has new commits since last sync."
 
-You:  /scaffold-pull
+You:  /ccanvil-pull
 
          ↓ Claude compares scaffold changes, presents diff for conflicts
 
@@ -326,7 +323,7 @@ You:  "Looks good."
 ```
 
 ```
-You:  /scaffold-promote .claude/rules/sketches.md
+You:  /ccanvil-promote .claude/rules/sketches.md
 
          ↓ Claude reads file, checks for project-specific content
 
@@ -348,13 +345,13 @@ You:  "Yes"
 | `/catchup` | Read checkpoint + git state, orient without implementing |
 | `/plan` | Create an implementation plan from a spec |
 | `/review` | Spawn code-reviewer agent on uncommitted changes |
-| `/scaffold-status` | Show sync state between project and scaffold hub |
-| `/scaffold-pull` | Pull scaffold updates into project, review conflicts |
-| `/scaffold-push` | Push generalizable project changes to scaffold |
-| `/scaffold-promote` | Promote a local-only file to the scaffold |
-| `/scaffold-demote` | Mark a scaffold file as local override |
-| `/scaffold-ignore` | Mark file as node-only (permanently excluded from sync) |
-| `/scaffold-audit` | Analyze scaffold for stochastic-to-deterministic improvements |
+| `/ccanvil-status` | Show sync state between project and scaffold hub |
+| `/ccanvil-pull` | Pull scaffold updates into project, review conflicts |
+| `/ccanvil-push` | Push generalizable project changes to scaffold |
+| `/ccanvil-promote` | Promote a local-only file to the scaffold |
+| `/ccanvil-demote` | Mark a scaffold file as local override |
+| `/ccanvil-ignore` | Mark file as node-only (permanently excluded from sync) |
+| `/ccanvil-audit` | Analyze scaffold for stochastic-to-deterministic improvements |
 | `/security-audit` | Scan repo for PII, secrets, and sensitive information |
 | `/fix-certs` | Diagnose and fix Cloudflare WARP TLS certificate issues |
 | `/clear` | Reset context (built-in). Use between tasks. |
@@ -474,6 +471,7 @@ Rules that apply when working in this area of the codebase.
   .claude/skills/*
   .claude/agents/*
   .claude/commands/*
+  .ccanvil/              (entire preset infrastructure)
   .claudeignore
   .mcp.json
   docs/spec.md
@@ -482,7 +480,8 @@ Rules that apply when working in this area of the codebase.
 ❌ Gitignore (personal):
   .claude/settings.local.json
   .claude/local/CLAUDE.md
-  docs/checkpoint.md (ephemeral session state)
+  .ccanvil/ccanvil.lock  (sync state — node-specific)
+  docs/checkpoint.md     (ephemeral session state)
 ```
 
 Add to your `.gitignore`:
