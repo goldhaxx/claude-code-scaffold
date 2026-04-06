@@ -185,6 +185,10 @@ cmd_init() {
 
   [[ -d "$scaffold_path" ]] || die "Scaffold not found at: $scaffold_path"
 
+  # Resolve dist root (preset/ if hub, scaffold_path if downstream)
+  local dist_root
+  dist_root=$(scaffold_dist_root "$scaffold_path")
+
   # Get scaffold git version
   local scaffold_version="unknown"
   if git -C "$scaffold_path" rev-parse HEAD >/dev/null 2>&1; then
@@ -196,7 +200,7 @@ cmd_init() {
 
   # Find all trackable files in the project
   while IFS= read -r file; do
-    local scaffold_file="$scaffold_path/$file"
+    local scaffold_file="$dist_root/$file"
     local local_h
     local_h=$(file_hash "$file")
 
@@ -223,7 +227,7 @@ cmd_init() {
   while IFS= read -r file; do
     if ! echo "$files_json" | jq -e --arg f "$file" '.[$f]' >/dev/null 2>&1; then
       local scaffold_h
-      scaffold_h=$(file_hash "$scaffold_path/$file")
+      scaffold_h=$(file_hash "$dist_root/$file")
       files_json=$(echo "$files_json" | jq --arg f "$file" --arg sh "$scaffold_h" \
         '. + {($f): {"origin": "scaffold", "scaffold_hash": $sh, "local_hash": null, "status": "scaffold-only", "sync": "tracked"}}')
     fi
