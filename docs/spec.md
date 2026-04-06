@@ -45,7 +45,9 @@ Every "scaffold" usage falls into one of these categories. Each gets a specific 
 | "scaffold configuration" | "preset configuration" | |
 | `scaffold-differ` (agent name field) | `ccanvil-differ` | Filename already renamed |
 | `scaffold-sync.md` (guide file) | `sync.md` | The sync concept doesn't need a prefix |
-| `scaffold-framework.md` | **KEEP** | Research doc — "scaffold" is a CS term there |
+| `scaffold-framework.md` | `foundations.md` | Research doc — rename file, replace "scaffold/scaffolding" with accurate terms |
+| "structured scaffolding" (in foundations.md) | "structured configuration" | Not scaffolding — it's persistent config, not temp boilerplate |
+| "scaffold system" (in foundations.md) | "ccanvil" or "preset system" | Project self-reference |
 | `/scaffold-pull` in delimiters | `/ccanvil-pull` | May already be partially done |
 | `scaffold-sync.bats` (test file) | `ccanvil-sync.bats` | Mirrors the script name |
 | `scaffold-json-override.bats` | `ccanvil-json-override.bats` | Mirrors the config file |
@@ -72,12 +74,12 @@ Each criterion is independently testable. Binary pass/fail.
 - [ ] **AC-8:** `operations.sh` function `merge_scaffold_config()` is renamed to `merge_config()`. All callers updated.
 - [ ] **AC-9:** `docs-check.sh` function `merge_scaffold_config()` is renamed to `merge_config()`. `cmd_config_get` references updated.
 - [ ] **AC-10:** `context-budget.sh` header comment updated ("scaffold files" -> "preset files").
-- [ ] **AC-11:** `security-audit.sh` allowlist entry for `scaffold-framework.md` is preserved (research doc keeps its name).
+- [ ] **AC-11:** `security-audit.sh` allowlist entry updated from `scaffold-framework.md` to `foundations.md`.
 
 ### Guide and documentation
 
 - [ ] **AC-12:** `.ccanvil/guide/scaffold-sync.md` is renamed to `.ccanvil/guide/sync.md`. All internal links and index references updated.
-- [ ] **AC-13:** Every `.ccanvil/guide/*.md` file (except `scaffold-framework.md`) uses "hub" instead of "scaffold" when referring to the source of sync data.
+- [ ] **AC-13:** Every `.ccanvil/guide/*.md` file uses "hub" instead of "scaffold" when referring to the source of sync data. `scaffold-framework.md` is renamed to `foundations.md` with "scaffolding" replaced by "structured configuration" / "preset system" throughout.
 - [ ] **AC-14:** Every `.ccanvil/templates/*.md` file uses `/ccanvil-pull` in delimiter comments instead of `/scaffold-pull`.
 - [ ] **AC-15:** `CLAUDE.md` (preset template) uses "hub" terminology and references `ccanvil.json` / `ccanvil.local.json`.
 
@@ -85,20 +87,20 @@ Each criterion is independently testable. Binary pass/fail.
 
 - [ ] **AC-16:** `ccanvil-differ.md` agent has `name: ccanvil-differ` (not `scaffold-differ`). All internal references say "hub" not "scaffold".
 - [ ] **AC-17:** All `/ccanvil-*` command files use "hub" terminology (e.g., "Pull updates from the hub" not "from the scaffold hub").
-- [ ] **AC-18:** All `.claude/rules/*.md` files use "hub" or "preset" instead of "scaffold" where applicable. `scaffold-framework.md` filename references are preserved.
+- [ ] **AC-18:** All `.claude/rules/*.md` files use "hub" or "preset" instead of "scaffold" where applicable. `scaffold-framework.md` filename references updated to `foundations.md`.
 - [ ] **AC-19:** `pr.md` command references `ccanvil.json` (not `scaffold.json`) for feature toggle checks.
 
 ### Hub-specific files
 
 - [ ] **AC-20:** `hub/tests/scaffold-sync.bats` is renamed to `hub/tests/ccanvil-sync.bats`. All test assertions use new lockfile keys (`hub_source`, `hub_hash`, `hub-only`).
 - [ ] **AC-21:** `hub/tests/scaffold-json-override.bats` is renamed to `hub/tests/ccanvil-json-override.bats`. Tests reference `ccanvil.json` / `ccanvil.local.json`.
-- [ ] **AC-22:** Hub `README.md` contains zero instances of "scaffold" as a project/system name (research term in `scaffold-framework.md` reference is acceptable).
+- [ ] **AC-22:** Hub `README.md` contains zero instances of "scaffold".
 - [ ] **AC-23:** Hub root `CLAUDE.md` uses "hub" terminology consistently.
 
 ### Downstream projects
 
-- [ ] **AC-24:** After migration, `grep -ri scaffold ~/projects/fucina` returns zero hits outside of `scaffold-framework.md`.
-- [ ] **AC-25:** After migration, `grep -ri scaffold ~/projects/luxlook` returns zero hits outside of `scaffold-framework.md`.
+- [ ] **AC-24:** After migration, `grep -ri scaffold ~/projects/fucina` returns zero hits.
+- [ ] **AC-25:** After migration, `grep -ri scaffold ~/projects/luxlook` returns zero hits.
 
 ### Tests pass
 
@@ -114,6 +116,7 @@ Each criterion is independently testable. Binary pass/fail.
 | `preset/.ccanvil/scripts/docs-check.sh` | `merge_scaffold_config()` -> `merge_config()`, file refs |
 | `preset/.ccanvil/scripts/context-budget.sh` | Comment update |
 | `preset/.ccanvil/guide/scaffold-sync.md` | Renamed to `sync.md`, content updated |
+| `preset/.ccanvil/guide/scaffold-framework.md` | Renamed to `foundations.md`, terminology updated throughout |
 | `preset/.ccanvil/guide/*.md` (11 files) | "scaffold" -> "hub"/"preset" |
 | `preset/.ccanvil/templates/*.md` (6 files) | Delimiter comments, scaffold.json refs |
 | `preset/.ccanvil/templates/scaffold.json.md` | Renamed to `ccanvil.json.md` |
@@ -144,7 +147,6 @@ Each criterion is independently testable. Binary pass/fail.
 
 ## Out of Scope
 
-- **`scaffold-framework.md`** — This is a research document where "scaffold" is used as a CS/academic term (like "Rails scaffolding"). It keeps its name and content. References TO this file (e.g., in protect-files.sh, code-quality.md) are preserved as-is.
 - **Git history** — We won't rewrite commits. Old commit messages referencing "scaffold" are part of the historical record.
 - **Linear issue descriptions** — Existing issues may reference "scaffold" terminology. Not worth updating retroactively.
 
@@ -155,4 +157,6 @@ Each criterion is independently testable. Binary pass/fail.
 - The lockfile key change (`scaffold_source` -> `hub_source`) is a breaking change for existing lockfiles. Since we're actively migrating downstream projects, this is acceptable. Re-init lockfiles after the change.
 - The `TRACKED_PATTERNS` array in ccanvil-sync.sh will need `.claude/ccanvil.json` instead of `.claude/scaffold.json`.
 - Batch the downstream project updates: after hub changes are complete and tested, sweep fucina and luxlook.
-- Consider a `sed` sweep as a starting point, but verify each change manually — not all "scaffold" -> "hub" replacements are appropriate (e.g., `scaffold-framework.md` must be preserved).
+- Consider a `sed` sweep as a starting point, but verify each change manually — not all "scaffold" -> "hub" replacements are mechanical.
+- `foundations.md` (formerly `scaffold-framework.md`) requires careful editing — replace "scaffolding" with "structured configuration" or "preset system" depending on context, not a blind find-replace. The one practitioner quote on line 211 ("Not using scaffolding") can be reworded to "Not using structured configuration" or similar.
+- Protection rules in `code-quality.md`, `protect-files.sh`, and `security-audit.sh` all reference `scaffold-framework.md` and must be updated to `foundations.md`.
