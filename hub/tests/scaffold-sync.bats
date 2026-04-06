@@ -34,7 +34,7 @@ Always test first.
 
 <!-- NODE-SPECIFIC-START -->
 <!-- Add project-specific content below this line. -->
-<!-- Hub content above is updated via /scaffold-pull. -->
+<!-- Hub content above is updated via /ccanvil-pull. -->
 HUBEOF
 
   # Create a sample hub command (no frontmatter)
@@ -45,7 +45,7 @@ Do NOT start implementing anything.
 
 <!-- NODE-SPECIFIC-START -->
 <!-- Add project-specific content below this line. -->
-<!-- Hub content above is updated via /scaffold-pull. -->
+<!-- Hub content above is updated via /ccanvil-pull. -->
 HUBEOF
 
   # Create a sample hub agent (with YAML frontmatter)
@@ -61,18 +61,18 @@ Write specs from feature requests.
 
 <!-- NODE-SPECIFIC-START -->
 <!-- Add project-specific content below this line. -->
-<!-- Hub content above is updated via /scaffold-pull. -->
+<!-- Hub content above is updated via /ccanvil-pull. -->
 HUBEOF
 
-  # Create docs/scaffold-guide/ with NODE-SPECIFIC-START delimiter
+  # Create .ccanvil/guide/ with NODE-SPECIFIC-START delimiter
   mkdir -p "$HUB/.ccanvil/guide"
   cat > "$HUB/.ccanvil/guide/index.md" <<'HUBEOF'
-# Scaffold Guide
+# Preset Guide
 
 Hub documentation here.
 
 <!-- NODE-SPECIFIC-START -->
-<!-- Everything above is managed by the scaffold hub. -->
+<!-- Everything above is managed by the hub. -->
 
 ## Project-Specific Features
 
@@ -95,8 +95,8 @@ HUBEOF
   # Copy the real sync script to the hub (so bootstrap doesn't fire on every test)
   cp "$SCRIPT" "$HUB/.ccanvil/scripts/ccanvil-sync.sh"
 
-  # Create SCAFFOLD_CHANGELOG.md in hub (required by push-apply and promote)
-  echo "# Scaffold Changelog" > "$HUB/SCAFFOLD_CHANGELOG.md"
+  # Create CHANGELOG.md in hub (required by push-apply and promote)
+  echo "# Changelog" > "$HUB/CHANGELOG.md"
 
   # Initialize a git repo in hub (needed for hub_version)
   git -C "$HUB" init -q
@@ -120,13 +120,13 @@ HUBEOF
   git -C "$NODE" add -A
   git -C "$NODE" commit -q -m "init node"
 
-  # Run scaffold init in node
+  # Run ccanvil-sync init in node
   cd "$NODE"
   bash "$NODE/.ccanvil/scripts/ccanvil-sync.sh" init "$HUB"
 
   # Commit the lockfile so the node is clean
   git -C "$NODE" add -A
-  git -C "$NODE" commit -q -m "scaffold init"
+  git -C "$NODE" commit -q -m "ccanvil init"
 }
 
 teardown() {
@@ -147,7 +147,7 @@ Always test first.
 
 <!-- NODE-SPECIFIC-START -->
 <!-- Add project-specific content below this line. -->
-<!-- Hub content above is updated via /scaffold-pull. -->
+<!-- Hub content above is updated via /ccanvil-pull. -->
 
 ## My Project Tests
 
@@ -162,7 +162,7 @@ Always test first. New hub content.
 
 <!-- NODE-SPECIFIC-START -->
 <!-- Add project-specific content below this line. -->
-<!-- Hub content above is updated via /scaffold-pull. -->
+<!-- Hub content above is updated via /ccanvil-pull. -->
 EOF
 
   result=$(bash "$NODE/.ccanvil/scripts/ccanvil-sync.sh" section-merge "$HUB/.claude/rules/tdd.md" "$NODE/.claude/rules/tdd.md")
@@ -224,7 +224,7 @@ EOF
   # Node section should be preserved (from local)
   echo "$result" | grep -q "My Awesome App"
   echo "$result" | grep -q "Custom node identity"
-  # Hub section should be updated (from scaffold)
+  # Hub section should be updated (from hub)
   echo "$result" | grep -q "Workflow v2"
   echo "$result" | grep -q "Updated hub methodology"
 }
@@ -238,7 +238,7 @@ Always test first.
 
 <!-- NODE-SPECIFIC-START -->
 <!-- Add project-specific content below this line. -->
-<!-- Hub content above is updated via /scaffold-pull. -->
+<!-- Hub content above is updated via /ccanvil-pull. -->
 EOF
 
   # Hub updates hub section
@@ -249,7 +249,7 @@ New hub content.
 
 <!-- NODE-SPECIFIC-START -->
 <!-- Add project-specific content below this line. -->
-<!-- Hub content above is updated via /scaffold-pull. -->
+<!-- Hub content above is updated via /ccanvil-pull. -->
 EOF
 
   result=$(bash "$NODE/.ccanvil/scripts/ccanvil-sync.sh" section-merge "$HUB/.claude/rules/tdd.md" "$NODE/.claude/rules/tdd.md")
@@ -260,7 +260,7 @@ EOF
   echo "$result" | grep -q "NODE-SPECIFIC-START"
 }
 
-@test "section-merge: no delimiter in scaffold file — returns error" {
+@test "section-merge: no delimiter in hub file — returns error" {
   cat > "$HUB/.claude/rules/no-delim.md" <<'EOF'
 # A Rule
 
@@ -292,7 +292,7 @@ Updated spec writing process.
 
 <!-- NODE-SPECIFIC-START -->
 <!-- Add project-specific content below this line. -->
-<!-- Hub content above is updated via /scaffold-pull. -->
+<!-- Hub content above is updated via /ccanvil-pull. -->
 EOF
 
   # Node has custom content below delimiter
@@ -308,7 +308,7 @@ Write specs from feature requests.
 
 <!-- NODE-SPECIFIC-START -->
 <!-- Add project-specific content below this line. -->
-<!-- Hub content above is updated via /scaffold-pull. -->
+<!-- Hub content above is updated via /ccanvil-pull. -->
 
 ## Project Context
 
@@ -337,7 +337,7 @@ EOF
   [ "$(echo "$result" | jq 'length')" -eq 0 ]
 }
 
-@test "pull-plan: scaffold change on clean file → auto-update" {
+@test "pull-plan: hub change on clean file → auto-update" {
   cd "$NODE"
 
   # Modify hub version of tdd.md
@@ -360,7 +360,7 @@ Updated hub content.
 
 <!-- NODE-SPECIFIC-START -->
 <!-- Add project-specific content below this line. -->
-<!-- Hub content above is updated via /scaffold-pull. -->
+<!-- Hub content above is updated via /ccanvil-pull. -->
 EOF
   git -C "$HUB" add -A && git -C "$HUB" commit -q -m "update tdd"
 
@@ -372,7 +372,7 @@ Always test first.
 
 <!-- NODE-SPECIFIC-START -->
 <!-- Add project-specific content below this line. -->
-<!-- Hub content above is updated via /scaffold-pull. -->
+<!-- Hub content above is updated via /ccanvil-pull. -->
 
 ## Project tests
 Use vitest.
@@ -437,7 +437,7 @@ SEOF
   [ "$count" -eq 0 ]
 }
 
-@test "pull-plan: new file in scaffold → action is new" {
+@test "pull-plan: new file in hub → action is new" {
   cd "$NODE"
 
   # Add new file to hub
@@ -448,7 +448,7 @@ Brand new content.
 
 <!-- NODE-SPECIFIC-START -->
 <!-- Add project-specific content below this line. -->
-<!-- Hub content above is updated via /scaffold-pull. -->
+<!-- Hub content above is updated via /ccanvil-pull. -->
 EOF
   git -C "$HUB" add -A && git -C "$HUB" commit -q -m "add new rule"
 
@@ -622,7 +622,7 @@ EOF
   echo "dirty" > "$HUB/dirty.txt"
   run bash "$NODE/.ccanvil/scripts/ccanvil-sync.sh" pre-check
   [ "$status" -ne 0 ]
-  echo "$output" | grep -qi "scaffold repo has uncommitted"
+  echo "$output" | grep -qi "hub repo has uncommitted"
 }
 
 @test "pre-check: fails when node has uncommitted changes" {
@@ -649,7 +649,7 @@ Updated hub content.
 
 <!-- NODE-SPECIFIC-START -->
 <!-- Add project-specific content below this line. -->
-<!-- Hub content above is updated via /scaffold-pull. -->
+<!-- Hub content above is updated via /ccanvil-pull. -->
 EOF
   git -C "$HUB" add -A && git -C "$HUB" commit -q -m "update tdd"
 
@@ -661,7 +661,7 @@ EOF
   # Verify a commit was created
   local last_msg
   last_msg=$(git -C "$NODE" log -1 --format='%s')
-  echo "$last_msg" | grep -q "chore(scaffold): pull from hub"
+  echo "$last_msg" | grep -q "chore(sync): pull from hub"
 
   # Working tree should be clean after finalize
   local status
@@ -678,7 +678,7 @@ Updated catchup command.
 
 <!-- NODE-SPECIFIC-START -->
 <!-- Add project-specific content below this line. -->
-<!-- Hub content above is updated via /scaffold-pull. -->
+<!-- Hub content above is updated via /ccanvil-pull. -->
 EOF
   git -C "$HUB" add -A && git -C "$HUB" commit -q -m "update catchup"
 
@@ -696,7 +696,7 @@ EOF
 # adopt-clean / adopt-conflict tests
 # =========================================================================
 
-@test "pull-plan: new file in scaffold + identical local copy → adopt-clean" {
+@test "pull-plan: new file in hub + identical local copy → adopt-clean" {
   cd "$NODE"
 
   # Add file to hub
@@ -715,7 +715,7 @@ EOF
   echo "$result" | jq -e '.[] | select(.file == ".claude/rules/new-rule.md" and .action == "adopt-clean")'
 }
 
-@test "pull-plan: new file in scaffold + different local copy → adopt-conflict" {
+@test "pull-plan: new file in hub + different local copy → adopt-conflict" {
   cd "$NODE"
 
   # Add file to hub
@@ -837,7 +837,7 @@ EOF
 # push-apply tests
 # =========================================================================
 
-@test "push-apply: copies file to scaffold and updates lockfile" {
+@test "push-apply: copies file to hub and updates lockfile" {
   cd "$NODE"
 
   # Modify locally and demote
@@ -846,7 +846,7 @@ EOF
 
   bash "$NODE/.ccanvil/scripts/ccanvil-sync.sh" push-apply ".claude/rules/tdd.md" "enhanced TDD rules"
 
-  # File should be in scaffold
+  # File should be in hub
   grep -q "Enhanced TDD" "$HUB/.claude/rules/tdd.md"
 
   # Lockfile should be updated
@@ -859,7 +859,7 @@ EOF
 # promote tests
 # =========================================================================
 
-@test "promote: copies local-only file to scaffold with git commit" {
+@test "promote: copies local-only file to hub with git commit" {
   cd "$NODE"
 
   # Create a new local file
@@ -880,7 +880,7 @@ EOF
 
   bash "$NODE/.ccanvil/scripts/ccanvil-sync.sh" promote ".claude/rules/local-rule.md"
 
-  # File should exist in scaffold
+  # File should exist in hub
   [ -f "$HUB/.claude/rules/local-rule.md" ]
   grep -q "A useful rule" "$HUB/.claude/rules/local-rule.md"
 
@@ -888,7 +888,7 @@ EOF
   status=$(jq -r '.files[".claude/rules/local-rule.md"].status' "$NODE/.ccanvil/ccanvil.lock")
   [ "$status" = "promoted" ]
 
-  # Scaffold should have a new commit
+  # Hub should have a new commit
   git -C "$HUB" log -1 --format='%s' | grep -q "local-rule"
 }
 
@@ -1054,7 +1054,7 @@ EOF
   echo "# Sneaky local change after plan" > "$NODE/.claude/rules/tdd.md"
 
   # pull-apply should detect hash mismatch and guard_fail
-  run env PLAN_LOCAL_HASH="$plan_hash" bash "$NODE/.ccanvil/scripts/ccanvil-sync.sh" pull-apply ".claude/rules/tdd.md" take-scaffold
+  run env PLAN_LOCAL_HASH="$plan_hash" bash "$NODE/.ccanvil/scripts/ccanvil-sync.sh" pull-apply ".claude/rules/tdd.md" take-hub
   [ "$status" -eq 3 ]
   echo "$output" | grep -q "GUARD_FAIL:"
 }
@@ -1124,9 +1124,9 @@ EOF
   local hash_before
   hash_before=$(shasum -a 256 "$NODE/.claude/rules/tdd.md" | awk '{print $1}')
 
-  run bash "$NODE/.ccanvil/scripts/ccanvil-sync.sh" pull-apply ".claude/rules/tdd.md" take-scaffold --dry-run
+  run bash "$NODE/.ccanvil/scripts/ccanvil-sync.sh" pull-apply ".claude/rules/tdd.md" take-hub --dry-run
   [ "$status" -eq 0 ]
-  echo "$output" | grep -q "DRY-RUN: would take-scaffold .claude/rules/tdd.md"
+  echo "$output" | grep -q "DRY-RUN: would take-hub .claude/rules/tdd.md"
 
   # File should NOT have changed
   local hash_after
@@ -1154,7 +1154,7 @@ EOF
   [ "$head_before" = "$head_after" ]
 }
 
-@test "push-apply --dry-run: describes action without copying to scaffold" {
+@test "push-apply --dry-run: describes action without copying to hub" {
   cd "$NODE"
   # Modify a tracked file to make it pushable
   echo "# Local improvement" > "$NODE/.claude/rules/tdd.md"
@@ -1173,9 +1173,9 @@ EOF
   [ "$hub_hash_before" = "$hub_hash_after" ]
 }
 
-@test "push-finalize --dry-run: shows commit info without committing in scaffold" {
+@test "push-finalize --dry-run: shows commit info without committing in hub" {
   cd "$NODE"
-  # Stage a change in scaffold to have something to commit
+  # Stage a change in hub to have something to commit
   echo "# pushed content" > "$HUB/.claude/rules/tdd.md"
 
   local hub_head_before
@@ -1216,7 +1216,7 @@ EOF
   local plan_hash
   plan_hash=$(bash "$NODE/.ccanvil/scripts/ccanvil-sync.sh" pull-plan | jq -r '.[] | select(.file == ".claude/rules/tdd.md") | .local_hash')
   echo "# changed after plan" > "$NODE/.claude/rules/tdd.md"
-  run env PLAN_LOCAL_HASH="$plan_hash" bash "$NODE/.ccanvil/scripts/ccanvil-sync.sh" pull-apply ".claude/rules/tdd.md" take-scaffold
+  run env PLAN_LOCAL_HASH="$plan_hash" bash "$NODE/.ccanvil/scripts/ccanvil-sync.sh" pull-apply ".claude/rules/tdd.md" take-hub
   [ "$status" -eq 3 ]
   echo "$output" | grep -q "^GUARD_FAIL: cp on"
 
