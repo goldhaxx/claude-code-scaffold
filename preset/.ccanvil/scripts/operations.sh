@@ -44,7 +44,7 @@ is_valid_operation() {
 
 usage() {
   cat >&2 <<'EOF'
-Usage: operations.sh resolve <operation> [args...] [--project-dir DIR]
+Usage: operations.sh {resolve|exec|merge-config} <operation> [args...] [--project-dir DIR]
 
 Operations:
   backlog.{list,create,prioritize,get}
@@ -70,7 +70,7 @@ OP_ARGS=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    resolve|merge-config)
+    resolve|exec|merge-config)
       CMD="$1"; shift
       # Next positional arg is the operation name
       if [[ $# -gt 0 && "$1" != --* ]]; then
@@ -184,15 +184,15 @@ local_adapter() {
   case "$op" in
     # --- backlog ---
     backlog.list)
-      cmd="scripts/docs-check.sh list-specs"
+      cmd=".ccanvil/scripts/docs-check.sh list-specs"
       output_contract='["feature_id","status","created"]'
       ;;
     backlog.create)
-      cmd="scripts/docs-check.sh create-spec"
+      cmd=".ccanvil/scripts/docs-check.sh create-spec"
       output_contract='["feature_id","status"]'
       ;;
     backlog.prioritize)
-      cmd="scripts/docs-check.sh list-specs"
+      cmd=".ccanvil/scripts/docs-check.sh list-specs"
       output_contract='["feature_id","status","priority"]'
       ;;
     backlog.get)
@@ -205,19 +205,19 @@ local_adapter() {
       output_contract='["feature_id","status","body"]'
       ;;
     spec.write)
-      cmd="cp docs/templates/spec.md docs/spec.md"
+      cmd="cp .ccanvil/templates/spec.md docs/spec.md"
       output_contract='["feature_id"]'
       ;;
     spec.list)
-      cmd="scripts/docs-check.sh list-specs"
+      cmd=".ccanvil/scripts/docs-check.sh list-specs"
       output_contract='["feature_id","status","created"]'
       ;;
     spec.activate)
-      cmd="scripts/docs-check.sh activate"
+      cmd=".ccanvil/scripts/docs-check.sh activate"
       output_contract='["feature_id","branch"]'
       ;;
     spec.complete)
-      cmd="scripts/docs-check.sh complete"
+      cmd=".ccanvil/scripts/docs-check.sh complete"
       output_contract='["feature_id","status"]'
       ;;
     # --- plan ---
@@ -226,7 +226,7 @@ local_adapter() {
       output_contract='["feature_id","spec_hash","body"]'
       ;;
     plan.write)
-      cmd="cp docs/templates/plan.md docs/plan.md"
+      cmd="cp .ccanvil/templates/plan.md docs/plan.md"
       output_contract='["feature_id"]'
       ;;
     # --- checkpoint ---
@@ -235,16 +235,16 @@ local_adapter() {
       output_contract='["feature_id","plan_hash","body"]'
       ;;
     checkpoint.write)
-      cmd="cp docs/templates/checkpoint.md docs/checkpoint.md"
+      cmd="cp .ccanvil/templates/checkpoint.md docs/checkpoint.md"
       output_contract='["feature_id"]'
       ;;
     # --- status ---
     status.get)
-      cmd="scripts/docs-check.sh status"
+      cmd=".ccanvil/scripts/docs-check.sh status"
       output_contract='["spec","plan","checkpoint"]'
       ;;
     status.update)
-      cmd="scripts/docs-check.sh validate"
+      cmd=".ccanvil/scripts/docs-check.sh validate"
       output_contract='["result","details"]'
       ;;
     # --- pr ---
@@ -370,12 +370,34 @@ cmd_resolve() {
   external_adapter "$op" "$routed_provider" "$mechanism" "$provider_config" "$OP_ARGS"
 }
 
+cmd_exec() {
+  local op="$1"
+
+  # Resolve the operation to get routing info
+  local resolution
+  resolution=$(cmd_resolve "$op")
+
+  local mechanism
+  mechanism=$(echo "$resolution" | jq -r '.mechanism')
+
+  if [[ "$mechanism" == "bash" ]]; then
+    # Extract and execute the command directly
+    local cmd
+    cmd=$(echo "$resolution" | jq -r '.invocation.command')
+    eval "$cmd"
+  else
+    # MCP or other mechanisms: output resolution JSON for Claude to dispatch
+    echo "$resolution"
+  fi
+}
+
 # ---------------------------------------------------------------------------
 # Dispatch
 # ---------------------------------------------------------------------------
 
 case "$CMD" in
   resolve) cmd_resolve "$OPERATION" ;;
+  exec) cmd_exec "$OPERATION" ;;
   merge-config) merge_config "$PROJECT_DIR" ;;
   *) usage ;;
 esac
