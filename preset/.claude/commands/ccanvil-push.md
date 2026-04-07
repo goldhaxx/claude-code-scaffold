@@ -1,4 +1,4 @@
-Push project customizations to the scaffold hub for review.
+Push project customizations to the hub for review.
 
 All deterministic operations (copy, hash, lockfile, git commit, logging) are handled by the script. Claude's role is LIMITED to: classifying changes as generalizable vs project-specific.
 
@@ -31,12 +31,12 @@ For each approved file:
 ./.ccanvil/scripts/ccanvil-sync.sh push-apply <file> "<brief description>"
 ```
 
-For mixed files where only parts are generalizable: read the scaffold version, apply only the generalizable changes to a temp file, show the user for approval, then push the temp file content.
+For mixed files where only parts are generalizable: read the hub version, apply only the generalizable changes to a temp file, show the user for approval, then push the temp file content.
 
 ## Step 4: Finalize (deterministic)
 
 ```bash
-./.ccanvil/scripts/ccanvil-sync.sh push-finalize "chore(scaffold): upstream <description>"
+./.ccanvil/scripts/ccanvil-sync.sh push-finalize "chore(ccanvil): upstream <description>"
 ```
 
 Report what was pushed.
@@ -45,7 +45,7 @@ Report what was pushed.
 - NEVER run `cp`, `jq`, `lock-update`, or `git -C` manually. Use compound commands.
 - NEVER push project-specific content (tech stack, project names, API endpoints, domain logic).
 - NEVER push the CLAUDE.md node section (above the delimiter).
-- ALWAYS show the user what will be written to the scaffold before committing.
+- ALWAYS show the user what will be written to the hub before committing.
 
 <!-- NODE-SPECIFIC-START -->
 <!-- Add project-specific content below this line. -->

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# context-budget.sh — Measure token cost of always-loaded scaffold files.
+# context-budget.sh — Measure token cost of always-loaded preset files.
 #
 # Reports per-file and aggregate token estimates for files that load into
 # Claude's context at every session start. Budget thresholds are model-aware.

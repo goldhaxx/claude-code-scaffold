@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# operations.sh — Mechanism-agnostic routing layer for scaffold operations.
+# operations.sh — Mechanism-agnostic routing layer for preset operations.
 #
-# Reads .claude/scaffold.json and dispatches each scaffold operation to a
+# Reads .claude/ccanvil.json and dispatches each operation to a
 # pluggable provider via any supported mechanism (bash, mcp, cli, api, etc.).
 # Zero-config projects resolve everything to local bash adapters.
 #
@@ -99,17 +99,17 @@ done
 
 CONFIG_FILE=""
 
-# merge_scaffold_config — Merge scaffold.json (hub) with scaffold.local.json (node).
+# merge_config — Merge ccanvil.json (hub) with ccanvil.local.json (node).
 #
 # Outputs the effective config JSON to stdout. Uses RFC 7396 deep merge
 # via jq's * operator — node wins on conflict (permissive, Option A).
 #
 # Exit 0: success (even if both files are missing — outputs {}).
 # Exit 1: a file exists but contains invalid JSON.
-merge_scaffold_config() {
+merge_config() {
   local dir="$1"
-  local hub_file="$dir/.claude/scaffold.json"
-  local local_file="$dir/.claude/scaffold.local.json"
+  local hub_file="$dir/.claude/ccanvil.json"
+  local local_file="$dir/.claude/ccanvil.local.json"
 
   # Neither file exists → empty config
   if [[ ! -f "$hub_file" && ! -f "$local_file" ]]; then
@@ -120,7 +120,7 @@ merge_scaffold_config() {
   # Validate hub file if it exists
   if [[ -f "$hub_file" ]]; then
     if ! jq empty "$hub_file" 2>/dev/null; then
-      echo "ERROR: .claude/scaffold.json is not valid JSON" >&2
+      echo "ERROR: .claude/ccanvil.json is not valid JSON" >&2
       return 1
     fi
   fi
@@ -128,7 +128,7 @@ merge_scaffold_config() {
   # Validate local file if it exists
   if [[ -f "$local_file" ]]; then
     if ! jq empty "$local_file" 2>/dev/null; then
-      echo "ERROR: .claude/scaffold.local.json is not valid JSON" >&2
+      echo "ERROR: .claude/ccanvil.local.json is not valid JSON" >&2
       return 1
     fi
   fi
@@ -150,8 +150,8 @@ merge_scaffold_config() {
 }
 
 read_config() {
-  local hub_file="$PROJECT_DIR/.claude/scaffold.json"
-  local local_file="$PROJECT_DIR/.claude/scaffold.local.json"
+  local hub_file="$PROJECT_DIR/.claude/ccanvil.json"
+  local local_file="$PROJECT_DIR/.claude/ccanvil.local.json"
 
   # No config files → all local (not an error)
   if [[ ! -f "$hub_file" && ! -f "$local_file" ]]; then
@@ -161,7 +161,7 @@ read_config() {
 
   # Merge configs into a temp file so downstream jq queries work unchanged
   local merged
-  merged=$(merge_scaffold_config "$PROJECT_DIR") || exit 1
+  merged=$(merge_config "$PROJECT_DIR") || exit 1
 
   CONFIG_FILE=$(mktemp)
   trap 'rm -f "$CONFIG_FILE"' EXIT
@@ -376,6 +376,6 @@ cmd_resolve() {
 
 case "$CMD" in
   resolve) cmd_resolve "$OPERATION" ;;
-  merge-config) merge_scaffold_config "$PROJECT_DIR" ;;
+  merge-config) merge_config "$PROJECT_DIR" ;;
   *) usage ;;
 esac

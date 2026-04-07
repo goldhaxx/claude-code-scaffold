@@ -8,7 +8,7 @@ Create a draft pull request from the current feature branch.
 
 ## Optional: Code review gate
 
-4. Read `.claude/scaffold.json` and check if `features.pr_review` is `true`.
+4. Read `.claude/ccanvil.json` and check if `features.pr_review` is `true`.
 5. If `pr_review` is enabled AND arguments do NOT include `--skip-review`:
    - Spawn the code-reviewer sub-agent (use the `code-reviewer` agent definition).
    - If the reviewer finds CRITICAL issues, STOP — show the issues and do not create PR.
@@ -48,7 +48,7 @@ Create a draft pull request from the current feature branch.
 
 ## Arguments
 
-- `--skip-review`: Skip the code review gate even if `pr_review` is enabled in scaffold.json.
+- `--skip-review`: Skip the code review gate even if `pr_review` is enabled in ccanvil.json.
 
 ## Rules
 

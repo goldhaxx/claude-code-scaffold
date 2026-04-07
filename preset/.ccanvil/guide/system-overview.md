@@ -1,6 +1,6 @@
 # System Overview
 
-The scaffold is a layered configuration system. Each layer loads at a different time and serves a different purpose.
+ccanvil is a layered configuration system. Each layer loads at a different time and serves a different purpose.
 
 ```mermaid
 graph TB
@@ -16,7 +16,7 @@ graph TB
         SK[".claude/skills/tdd/SKILL.md<br/><i>TDD enforcement</i>"]
         AG1[".claude/agents/spec-writer.md"]
         AG2[".claude/agents/code-reviewer.md"]
-        AG3[".claude/agents/scaffold-differ.md"]
+        AG3[".claude/agents/ccanvil-differ.md"]
         CMD[".claude/commands/*.md<br/><i>Slash commands</i>"]
     end
 
@@ -34,7 +34,7 @@ graph TB
 
     subgraph "Reference Documents (synced)"
         GUIDE[".ccanvil/guide/<br/><i>hub + node sections</i>"]
-        FRAMEWORK[".ccanvil/guide/scaffold-framework.md<br/><i>research — read-only</i>"]
+        FRAMEWORK[".ccanvil/guide/foundations.md<br/><i>research — read-only</i>"]
     end
 
     GM --> PM

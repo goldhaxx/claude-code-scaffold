@@ -1,4 +1,4 @@
-Pull updates from the scaffold hub into this project.
+Pull updates from the hub into this project.
 
 All deterministic operations (copy, hash, lockfile, logging) are handled by the script. Claude's role is LIMITED to judgment calls: conflict resolution and merge proposals.
 
@@ -12,13 +12,13 @@ All deterministic operations (copy, hash, lockfile, logging) are handled by the 
 Pre-check verifies both repos are clean and auto-bootstraps the sync script if the hub has a newer version (prints "BOOTSTRAPPED" and exits — re-run the command).
 
 Read the JSON output. It contains an array of `{file, action, reason}` objects. Actions:
-- `auto-update` — scaffold changed, local is clean. Safe to apply automatically.
-- `adopt-clean` — new file in scaffold, identical local copy exists. Tracked automatically.
+- `auto-update` — hub changed, local is clean. Safe to apply automatically.
+- `adopt-clean` — new file in hub, identical local copy exists. Tracked automatically.
 - `section-merge` — both changed, file has delimiter. Hub section updated, node section preserved.
 - `conflict` — both changed, no delimiter. Requires human decision.
-- `adopt-conflict` — new in scaffold, different local copy exists. Requires human decision.
-- `new` — new file in scaffold, doesn't exist locally.
-- `removed` — file removed from scaffold.
+- `adopt-conflict` — new in hub, different local copy exists. Requires human decision.
+- `new` — new file in hub, doesn't exist locally.
+- `removed` — file removed from hub.
 
 ## Step 2: Execute auto-updates (deterministic)
 
@@ -44,7 +44,7 @@ For each file with action `conflict`:
 1. Show the diff: `./.ccanvil/scripts/ccanvil-sync.sh diff <file>`
 2. Present four options:
    - **Keep local** → `./.ccanvil/scripts/ccanvil-sync.sh pull-apply <file> keep-local`
-   - **Take scaffold** → `./.ccanvil/scripts/ccanvil-sync.sh pull-apply <file> take-scaffold`
+   - **Take hub** → `./.ccanvil/scripts/ccanvil-sync.sh pull-apply <file> take-hub`
    - **Merge** → Claude reads both versions, proposes a combined version, writes it to a temp file, user approves → `./.ccanvil/scripts/ccanvil-sync.sh pull-apply <file> write-merged <temp-file>`
    - **Show full diff** → display side-by-side, then ask again
 
@@ -53,7 +53,7 @@ For each file with action `conflict`:
 ## Step 5: Handle new files (deterministic with user confirmation)
 
 For each file with action `new`:
-1. Show the file's first few lines from the scaffold
+1. Show the file's first few lines from the hub
 2. If user accepts → `./.ccanvil/scripts/ccanvil-sync.sh pull-apply <file> accept-new`
 3. If user declines → skip
 

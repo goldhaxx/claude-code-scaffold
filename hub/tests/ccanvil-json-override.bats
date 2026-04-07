@@ -1,5 +1,5 @@
 #!/usr/bin/env bats
-# Tests for scaffold.json + scaffold.local.json overlay merge behavior.
+# Tests for ccanvil.json + ccanvil.local.json overlay merge behavior.
 #
 # Each test creates an isolated project directory with fixture configs.
 
@@ -20,10 +20,10 @@ teardown() {
 # =========================================================================
 
 @test "AC-1: both files present — deep merge produces combined result" {
-  cat > "$PROJECT/.claude/scaffold.json" <<'EOF'
+  cat > "$PROJECT/.claude/ccanvil.json" <<'EOF'
 {"features":{"pr_review":false}}
 EOF
-  cat > "$PROJECT/.claude/scaffold.local.json" <<'EOF'
+  cat > "$PROJECT/.claude/ccanvil.local.json" <<'EOF'
 {"integrations":{"routing":{"backlog":"linear"}}}
 EOF
 
@@ -34,7 +34,7 @@ EOF
 }
 
 @test "AC-3: no local file — effective config equals hub file" {
-  cat > "$PROJECT/.claude/scaffold.json" <<'EOF'
+  cat > "$PROJECT/.claude/ccanvil.json" <<'EOF'
 {"features":{"pr_review":false},"integrations":{}}
 EOF
 
@@ -55,10 +55,10 @@ EOF
 # =========================================================================
 
 @test "AC-2: node wins on conflict — local overrides hub value" {
-  cat > "$PROJECT/.claude/scaffold.json" <<'EOF'
+  cat > "$PROJECT/.claude/ccanvil.json" <<'EOF'
 {"features":{"pr_review":false}}
 EOF
-  cat > "$PROJECT/.claude/scaffold.local.json" <<'EOF'
+  cat > "$PROJECT/.claude/ccanvil.local.json" <<'EOF'
 {"features":{"pr_review":true}}
 EOF
 
@@ -72,14 +72,14 @@ EOF
 # =========================================================================
 
 @test "AC-7: invalid local JSON exits 1 with error message" {
-  cat > "$PROJECT/.claude/scaffold.json" <<'EOF'
+  cat > "$PROJECT/.claude/ccanvil.json" <<'EOF'
 {"features":{"pr_review":false}}
 EOF
-  echo "not valid json{{{" > "$PROJECT/.claude/scaffold.local.json"
+  echo "not valid json{{{" > "$PROJECT/.claude/ccanvil.local.json"
 
   run bash "$OPERATIONS_SCRIPT" merge-config --project-dir "$PROJECT"
   [ "$status" -eq 1 ]
-  echo "$output" | grep -q "ERROR: .claude/scaffold.local.json is not valid JSON"
+  echo "$output" | grep -q "ERROR: .claude/ccanvil.local.json is not valid JSON"
 }
 
 # =========================================================================
@@ -88,11 +88,11 @@ EOF
 
 @test "AC-5: resolve uses merged config — routing in local file only" {
   # Hub has features only, no routing
-  cat > "$PROJECT/.claude/scaffold.json" <<'EOF'
+  cat > "$PROJECT/.claude/ccanvil.json" <<'EOF'
 {"features":{"pr_review":false},"integrations":{}}
 EOF
   # Local file has routing config
-  cat > "$PROJECT/.claude/scaffold.local.json" <<'EOF'
+  cat > "$PROJECT/.claude/ccanvil.local.json" <<'EOF'
 {
   "integrations":{
     "routing":{"backlog":"linear"},
@@ -114,10 +114,10 @@ EOF
 DOCS_CHECK_SCRIPT="$BATS_TEST_DIRNAME/../../.ccanvil/scripts/docs-check.sh"
 
 @test "AC-6: config-get reads merged config — feature in local file only" {
-  cat > "$PROJECT/.claude/scaffold.json" <<'EOF'
+  cat > "$PROJECT/.claude/ccanvil.json" <<'EOF'
 {"features":{}}
 EOF
-  cat > "$PROJECT/.claude/scaffold.local.json" <<'EOF'
+  cat > "$PROJECT/.claude/ccanvil.local.json" <<'EOF'
 {"features":{"pr_review":true}}
 EOF
 
@@ -127,7 +127,7 @@ EOF
 }
 
 @test "AC-6: config-get hub default when no local override" {
-  cat > "$PROJECT/.claude/scaffold.json" <<'EOF'
+  cat > "$PROJECT/.claude/ccanvil.json" <<'EOF'
 {"features":{"pr_review":false}}
 EOF
 
@@ -140,25 +140,25 @@ EOF
 # Step 6: Gitignore and claudeignore (AC-9, AC-10)
 # =========================================================================
 
-@test "AC-9: scaffold.local.json is in .gitignore" {
-  grep -q 'scaffold.local.json' "$BATS_TEST_DIRNAME/../../.gitignore"
+@test "AC-9: ccanvil.local.json is in .gitignore" {
+  grep -q 'ccanvil.local.json' "$BATS_TEST_DIRNAME/../../.gitignore"
 }
 
-@test "AC-10: scaffold.local.json is in .claudeignore" {
-  grep -q 'scaffold.local.json' "$BATS_TEST_DIRNAME/../../.claudeignore"
+@test "AC-10: ccanvil.local.json is in .claudeignore" {
+  grep -q 'ccanvil.local.json' "$BATS_TEST_DIRNAME/../../.claudeignore"
 }
 
 # =========================================================================
-# Step 7: Pull safety — scaffold.json stays clean when overrides in local (AC-8)
+# Step 7: Pull safety — ccanvil.json stays clean when overrides in local (AC-8)
 # =========================================================================
 
-@test "AC-8: pull-plan classifies scaffold.json as auto-update when local is clean" {
+@test "AC-8: pull-plan classifies ccanvil.json as auto-update when local is clean" {
   SYNC_SCRIPT="$BATS_TEST_DIRNAME/../../.ccanvil/scripts/ccanvil-sync.sh"
 
-  # Set up a "hub" scaffold with scaffold.json
+  # Set up a "hub" with ccanvil.json
   HUB=$(mktemp -d)
   mkdir -p "$HUB/.claude"
-  cat > "$HUB/.claude/scaffold.json" <<'EOF'
+  cat > "$HUB/.claude/ccanvil.json" <<'EOF'
 {"features":{"pr_review":false}}
 EOF
 
@@ -167,28 +167,28 @@ EOF
   cd "$NODE"
   git init -q
   mkdir -p .claude .ccanvil
-  cp "$HUB/.claude/scaffold.json" .claude/scaffold.json
+  cp "$HUB/.claude/ccanvil.json" .claude/ccanvil.json
   git add -A
   git commit -q -m "init"
 
-  # Create lockfile tracking scaffold.json
+  # Create lockfile tracking ccanvil.json
   bash "$SYNC_SCRIPT" init "$HUB"
 
-  # Node adds overrides to scaffold.local.json (not scaffold.json)
-  cat > "$NODE/.claude/scaffold.local.json" <<'EOF'
+  # Node adds overrides to ccanvil.local.json (not ccanvil.json)
+  cat > "$NODE/.claude/ccanvil.local.json" <<'EOF'
 {"integrations":{"routing":{"backlog":"linear"}}}
 EOF
-  # scaffold.local.json is gitignored — don't commit it
+  # ccanvil.local.json is gitignored — don't commit it
 
-  # Hub changes scaffold.json (adds a feature toggle)
-  cat > "$HUB/.claude/scaffold.json" <<'EOF'
+  # Hub changes ccanvil.json (adds a feature toggle)
+  cat > "$HUB/.claude/ccanvil.json" <<'EOF'
 {"features":{"pr_review":false,"auto_format":true}}
 EOF
 
-  # Run pull-plan — scaffold.json should be auto-update (local is clean)
+  # Run pull-plan — ccanvil.json should be auto-update (local is clean)
   run bash "$SYNC_SCRIPT" pull-plan "$HUB"
   [ "$status" -eq 0 ]
-  echo "$output" | jq -e '.[] | select(.file == ".claude/scaffold.json") | .action == "auto-update"'
+  echo "$output" | jq -e '.[] | select(.file == ".claude/ccanvil.json") | .action == "auto-update"'
 
   rm -rf "$HUB" "$NODE"
 }
@@ -197,15 +197,15 @@ EOF
 # Step 8: Template updated (AC-12)
 # =========================================================================
 
-@test "AC-12: scaffold.json template has companion doc referencing scaffold.local.json" {
-  grep -q 'scaffold.local.json' "$BATS_TEST_DIRNAME/../../.ccanvil/templates/scaffold.json.md"
+@test "AC-12: ccanvil.json template has companion doc referencing ccanvil.local.json" {
+  grep -q 'ccanvil.local.json' "$BATS_TEST_DIRNAME/../../.ccanvil/templates/ccanvil.json.md"
 }
 
 @test "AC-11: deep merge preserves nested keys from both sides" {
-  cat > "$PROJECT/.claude/scaffold.json" <<'EOF'
+  cat > "$PROJECT/.claude/ccanvil.json" <<'EOF'
 {"integrations":{"providers":{"github":{"mechanism":"cli"}}}}
 EOF
-  cat > "$PROJECT/.claude/scaffold.local.json" <<'EOF'
+  cat > "$PROJECT/.claude/ccanvil.local.json" <<'EOF'
 {"integrations":{"providers":{"linear":{"mechanism":"mcp"}}}}
 EOF
 

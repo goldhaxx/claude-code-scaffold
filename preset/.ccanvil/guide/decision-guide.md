@@ -10,8 +10,8 @@ flowchart TD
     Q -->|"Create an implementation plan"| A2["/plan"]
     Q -->|"Review code before committing"| A3["/review"]
     Q -->|"Resume after a break"| A4["/catchup"]
-    Q -->|"Check scaffold sync state"| A5["/ccanvil-status"]
-    Q -->|"Pull scaffold updates"| A6["/ccanvil-pull"]
+    Q -->|"Check sync state"| A5["/ccanvil-status"]
+    Q -->|"Pull hub updates"| A6["/ccanvil-pull"]
     Q -->|"Share a local file globally"| A7["/ccanvil-promote file"]
     Q -->|"Fix TLS certificate errors"| A8["/fix-certs"]
     Q -->|"Session feels degraded"| A9["'Checkpoint this'<br/>→ /clear → /catchup"]
@@ -41,17 +41,17 @@ flowchart TD
     style STOP fill:#ffcdd2,stroke:#333,stroke-width:2px
 ```
 
-## "When should I sync with the scaffold?"
+## "When should I sync with the hub?"
 
 ```mermaid
 flowchart TD
     Q["Sync scenario?"]
 
     Q -->|"Created a useful<br/>new rule/command/agent"| PROMOTE["/ccanvil-promote file<br/><i>Share with all projects</i>"]
-    Q -->|"Want to check for<br/>scaffold updates"| STATUS["/ccanvil-status<br/><i>then /ccanvil-pull if updates exist</i>"]
-    Q -->|"Customized a scaffold file<br/>and want to keep my version"| DEMOTE["/ccanvil-demote file<br/><i>Prevents auto-update on pull</i>"]
+    Q -->|"Want to check for<br/>hub updates"| STATUS["/ccanvil-status<br/><i>then /ccanvil-pull if updates exist</i>"]
+    Q -->|"Customized a hub file<br/>and want to keep my version"| DEMOTE["/ccanvil-demote file<br/><i>Prevents auto-update on pull</i>"]
     Q -->|"File is permanently<br/>project-specific"| IGNORE["/ccanvil-ignore file<br/><i>Excluded from all future sync</i>"]
-    Q -->|"Made improvements to<br/>a modified scaffold file"| PUSH["/ccanvil-push<br/><i>Claude extracts generalizable parts</i>"]
+    Q -->|"Made improvements to<br/>a modified hub file"| PUSH["/ccanvil-push<br/><i>Claude extracts generalizable parts</i>"]
     Q -->|"Starting a new project"| PULL["Pull latest into current project first<br/>then /init in new project"]
 
     style PROMOTE fill:#c8e6c9

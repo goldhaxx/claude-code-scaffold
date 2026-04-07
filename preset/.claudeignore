@@ -47,11 +47,11 @@ package-lock.json
 pnpm-lock.yaml
 yarn.lock
 
-# Scaffold sync state (machine-managed, not useful in context)
-.claude/scaffold.lock
+# Sync state (machine-managed, not useful in context)
+.ccanvil/ccanvil.lock
 
-# Scaffold local config (read via scripts, not raw file reads)
-.claude/scaffold.local.json
+# Local config (read via scripts, not raw file reads)
+.claude/ccanvil.local.json
 
 # Claude Code worktrees (session-specific, not useful in context)
 .claude/worktrees/

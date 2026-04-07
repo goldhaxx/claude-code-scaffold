@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # protect-files.sh — PreToolUse hook for Write|Edit|MultiEdit
-# Blocks writes to sensitive files and protected scaffold files.
+# Blocks writes to sensitive files and protected preset files.
 # Exit 2 = hard block (stderr becomes Claude's feedback)
 # Exit 0 = allow
 
@@ -21,10 +21,10 @@ case "$FILE_PATH" in
     ;;
 esac
 
-# --- Protected scaffold files ---
+# --- Protected preset files ---
 case "$FILE_PATH" in
-  *.ccanvil/guide/scaffold-framework.md)
-    echo "BLOCKED: scaffold-framework.md is research source material — read-only." >&2
+  *.ccanvil/guide/foundations.md)
+    echo "BLOCKED: foundations.md is research source material — read-only." >&2
     echo "Only modify with explicit user approval for paradigm shifts or new research." >&2
     exit 2
     ;;

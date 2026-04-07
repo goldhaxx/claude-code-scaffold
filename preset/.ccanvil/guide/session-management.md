@@ -1,6 +1,6 @@
 # Session Management
 
-Sessions should be short and focused. The scaffold provides tools for preserving and resuming state.
+Sessions should be short and focused. The preset provides tools for preserving and resuming state.
 
 ```mermaid
 flowchart TD

@@ -1,7 +1,7 @@
 Initialize a new project using the ccanvil preset located at ~/projects/ccanvil.
 
 1. Read ~/projects/ccanvil/README.md — it contains the complete file manifest and setup instructions.
-2. Read ~/projects/ccanvil/hub/meta/SCAFFOLD_SYSTEM_PROMPT.md for the full specification of constraints and formatting rules.
+2. Read ~/projects/ccanvil/hub/meta/SYSTEM_PROMPT.md for the full specification of constraints and formatting rules.
 3. Copy distributable artifacts from `~/projects/ccanvil/preset/` into the current working directory:
    - `preset/.claude/` → `.claude/` (rules, commands, agents, skills, hooks, settings)
    - `preset/.ccanvil/scripts/` → `.ccanvil/scripts/` (ccanvil-sync.sh, security-audit.sh, etc.)

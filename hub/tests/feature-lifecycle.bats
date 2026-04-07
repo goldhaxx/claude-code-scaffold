@@ -1,7 +1,7 @@
 #!/usr/bin/env bats
 # Tests for branch-based feature lifecycle
 #
-# Covers: scaffold config, list-specs, activate, complete, validate/recommend
+# Covers: preset config, list-specs, activate, complete, validate/recommend
 # multi-spec, hooks, and worktree compatibility.
 
 SCRIPT="$BATS_TEST_DIRNAME/../../.ccanvil/scripts/docs-check.sh"
@@ -39,11 +39,11 @@ teardown() {
 }
 
 # ---------------------------------------------------------------------------
-# Step 1: Scaffold config (AC-14, AC-15)
+# Step 1: Preset config (AC-14, AC-15)
 # ---------------------------------------------------------------------------
 
-@test "scaffold-config: reads feature toggle from scaffold.json" {
-  cat > "$PROJECT/.claude/scaffold.json" <<'EOF'
+@test "config-get: reads feature toggle from ccanvil.json" {
+  cat > "$PROJECT/.claude/ccanvil.json" <<'EOF'
 {"features": {"pr_review": true}}
 EOF
   run "$PROJECT/.ccanvil/scripts/docs-check.sh" config-get pr_review "$PROJECT"
@@ -51,8 +51,8 @@ EOF
   [ "$output" = "true" ]
 }
 
-@test "scaffold-config: returns false for missing key" {
-  cat > "$PROJECT/.claude/scaffold.json" <<'EOF'
+@test "config-get: returns false for missing key" {
+  cat > "$PROJECT/.claude/ccanvil.json" <<'EOF'
 {"features": {"pr_review": true}}
 EOF
   run "$PROJECT/.ccanvil/scripts/docs-check.sh" config-get nonexistent "$PROJECT"
@@ -60,15 +60,15 @@ EOF
   [ "$output" = "false" ]
 }
 
-@test "scaffold-config: returns false when scaffold.json missing" {
-  # No scaffold.json created
+@test "config-get: returns false when ccanvil.json missing" {
+  # No ccanvil.json created
   run "$PROJECT/.ccanvil/scripts/docs-check.sh" config-get pr_review "$PROJECT"
   [ "$status" -eq 0 ]
   [ "$output" = "false" ]
 }
 
-@test "scaffold-config: returns false when scaffold.json is empty object" {
-  cat > "$PROJECT/.claude/scaffold.json" <<'EOF'
+@test "config-get: returns false when ccanvil.json is empty object" {
+  cat > "$PROJECT/.claude/ccanvil.json" <<'EOF'
 {}
 EOF
   run "$PROJECT/.ccanvil/scripts/docs-check.sh" config-get pr_review "$PROJECT"

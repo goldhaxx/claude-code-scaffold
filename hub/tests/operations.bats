@@ -46,7 +46,7 @@ teardown() {
 # Step 2: No-config local fallback + invalid JSON error (AC-11, AC-9)
 # =========================================================================
 
-@test "resolve backlog.list with no scaffold.json returns local bash adapter" {
+@test "resolve backlog.list with no ccanvil.json returns local bash adapter" {
   run bash "$SCRIPT" resolve backlog.list --project-dir "$PROJECT"
   [ "$status" -eq 0 ]
   echo "$output" | jq -e '.provider == "local"'
@@ -57,15 +57,15 @@ teardown() {
 
 @test "resolve backlog.list with invalid JSON exits 1" {
   mkdir -p "$PROJECT/.claude"
-  echo "not json" > "$PROJECT/.claude/scaffold.json"
+  echo "not json" > "$PROJECT/.claude/ccanvil.json"
   run bash "$SCRIPT" resolve backlog.list --project-dir "$PROJECT"
   [ "$status" -eq 1 ]
-  echo "$output" | grep -q 'ERROR: .claude/scaffold.json is not valid JSON'
+  echo "$output" | grep -q 'ERROR: .claude/ccanvil.json is not valid JSON'
 }
 
-@test "resolve backlog.list with empty scaffold.json (no integrations) returns local" {
+@test "resolve backlog.list with empty ccanvil.json (no integrations) returns local" {
   mkdir -p "$PROJECT/.claude"
-  echo '{}' > "$PROJECT/.claude/scaffold.json"
+  echo '{}' > "$PROJECT/.claude/ccanvil.json"
   run bash "$SCRIPT" resolve backlog.list --project-dir "$PROJECT"
   [ "$status" -eq 0 ]
   echo "$output" | jq -e '.provider == "local"'
@@ -132,7 +132,7 @@ teardown() {
 
 @test "backlog.list with linear routing returns MCP adapter" {
   mkdir -p "$PROJECT/.claude"
-  cat > "$PROJECT/.claude/scaffold.json" <<'JSON'
+  cat > "$PROJECT/.claude/ccanvil.json" <<'JSON'
 {
   "integrations": {
     "providers": {
@@ -164,7 +164,7 @@ JSON
 
 @test "missing provider exits 1 with error message (AC-3)" {
   mkdir -p "$PROJECT/.claude"
-  cat > "$PROJECT/.claude/scaffold.json" <<'JSON'
+  cat > "$PROJECT/.claude/ccanvil.json" <<'JSON'
 {
   "integrations": {
     "providers": {},
@@ -181,7 +181,7 @@ JSON
 
 @test "partial routing: unrouted groups fall back to local (AC-4)" {
   mkdir -p "$PROJECT/.claude"
-  cat > "$PROJECT/.claude/scaffold.json" <<'JSON'
+  cat > "$PROJECT/.claude/ccanvil.json" <<'JSON'
 {
   "integrations": {
     "providers": {
@@ -266,7 +266,7 @@ SPEC
 
 @test "backlog.get with linear routing returns MCP adapter with id param" {
   mkdir -p "$PROJECT/.claude"
-  cat > "$PROJECT/.claude/scaffold.json" <<'JSON'
+  cat > "$PROJECT/.claude/ccanvil.json" <<'JSON'
 {
   "integrations": {
     "providers": {
@@ -296,7 +296,7 @@ JSON
 
 @test "unknown mechanism passes through as-is" {
   mkdir -p "$PROJECT/.claude"
-  cat > "$PROJECT/.claude/scaffold.json" <<'JSON'
+  cat > "$PROJECT/.claude/ccanvil.json" <<'JSON'
 {
   "integrations": {
     "providers": {
@@ -316,7 +316,7 @@ JSON
 
 @test "unknown mechanism with sdk type passes through" {
   mkdir -p "$PROJECT/.claude"
-  cat > "$PROJECT/.claude/scaffold.json" <<'JSON'
+  cat > "$PROJECT/.claude/ccanvil.json" <<'JSON'
 {
   "integrations": {
     "providers": {
@@ -335,7 +335,7 @@ JSON
 
 @test "unknown mechanism with api type passes through" {
   mkdir -p "$PROJECT/.claude"
-  cat > "$PROJECT/.claude/scaffold.json" <<'JSON'
+  cat > "$PROJECT/.claude/ccanvil.json" <<'JSON'
 {
   "integrations": {
     "providers": {
@@ -354,7 +354,7 @@ JSON
 }
 
 # =========================================================================
-# Step 9: scaffold.json integrations schema + scaffold-sync tracking (AC-8)
+# Step 9: ccanvil.json integrations schema + ccanvil-sync tracking (AC-8)
 # =========================================================================
 
 # =========================================================================
@@ -369,7 +369,7 @@ JSON
 
 @test "hyphenated provider name resolves correctly" {
   mkdir -p "$PROJECT/.claude"
-  cat > "$PROJECT/.claude/scaffold.json" <<'JSON'
+  cat > "$PROJECT/.claude/ccanvil.json" <<'JSON'
 {
   "integrations": {
     "providers": {
@@ -388,7 +388,7 @@ JSON
 
 @test "provider config with special characters in values produces valid JSON" {
   mkdir -p "$PROJECT/.claude"
-  cat > "$PROJECT/.claude/scaffold.json" <<'JSON'
+  cat > "$PROJECT/.claude/ccanvil.json" <<'JSON'
 {
   "integrations": {
     "providers": {
@@ -415,7 +415,7 @@ JSON
 
   # Test with config
   mkdir -p "$PROJECT/.claude"
-  echo '{}' > "$PROJECT/.claude/scaffold.json"
+  echo '{}' > "$PROJECT/.claude/ccanvil.json"
   run bash "$SCRIPT" resolve spec.read --project-dir "$PROJECT"
   [ "$status" -eq 0 ]
   echo "$output" | jq empty
@@ -437,15 +437,15 @@ JSON
   grep -q "operations.sh" "$BATS_TEST_DIRNAME/../../CLAUDE.md"
 }
 
-@test "scaffold-guide documents operations.sh" {
+@test "preset guide documents operations.sh" {
   grep -q "operations.sh" "$BATS_TEST_DIRNAME/../../.ccanvil/guide/command-reference.md"
 }
 
-@test "scaffold.json with integrations key passes jq validation" {
-  local REAL_CONFIG="$BATS_TEST_DIRNAME/../../.claude/scaffold.json"
+@test "ccanvil.json with integrations key passes jq validation" {
+  local REAL_CONFIG="$BATS_TEST_DIRNAME/../../.claude/ccanvil.json"
   jq empty "$REAL_CONFIG"
 }
 
-@test "scaffold.json is tracked in scaffold-sync TRACKED_PATTERNS" {
-  grep -q 'scaffold.json' "$BATS_TEST_DIRNAME/../../.ccanvil/scripts/ccanvil-sync.sh"
+@test "ccanvil.json is tracked in ccanvil-sync TRACKED_PATTERNS" {
+  grep -q 'ccanvil.json' "$BATS_TEST_DIRNAME/../../.ccanvil/scripts/ccanvil-sync.sh"
 }

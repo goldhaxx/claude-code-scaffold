@@ -41,4 +41,4 @@ Be specific. "This could be better" is useless. "The error handler on line 45 of
 
 <!-- NODE-SPECIFIC-START -->
 <!-- Add project-specific content below this line. -->
-<!-- Hub content above is updated via /scaffold-pull. -->
+<!-- Hub content above is updated via /ccanvil-pull. -->

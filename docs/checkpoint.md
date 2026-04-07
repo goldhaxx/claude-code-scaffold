@@ -1,67 +1,70 @@
 # Checkpoint
 
 > Feature: scaffold-terminology-eradication
-> Last updated: 1775453686
-> Plan hash: (no plan yet — spec is Draft)
-> Session objective: Migrate downstream projects to ccanvil structure + write terminology eradication spec
+> Last updated: 1775502853
+> Plan hash: 7ce64c7d
+> Session objective: Implement scaffold terminology eradication — steps 1-14
 
 ## Accomplished
 
-### Fucina migrated to ccanvil structure
-- `scripts/` → `.ccanvil/scripts/`, `docs/scaffold-guide/` → `.ccanvil/guide/`, `docs/templates/` → `.ccanvil/templates/`
-- `.claude/scaffold.lock` → `.ccanvil/ccanvil.lock`
-- All `scaffold-*` commands → `ccanvil-*`, agent renamed
-- settings.json merged: new hub base + PlatformIO permissions preserved
-- tls-troubleshooting.md removed (in global config)
-- settings.local.json paths updated
-- Lockfile: 57 clean, 1 modified (settings.json), 3 local (node-only)
-- Committed and pushed: `8dc86a5`
+### Steps 1-4: Core ccanvil-sync.sh (complete)
+- Lockfile keys: scaffold_source→hub_source, scaffold_version→hub_version, scaffold_hash→hub_hash, scaffold-only→hub-only, origin "scaffold"→"hub"
+- Functions: 6 renamed (get_scaffold_source→get_hub_source, scaffold_dist_root→hub_dist_root, scan_scaffold_files→scan_hub_files, etc.)
+- Variables: 12 renamed (scaffold_source→hub_source, scaffold_hub→hub_root, etc.)
+- Strings: take-scaffold→take-hub, chore(scaffold)→chore(sync), all output/comments/help text
+- Commits: 648fe66, 9e1b2cd, 5d94994, 7d27c8e
 
-### Luxlook migrated to ccanvil structure
-- Same directory/command/agent renames as fucina
-- CLAUDE.md preserved project name/description, merged with new hub-managed section
-- .github/ workflows and templates updated to new script paths
-- CONTRIBUTING.md updated
-- Lockfile: 56 clean, 2 modified (CLAUDE.md, scaffold.json)
-- Committed locally: `73f01a8` (no remote configured)
+### Step 5: Config file rename (complete)
+- scaffold.json→ccanvil.json (preset + hub root), scaffold.local.json→ccanvil.local.json
+- merge_scaffold_config()→merge_config() in operations.sh + docs-check.sh
+- Template: scaffold.json.md→ccanvil.json.md
+- TRACKED_PATTERNS, .gitignore, .claudeignore updated
+- Commit: c1a37f7
 
-### Bug found and fixed in hub: cmd_init() hub path mapping
-- `cmd_init()` used raw `$scaffold_path` instead of `scaffold_dist_root()` for file hashing
-- Caused freshly-copied CLAUDE.md to show as "modified" after init
-- Fixed, tested (352/352 pass), committed and pushed: `18702ff`
+### Steps 6-7: Supporting scripts + test renames (complete)
+- security-audit.sh allowlist: scaffold-framework.md→foundations.md
+- context-budget.sh comment updated
+- scaffold-sync.bats→ccanvil-sync.bats, scaffold-json-override.bats→ccanvil-json-override.bats
+- Commits: 7d3f3b2, 83b5684
 
-### Terminology eradication spec written
-- Comprehensive inventory: ~815 occurrences across 81 hub files, ~400+ in downstream projects
-- 27 acceptance criteria covering scripts, lockfile keys, docs, commands, agents, rules, tests, downstream
-- `scaffold-framework.md` brought INTO scope — renamed to `foundations.md` (scaffolding metaphor is inaccurate for persistent config)
-- Committed and pushed: `f6741be`
+### Step 8: Guide files (complete)
+- scaffold-sync.md→sync.md, scaffold-framework.md→foundations.md
+- All 11 guide files swept
+- Protection rules updated in code-quality.md, deterministic-first.md
+- Commit: e893b36
 
-### Lifecycle docs cleared
-- spec.md, plan.md, checkpoint.md cleared after ccanvil-reorg completion
-- Committed and pushed: `9670127`
+### Steps 9-12: Documentation sweep (complete)
+- 48 files: templates, commands, agents, rules, skills, hooks, hub meta, README, CLAUDE.md
+- SCAFFOLD_SYSTEM_PROMPT.md→SYSTEM_PROMPT.md
+- scaffold-differ→ccanvil-differ agent name
+- All delimiter comments: /scaffold-pull→/ccanvil-pull
+- Hub root .claude/ rules updated
+- Commit: 86419ff
+
+### Step 13: Downstream projects (in progress)
+- Agents running for luxlook and fucina — copying fresh preset files, re-initing lockfiles
 
 ## Current State
 
-- **Branch:** `main` (no feature branch yet — spec is Draft, not activated)
+- **Branch:** `claude/feat/scaffold-terminology-eradication`
 - **Hub tests:** 352/352 passing
-- **Working tree:** clean
-- **Downstream:** Both fucina and luxlook migrated to new structure
-- **Spec status:** Draft — ready to activate
+- **Working tree:** clean (downstream work in separate repos)
+- **Hub scaffold refs:** 0 in active files; only in historical specs, research docs, and current feature docs (spec/plan/checkpoint)
+- **Lockfile init verified:** produces hub_source, hub_version, hub_hash keys
 
 ## Next Steps
 
-1. Activate the spec: `bash .ccanvil/scripts/docs-check.sh activate scaffold-terminology-eradication`
-2. Run `/plan` to create the implementation plan
-3. Begin TDD implementation starting with `ccanvil-sync.sh` (most complex, all lockfile key changes ripple from there)
+1. Verify downstream agents completed successfully (AC-24, AC-25)
+2. Step 15: Guide cross-ref audit — verify all internal links resolve after renames
+3. Final comprehensive grep sweep (step 14)
+4. Mark spec as complete, create PR
 
 ## Determinism Review
 
-- **operations_reviewed:** 12
-- **candidates_found:** 2
+- **operations_reviewed:** 8
+- **candidates_found:** 0
 
-**Manual downstream migration**: Claude ran ~15 manual commands per project (mkdir, cp, rm, edit ignore files, init lockfile) to migrate fucina and luxlook. This was a repeatable, mechanical process. Should be a `ccanvil-sync.sh migrate <hub-path>` subcommand that: detects old structure, creates new directories, copies fresh files from hub preset, moves node-only files, re-inits lockfile. Impact: **high** — every new downstream project migration would benefit.
-
-**Manual lockfile inspection**: Claude ran `python3 -c "import json..."` to read lockfile status fields. Should be a `ccanvil-sync.sh status --json` or `ccanvil-sync.sh lock-get <file> status` subcommand. Impact: **medium** — already partially exists but no convenient filter for non-clean files.
+No candidates this session. All file operations were handled by agents with explicit copy commands. The downstream migration pattern (copy preset files → re-init lockfile) is the same manual process flagged in the previous checkpoint — BTS-65 (migrate subcommand) would automate this.
 
 <!-- NODE-SPECIFIC-START -->
 <!-- Add project-specific content below this line. -->

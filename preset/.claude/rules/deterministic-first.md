@@ -12,7 +12,7 @@ Transformer attention is zero-sum. Context consumed by `cp`, `diff`, `jq`, hash 
 
 Use this decision ladder for every operation:
 
-1. **Hook** — if the action is binary (always/never) and triggered by a lifecycle event, make it a hook. Zero context cost. Examples: block writes to `.env`, auto-format on save, protect `scaffold-framework.md`.
+1. **Hook** — if the action is binary (always/never) and triggered by a lifecycle event, make it a hook. Zero context cost. Examples: block writes to `.env`, auto-format on save, protect `foundations.md`.
 
 2. **Script** — if the action involves multiple deterministic steps (hash, compare, copy, update lockfile), wrap them in a shell function/command. Claude calls one command instead of orchestrating ten. Examples: `ccanvil-sync.sh pull-auto`, `ccanvil-sync.sh promote <file>`.
 
@@ -22,7 +22,7 @@ Use this decision ladder for every operation:
 
 ## How to Apply
 
-When adding or modifying ANY scaffold automation:
+When adding or modifying ANY preset automation:
 
 - **Ask:** "Can this step produce a wrong answer?" If no → script/hook, not Claude.
 - **Ask:** "Does this step require reading and understanding code semantics?" If no → script/hook, not Claude.

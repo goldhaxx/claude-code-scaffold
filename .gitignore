@@ -21,11 +21,11 @@ generated/
 
 # Claude Code local settings (per-user, not shared)
 .claude/settings.local.json
-.claude/scaffold.local.json
+.claude/ccanvil.local.json
 .claude/local/
 
 # Claude Code worktrees (per-session, not shared)
 .claude/worktrees/
 
-# Scaffold sync state — tracked in git for provenance.
+# Sync state — tracked in git for provenance.
 # Listed in .claudeignore so Claude uses the script to access them, not raw reads.

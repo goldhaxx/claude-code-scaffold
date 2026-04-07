@@ -1,4 +1,4 @@
-Mark a scaffold-tracked file as node-only, permanently excluding it from sync.
+Mark a hub-tracked file as node-only, permanently excluding it from sync.
 
 Use when a file is intentionally project-specific and should never be pulled, pushed, or shown as a conflict again.
 

@@ -10,7 +10,7 @@ Configuration preset hub for Claude Code — spec-driven development, determinis
 ## Commands
 ```bash
 bats hub/tests/                          # Run all tests
-bats hub/tests/scaffold-sync.bats        # Run scaffold sync tests only
+bats hub/tests/ccanvil-sync.bats         # Run sync tests only
 bats hub/tests/security-audit.bats       # Run security audit tests only
 bats hub/tests/feature-lifecycle.bats    # Run feature lifecycle tests only
 bash .ccanvil/scripts/security-audit.sh       # Run PII/secrets scan
@@ -80,7 +80,7 @@ docs/
 **Read when:** Writing tests or debugging test failures.
 
 ## Do Not
-- Do not modify `.ccanvil/guide/scaffold-framework.md` without explicit user approval — it is foundational research source material.
+- Do not modify `.ccanvil/guide/foundations.md` without explicit user approval — it is foundational research source material.
 - Do not modify files in `generated/`, `dist/`, or dependency directories.
 - Do not install new dependencies without stating the reason and alternatives considered.
 - Do not suppress type errors — fix the types.

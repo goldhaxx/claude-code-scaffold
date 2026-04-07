@@ -1,24 +1,24 @@
 # ccanvil
 
-A development scaffold for [Claude Code](https://docs.anthropic.com/en/docs/claude-code) that makes AI-assisted development reliable and repeatable. Spec-driven, test-first, with bi-directional sync between a central hub and any number of downstream projects.
+A configuration preset for [Claude Code](https://docs.anthropic.com/en/docs/claude-code) that makes AI-assisted development reliable and repeatable. Spec-driven, test-first, with bi-directional sync between a central hub and any number of downstream projects.
 
 ## What This Is
 
-This scaffold bootstraps any code repository — new or existing — with the configuration, scripts, and workflow structure needed to get the most out of Claude Code. It is not a framework or a library. It is a set of files that drop into your project and teach Claude Code how to work effectively: when to write tests, how to manage context, where to store specs and plans, and what to enforce deterministically vs. leave to judgment.
+ccanvil bootstraps any code repository — new or existing — with the configuration, scripts, and workflow structure needed to get the most out of Claude Code. It is not a framework or a library. It is a set of files that drop into your project and teach Claude Code how to work effectively: when to write tests, how to manage context, where to store specs and plans, and what to enforce deterministically vs. leave to judgment.
 
-**Who it's for:** Developers using Claude Code who want structured, repeatable AI-assisted development. You might be starting a greenfield project with zero lines of code, or retrofitting a mature codebase with tens of thousands of lines. Either way, the scaffold provides the same foundation: spec-driven development, test-first verification, and context management that respects how transformers actually work.
+**Who it's for:** Developers using Claude Code who want structured, repeatable AI-assisted development. You might be starting a greenfield project with zero lines of code, or retrofitting a mature codebase with tens of thousands of lines. Either way, ccanvil provides the same foundation: spec-driven development, test-first verification, and context management that respects how transformers actually work.
 
-**How it grows with you:** The scaffold works out-of-the-box with zero external dependencies — just local files and bash scripts. As you get comfortable, you can progressively unlock more capabilities:
+**How it grows with you:** ccanvil works out-of-the-box with zero external dependencies — just local files and bash scripts. As you get comfortable, you can progressively unlock more capabilities:
 
 1. **Start here** — Local files + bash scripts. Specs in markdown, backlog in memory, plans in `docs/`. Everything works offline, no accounts needed.
-2. **Add project management** — Connect Linear, GitHub Issues, or Jira via MCP. The scaffold routes backlog operations to your tool of choice.
+2. **Add project management** — Connect Linear, GitHub Issues, or Jira via MCP. ccanvil routes backlog operations to your tool of choice.
 3. **Add documentation tools** — Connect Notion or other MCP servers. Specs and plans can live wherever your team already works.
-4. **Add CI/CD automation** — Use the Claude Agent SDK to run scaffold workflows programmatically in pipelines. GitHub Agentic Workflows can trigger scaffold-aware agents on events.
-5. **Distribute to your team** — Package the scaffold as a Claude Code plugin for one-command installation across projects.
+4. **Add CI/CD automation** — Use the Claude Agent SDK to run ccanvil workflows programmatically in pipelines. GitHub Agentic Workflows can trigger preset-aware agents on events.
+5. **Distribute to your team** — Package ccanvil as a Claude Code plugin for one-command installation across projects.
 
-Each level is optional. The scaffold never requires external tools — it adapts to what you bring.
+Each level is optional. ccanvil never requires external tools — it adapts to what you bring.
 
-**Why this exists:** Transformer attention is zero-sum. Every token competes for weight. Performance degrades as context fills — starting at just 3,000 tokens. This scaffold manages that constraint through specification-driven development, test-driven verification, and hierarchical context management.
+**Why this exists:** Transformer attention is zero-sum. Every token competes for weight. Performance degrades as context fills — starting at just 3,000 tokens. ccanvil manages that constraint through specification-driven development, test-driven verification, and hierarchical context management.
 
 ## Features
 
@@ -54,7 +54,7 @@ For the full setup guide with explanations, see below.
 
 ### Step 1: One-time personal setup
 
-This scaffold ships with two files that go in your home directory. You do this once.
+ccanvil ships with two files that go in your home directory. You do this once.
 
 ```bash
 # Create the global Claude Code config directories
@@ -82,13 +82,13 @@ claude
 
 Then type **`/init`**.
 
-Claude Code will read the scaffold's README, copy all project files into the current directory, and ask you about your tech stack to customize CLAUDE.md. No pasting required.
+Claude Code will read the ccanvil README, copy all preset files into the current directory, and ask you about your tech stack to customize CLAUDE.md. No pasting required.
 
 > **Alternative (without the command):** If you prefer to paste a prompt manually, copy the contents of `INIT_PROMPT.md` into Claude Code instead. It does the same thing.
 
 ### Step 3: Name your project
 
-`/init` copies the scaffold files and then asks you for just two things:
+`/init` copies the preset files and then asks you for just two things:
 
 - **Project name**
 - **One-line description**
@@ -107,7 +107,7 @@ This triggers the OAuth flow for Linear. Once connected, you can reference and m
 
 ### Step 5: Start building
 
-You're set. Use the scaffold workflow:
+You're set. Use the ccanvil workflow:
 ```
 "Spec this feature"  → writes docs/spec.md with acceptance criteria
 /plan                → writes docs/plan.md with ordered TDD steps
@@ -120,14 +120,14 @@ You're set. Use the scaffold workflow:
 
 ## Complete File Manifest
 
-Every file and directory in this scaffold is listed below, grouped by where it goes. No file is left unexplained.
+Every file and directory in ccanvil is listed below, grouped by where it goes. No file is left unexplained.
 
 ### Files that go to your home directory (one-time setup)
 
 | File in zip | Copy to | What it does | Customize? |
 |---|---|---|---|
 | `hub/meta/GLOBAL_CLAUDE.md` | `~/.claude/CLAUDE.md` | Your personal preferences — name, communication style, workflow defaults. Claude Code loads this for every project on your machine. | Yes. Edit after copying to match your preferences. |
-| `global-commands/init.md` | `~/.claude/commands/init.md` | The `/init` slash command. Type `/init` in any new project directory and Claude Code reads the scaffold README, copies the files, and asks about your stack to customize. Deterministic — fires exactly when you invoke it, not probabilistically like a skill. | No. Works out of the box as long as the scaffold lives at `~/projects/ccanvil`. If you store the scaffold elsewhere, update the paths in this file. |
+| `global-commands/init.md` | `~/.claude/commands/init.md` | The `/init` slash command. Type `/init` in any new project directory and Claude Code reads the ccanvil README, copies the files, and asks about your stack to customize. Deterministic — fires exactly when you invoke it, not probabilistically like a skill. | No. Works out of the box as long as the hub lives at `~/projects/ccanvil`. If you store the hub elsewhere, update the paths in this file. |
 
 ### Files that go to your project root (per-project setup)
 
@@ -160,12 +160,12 @@ Copy the whole directory with `cp -r .claude ./.claude`. Here's what's inside:
 | `.claude/commands/catchup.md` | `./.claude/commands/catchup.md` | Defines the `/catchup` slash command. When invoked, reads `docs/checkpoint.md`, recent git history, and current diff to orient after a `/clear` reset. Does NOT implement anything — it only reports status. | No. This is workflow infrastructure. |
 | `.claude/commands/plan.md` | `./.claude/commands/plan.md` | Defines the `/plan` slash command. When invoked, reads the spec and codebase, then writes an ordered implementation plan to `docs/plan.md`. Each step is sized for one TDD cycle. Does NOT implement anything — it only plans. | No. This is workflow infrastructure. |
 | `.claude/commands/review.md` | `./.claude/commands/review.md` | Defines the `/review` slash command. When invoked, delegates to the code-reviewer sub-agent to review all uncommitted changes. | No. This is workflow infrastructure. |
-| `.claude/commands/ccanvil-status.md` | `./.claude/commands/ccanvil-status.md` | `/ccanvil-status` — show sync state between project and scaffold hub. | No. Scaffold sync infrastructure. |
-| `.claude/commands/ccanvil-pull.md` | `./.claude/commands/ccanvil-pull.md` | `/ccanvil-pull` — pull updates from scaffold into this project with conflict review. | No. Scaffold sync infrastructure. |
-| `.claude/commands/ccanvil-push.md` | `./.claude/commands/ccanvil-push.md` | `/ccanvil-push` — push generalizable project changes to the scaffold hub. | No. Scaffold sync infrastructure. |
-| `.claude/commands/ccanvil-promote.md` | `./.claude/commands/ccanvil-promote.md` | `/ccanvil-promote <file>` — promote a local-only file to the scaffold. | No. Scaffold sync infrastructure. |
-| `.claude/commands/ccanvil-demote.md` | `./.claude/commands/ccanvil-demote.md` | `/ccanvil-demote <file>` — mark a scaffold file as local override. | No. Scaffold sync infrastructure. |
-| `.claude/commands/ccanvil-ignore.md` | `./.claude/commands/ccanvil-ignore.md` | `/ccanvil-ignore <file>` — permanently exclude file from sync. | No. Scaffold sync infrastructure. |
+| `.claude/commands/ccanvil-status.md` | `./.claude/commands/ccanvil-status.md` | `/ccanvil-status` — show sync state between project and hub. | No. Sync infrastructure. |
+| `.claude/commands/ccanvil-pull.md` | `./.claude/commands/ccanvil-pull.md` | `/ccanvil-pull` — pull updates from hub into this project with conflict review. | No. Sync infrastructure. |
+| `.claude/commands/ccanvil-push.md` | `./.claude/commands/ccanvil-push.md` | `/ccanvil-push` — push generalizable project changes to the hub. | No. Sync infrastructure. |
+| `.claude/commands/ccanvil-promote.md` | `./.claude/commands/ccanvil-promote.md` | `/ccanvil-promote <file>` — promote a local-only file to the preset. | No. Sync infrastructure. |
+| `.claude/commands/ccanvil-demote.md` | `./.claude/commands/ccanvil-demote.md` | `/ccanvil-demote <file>` — mark a preset file as local override. | No. Sync infrastructure. |
+| `.claude/commands/ccanvil-ignore.md` | `./.claude/commands/ccanvil-ignore.md` | `/ccanvil-ignore <file>` — permanently exclude file from sync. | No. Sync infrastructure. |
 | `.claude/commands/ccanvil-audit.md` | `./.claude/commands/ccanvil-audit.md` | `/ccanvil-audit` — analyze stochastic vs deterministic surface area. | No. Self-review infrastructure. |
 | `.claude/commands/security-audit.md` | `./.claude/commands/security-audit.md` | `/security-audit` — scan for PII, secrets, sensitive information. | No. Security infrastructure. |
 | `.claude/commands/fix-certs.md` | `./.claude/commands/fix-certs.md` | `/fix-certs` — diagnose and fix Cloudflare WARP TLS issues. | No. TLS troubleshooting. |
@@ -203,13 +203,13 @@ These are project-owned files, not preset artifacts. Created as empty placeholde
 
 ### Files that stay outside your project (reference materials only)
 
-These files are for you and for LLMs you ask to customize the scaffold. Do NOT copy them into projects.
+These files are for you and for LLMs you ask to customize the preset. Do NOT copy them into projects.
 
 | File in zip | What to do with it | What it does |
 |---|---|---|
 | `README.md` | Keep in the hub. | Setup guide and file manifest. |
 | `hub/meta/HOW_TO_USE.md` | Read after running `/init`. | User manual — iteration cycle, commands vs. natural language. |
-| `hub/meta/SCAFFOLD_SYSTEM_PROMPT.md` | Feed to LLMs customizing the preset. | Meta-prompt for scaffold architecture and constraints. |
+| `hub/meta/SYSTEM_PROMPT.md` | Feed to LLMs customizing the preset. | Meta-prompt for preset architecture and constraints. |
 | `hub/meta/INIT_PROMPT.md` | Keep in the hub. | Fallback for init if the global `/init` command isn't installed. |
 | `hub/meta/GLOBAL_CLAUDE.md` | Copied to `~/.claude/CLAUDE.md` during one-time setup. | Personal preferences template. |
 
@@ -290,28 +290,28 @@ You:  "Fix the billing calculation bug: invoice totals are off by 1 cent
          ↓ Fresh session, full context budget for the bug fix
 ```
 
-### Syncing scaffold changes between projects
+### Syncing preset changes between projects
 
 ```
 You:  /ccanvil-status
 
-Claude: "Scaffold: ~/projects/ccanvil @ a3f82c1
+Claude: "Hub: ~/projects/ccanvil @ a3f82c1
          Last synced: 2026-03-15
 
          CLEAN       .claude/rules/tdd.md
          MODIFIED    .claude/rules/workflow.md (local changes)
          LOCAL       .claude/rules/sketches.md
-         SCAFFOLD-ONLY  .claude/commands/ccanvil-status.md (new in scaffold)
+         HUB-ONLY  .claude/commands/ccanvil-status.md (new in hub)
 
-         Scaffold has new commits since last sync."
+         Hub has new commits since last sync."
 
 You:  /ccanvil-pull
 
-         ↓ Claude compares scaffold changes, presents diff for conflicts
+         ↓ Claude compares hub changes, presents diff for conflicts
 
 Claude: "Auto-updated 3 clean files.
          CONFLICT: .claude/rules/workflow.md — both sides changed.
-         [shows diff, offers: keep local / take scaffold / merge / show full diff]"
+         [shows diff, offers: keep local / take hub / merge / show full diff]"
 
 You:  "Merge both"
 
@@ -327,12 +327,12 @@ You:  /ccanvil-promote .claude/rules/sketches.md
 
          ↓ Claude reads file, checks for project-specific content
 
-Claude: "Promoting .claude/rules/sketches.md to scaffold.
+Claude: "Promoting .claude/rules/sketches.md to preset.
          Content looks generalizable. Confirm?"
 
 You:  "Yes"
 
-         ↓ Copies to scaffold, commits, updates lockfile
+         ↓ Copies to hub, commits, updates lockfile
 ```
 
 ---
@@ -341,17 +341,17 @@ You:  "Yes"
 
 | Command | What it does |
 |---------|-------------|
-| `/init` | Initialize current directory from the scaffold (global command) |
+| `/init` | Initialize current directory from the preset (global command) |
 | `/catchup` | Read checkpoint + git state, orient without implementing |
 | `/plan` | Create an implementation plan from a spec |
 | `/review` | Spawn code-reviewer agent on uncommitted changes |
-| `/ccanvil-status` | Show sync state between project and scaffold hub |
-| `/ccanvil-pull` | Pull scaffold updates into project, review conflicts |
-| `/ccanvil-push` | Push generalizable project changes to scaffold |
-| `/ccanvil-promote` | Promote a local-only file to the scaffold |
-| `/ccanvil-demote` | Mark a scaffold file as local override |
+| `/ccanvil-status` | Show sync state between project and hub |
+| `/ccanvil-pull` | Pull hub updates into project, review conflicts |
+| `/ccanvil-push` | Push generalizable project changes to hub |
+| `/ccanvil-promote` | Promote a local-only file to the preset |
+| `/ccanvil-demote` | Mark a preset file as local override |
 | `/ccanvil-ignore` | Mark file as node-only (permanently excluded from sync) |
-| `/ccanvil-audit` | Analyze scaffold for stochastic-to-deterministic improvements |
+| `/ccanvil-audit` | Analyze preset for stochastic-to-deterministic improvements |
 | `/security-audit` | Scan repo for PII, secrets, and sensitive information |
 | `/fix-certs` | Diagnose and fix Cloudflare WARP TLS certificate issues |
 | `/clear` | Reset context (built-in). Use between tasks. |
@@ -363,7 +363,7 @@ You:  "Yes"
 ## Principles to Internalize
 
 ### 1. Context is the scarce resource
-Everything in this framework exists to manage Claude Code's ~200K token context window. File reads consume 80% of context. The model's accuracy degrades as context fills. So: read only what's needed, commit progress externally, reset often.
+Everything in ccanvil exists to manage Claude Code's ~200K token context window. File reads consume 80% of context. The model's accuracy degrades as context fills. So: read only what's needed, commit progress externally, reset often.
 
 ### 2. Tests are the external oracle
 Without tests, Claude's only verification is its own judgment — which degrades as context fills. Tests provide ground truth that survives context compaction and session resets. A failing test is unambiguous; a prompt is always open to interpretation.

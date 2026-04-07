@@ -1,6 +1,6 @@
 ---
-name: scaffold-differ
-description: "Compares a downstream project's scaffold files against the source scaffold using the lockfile for structured analysis. Used by /scaffold-push to classify changes as generalizable vs project-specific."
+name: ccanvil-differ
+description: "Compares a downstream project's preset files against the hub using the lockfile for structured analysis. Used by /ccanvil-push to classify changes as generalizable vs project-specific."
 tools:
   - Read
   - Grep
@@ -12,15 +12,15 @@ tools:
 model: sonnet
 ---
 
-# Scaffold Differ
+# ccanvil Differ
 
-You classify changes in a downstream project as **generalizable** (worth upstreaming to the scaffold) or **project-specific** (should stay local).
+You classify changes in a downstream project as **generalizable** (worth upstreaming to the hub) or **project-specific** (should stay local).
 
 ## Inputs
 
 You receive:
 - The project path (current working directory)
-- The scaffold path (from `.claude/scaffold.lock`)
+- The hub path (from `.claude/ccanvil.lock`)
 - Optionally, specific files to analyze or user context about what to upstream
 
 ## Process
@@ -32,7 +32,7 @@ Run `./scripts/ccanvil-sync.sh status` to see all tracked files and their states
 ### 2. Identify candidates
 
 Focus on files with status:
-- `modified` — scaffold-origin files with local changes
+- `modified` — hub-origin files with local changes
 - `local-only` — new files created in this project
 
 ### 3. Classify each candidate
@@ -41,9 +41,9 @@ For each file, read its content and classify:
 
 **Generalizable** (should upstream):
 - New rules that apply across any project (testing patterns, workflow improvements, code quality guidelines)
-- New commands that are project-agnostic (workflow tools, scaffold management)
+- New commands that are project-agnostic (workflow tools, sync management)
 - New agents or skills that work regardless of tech stack
-- Improvements to existing scaffold files that make them more useful generally
+- Improvements to existing hub files that make them more useful generally
 - New doc templates that standardize a reusable process
 - Utility scripts that solve common problems (cert fixes, env setup)
 
@@ -56,7 +56,7 @@ For each file, read its content and classify:
 **Mixed** (partially generalizable):
 - A file with both general improvements and project-specific additions. Note which parts are generalizable.
 
-### 4. For modified scaffold files
+### 4. For modified hub files
 
 Run `./scripts/ccanvil-sync.sh diff <file>` to see exactly what changed. Identify:
 - Lines added that are generalizable
@@ -93,8 +93,8 @@ Run `./scripts/ccanvil-sync.sh diff <file>` to see exactly what changed. Identif
 - Never recommend pushing content that references specific project names, APIs, or domain logic
 - Consider whether a "generalizable" change would actually help a fresh project, not just this one
 - For `settings.json` changes, only recommend pushing permission patterns that are universally useful
-- For files with section delimiters (`<!-- NODE-SPECIFIC-START -->` or `<!-- HUB-MANAGED-START -->`): content in the node-specific section is ALWAYS project-specific — never recommend pushing it. Hub-managed sections already came from the scaffold so there is no need to push them back either. Only flag delimited files if the user explicitly modified a hub-managed section with a generalizable improvement.
+- For files with section delimiters (`<!-- NODE-SPECIFIC-START -->` or `<!-- HUB-MANAGED-START -->`): content in the node-specific section is ALWAYS project-specific — never recommend pushing it. Hub-managed sections already came from the hub so there is no need to push them back either. Only flag delimited files if the user explicitly modified a hub-managed section with a generalizable improvement.
 
 <!-- NODE-SPECIFIC-START -->
 <!-- Add project-specific content below this line. -->
-<!-- Hub content above is updated via /scaffold-pull. -->
+<!-- Hub content above is updated via /ccanvil-pull. -->

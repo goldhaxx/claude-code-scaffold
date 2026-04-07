@@ -31,14 +31,14 @@ sequenceDiagram
 
 ## Deterministic-First Principle
 
-Every operation falls somewhere on the deterministic-stochastic spectrum. The scaffold enforces this hierarchy:
+Every operation falls somewhere on the deterministic-stochastic spectrum. The preset system enforces this hierarchy:
 
 ```mermaid
 graph TD
     subgraph "1. HOOK — zero context cost"
         H1["Block writes to .env"]
         H2["Auto-format on save"]
-        H3["Protect scaffold-framework.md"]
+        H3["Protect foundations.md"]
     end
 
     subgraph "2. SCRIPT — one command instead of many"
@@ -48,8 +48,8 @@ graph TD
     end
 
     subgraph "3. SLASH COMMAND — script calls + judgment"
-        C1["scaffold-pull: script plans, Claude resolves conflicts"]
-        C2["scaffold-push: script lists candidates, Claude classifies"]
+        C1["ccanvil-pull: script plans, Claude resolves conflicts"]
+        C2["ccanvil-push: script lists candidates, Claude classifies"]
     end
 
     subgraph "4. PURE CLAUDE — semantic understanding only"
@@ -79,7 +79,7 @@ graph TD
 |-----------|-----------|-----|
 | "Never write to .env files" | **Hook** (PreToolUse, exit 2) | Binary file path check, zero context cost |
 | "Always format code after writing" | **Hook** (PostToolUse) | Deterministic formatter, zero context cost |
-| "Protect scaffold-framework.md" | **Hook** (PreToolUse, exit 2) | Binary check, enforced even if Claude forgets the rule |
+| "Protect foundations.md" | **Hook** (PreToolUse, exit 2) | Binary check, enforced even if Claude forgets the rule |
 | "Follow existing code patterns" | **Rule** | Requires semantic understanding of codebase |
 | "Don't add unnecessary dependencies" | **Rule** | Requires judgment about "unnecessary" |
 | "Run TDD red-green-refactor cycle" | **Skill** | Multi-step workflow with verification |
@@ -88,7 +88,7 @@ graph TD
 
 | Script | Event | Exit 2 blocks | What it checks |
 |--------|-------|---------------|----------------|
-| `protect-files.sh` | PreToolUse | Yes | `.env`, `*credentials*`, `*secret*`, `*.pem`, `*.key`, `scaffold-framework.md`, `node_modules/`, `dist/`, `generated/`, `.git/` |
+| `protect-files.sh` | PreToolUse | Yes | `.env`, `*credentials*`, `*secret*`, `*.pem`, `*.key`, `foundations.md`, `node_modules/`, `dist/`, `generated/`, `.git/` |
 | `lint-on-write.sh` | PostToolUse | Yes | Syntax validation: `bash -n` for `.sh`, `jq empty` for `.json`, python yaml check for `.yaml`. Blocks writes with syntax errors. |
 | `format-on-write.sh` | PostToolUse | No | Detects file type, runs appropriate formatter (uncomment for your stack) |
 

@@ -52,13 +52,13 @@
 - Keep the main session for: implementation decisions, writing code, running tests.
 - When spawning a sub-agent, give it a specific question to answer, not an open-ended exploration.
 
-## Scaffold Sync
+## Hub Sync
 
 - After adding a new rule, command, agent, or skill, consider whether it's project-specific or globally useful.
-- **Classify new components at creation time:** When creating a new file in a tracked scaffold directory (`.claude/rules/`, `.claude/commands/`, `.claude/skills/`, `.claude/agents/`, `.claude/hooks/`), ask the user: "Is this project-specific (node-only) or should it sync with the scaffold (tracked)?" Then run the appropriate command: `./scripts/ccanvil-sync.sh node-only <file>` or leave as tracked (default).
-- Run `/ccanvil-status` periodically to check for scaffold updates.
-- Before starting a new project, pull latest scaffold changes into your current project first.
-- When scaffold structure changes (new/modified commands, rules, agents, skills, hooks, or scripts), the relevant file in `.ccanvil/guide/` must be updated to reflect the change — diagrams, tables, and descriptions must stay accurate.
+- **Classify new components at creation time:** When creating a new file in a tracked preset directory (`.claude/rules/`, `.claude/commands/`, `.claude/skills/`, `.claude/agents/`, `.claude/hooks/`), ask the user: "Is this project-specific (node-only) or should it sync with the hub (tracked)?" Then run the appropriate command: `./scripts/ccanvil-sync.sh node-only <file>` or leave as tracked (default).
+- Run `/ccanvil-status` periodically to check for hub updates.
+- Before starting a new project, pull latest hub changes into your current project first.
+- When preset structure changes (new/modified commands, rules, agents, skills, hooks, or scripts), the relevant file in `.ccanvil/guide/` must be updated to reflect the change — diagrams, tables, and descriptions must stay accurate.
 
 ## Error Recovery
 

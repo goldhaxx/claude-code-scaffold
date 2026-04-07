@@ -34,8 +34,8 @@ docs/
 ├── checkpoint.md # Progress state for session continuity
 └── assumptions.md # Judgment calls made during implementation
 .claude/
-├── scaffold.json       # Hub-tracked config (feature toggles, defaults)
-└── scaffold.local.json # Node-only overrides (gitignored, deep-merged at read time)
+├── ccanvil.json       # Hub-tracked config (feature toggles, defaults)
+└── ccanvil.local.json # Node-only overrides (gitignored, deep-merged at read time)
 .ccanvil/
 ├── scripts/      # Preset automation scripts (synced from hub)
 ├── guide/        # Preset reference docs (synced from hub)
@@ -44,7 +44,7 @@ docs/
 
 <!-- HUB-MANAGED-START -->
 <!-- Everything above is project-specific (name, stack, commands, architecture). -->
-<!-- Everything below is managed by the scaffold hub and updated via /scaffold-pull. -->
+<!-- Everything below is managed by the preset hub and updated via /ccanvil-pull. -->
 
 ## Workflow: Specification → Test → Implement → Verify
 
@@ -75,7 +75,7 @@ docs/
 **Read when:** Writing tests or debugging test failures.
 
 ## Do Not
-- Do not modify `.ccanvil/guide/scaffold-framework.md` without explicit user approval — it is foundational research source material.
+- Do not modify `.ccanvil/guide/foundations.md` without explicit user approval — it is foundational research source material.
 - Do not modify files in `generated/`, `dist/`, or dependency directories.
 - Do not install new dependencies without stating the reason and alternatives considered.
 - Do not suppress type errors — fix the types.

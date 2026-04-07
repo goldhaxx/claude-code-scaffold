@@ -1,4 +1,4 @@
-Analyze the scaffold for opportunities to reduce stochastic surface area and increase deterministic automation.
+Analyze the preset for opportunities to reduce stochastic surface area and increase deterministic automation.
 
 This is a self-review process. Run it on demand (`/ccanvil-audit`) or as part of checkpoints and reviews.
 
@@ -54,14 +54,14 @@ For each violation or reviewable item, propose:
 1. **What exists now** — the stochastic operation
 2. **What should exist** — the deterministic replacement (hook, script command, or improved output)
 3. **Where to implement** — which file(s) to change
-4. **Test case** — how to verify the fix in `tests/scaffold-sync.bats`
+4. **Test case** — how to verify the fix in `tests/ccanvil-sync.bats`
 
 ## Step 4: Report
 
 Output a structured audit:
 
 ```markdown
-## Scaffold Audit — [date]
+## Preset Audit — [date]
 
 ### Violations Found
 - [description + proposed fix]
@@ -77,7 +77,7 @@ Output a structured audit:
 ```
 
 ## Rules
-- Be specific. "Could be more deterministic" is useless. "Claude manually runs `jq` to read lockfile status on line 42 of scaffold-pull.md — should call `ccanvil-sync.sh lock-get <file>`" is useful.
+- Be specific. "Could be more deterministic" is useless. "Claude manually runs `jq` to read lockfile status on line 42 of ccanvil-pull.md — should call `ccanvil-sync.sh lock-get <file>`" is useful.
 - Don't flag stochastic operations that genuinely require semantic understanding.
 - Prioritize by impact: operations that run frequently or consume many tokens first.
 - If no violations found, say so — don't invent problems.

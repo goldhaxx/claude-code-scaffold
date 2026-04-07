@@ -1,12 +1,12 @@
-# How To Use This Scaffold
+# How To Use ccanvil
 
-You've run `/init`, named your project, and the scaffold is in place. Now what?
+You've run `/init`, named your project, and the preset is in place. Now what?
 
 ---
 
 ## The Short Version
 
-Talk to Claude Code like you'd talk to a competent developer you just hired. Describe what you want the software to do. Claude Code handles the technical decisions — what framework to use, how to structure the code, which libraries to pull in. The scaffold enforces the discipline: every feature gets a spec, every spec gets tests, every test gets verified.
+Talk to Claude Code like you'd talk to a competent developer you just hired. Describe what you want the software to do. Claude Code handles the technical decisions — what framework to use, how to structure the code, which libraries to pull in. The preset enforces the discipline: every feature gets a spec, every spec gets tests, every test gets verified.
 
 You don't need to learn special syntax. You don't need to make technical decisions upfront. Just describe outcomes.
 
@@ -129,7 +129,7 @@ Claude Code checkpoints the current work, and you start fresh on the bug:
 
 ## When To Use Commands vs. Natural Language
 
-Most of the time, natural language is all you need. The scaffold's rules and agents activate automatically based on what you're doing. But there are four slash commands worth knowing:
+Most of the time, natural language is all you need. The preset's rules and agents activate automatically based on what you're doing. But there are four slash commands worth knowing:
 
 | You type | What happens | When to use it |
 |---|---|---|
@@ -138,7 +138,7 @@ Most of the time, natural language is all you need. The scaffold's rules and age
 | `/catchup` | Reads checkpoint + git state, reports where things stand | After a `/clear` or when starting a new session on an existing project |
 | `/clear` | Resets the context window (built-in) | Between tasks, when switching focus, or when a session feels degraded |
 
-You don't need to type `/spec` — just describe what you want and Claude Code will spec it. You don't need to type `/tdd` — the scaffold's rules enforce the test-first workflow automatically. You don't need to type `/commit` — Claude Code commits after each passing TDD cycle.
+You don't need to type `/spec` — just describe what you want and Claude Code will spec it. You don't need to type `/tdd` — the preset's rules enforce the test-first workflow automatically. You don't need to type `/commit` — Claude Code commits after each passing TDD cycle.
 
 ---
 
@@ -172,7 +172,7 @@ Claude Code is the engineer. Its job is to:
 
 **Commit frequently** with conventional commit messages after each passing cycle.
 
-**Manage its own context** by checkpointing progress, using sub-agents for research, and staying within the scaffold's rules.
+**Manage its own context** by checkpointing progress, using sub-agents for research, and staying within the preset's rules.
 
 **Update CLAUDE.md** as the project evolves — new commands, architecture changes, conventions that emerge from development.
 
@@ -224,7 +224,7 @@ Claude Code will plan the migration, update affected tests, modify the implement
 "Continue."
 ```
 
-Fresh context fixes most issues. The scaffold is designed for short, focused sessions — not marathon coding.
+Fresh context fixes most issues. ccanvil is designed for short, focused sessions — not marathon coding.
 
 ---
 

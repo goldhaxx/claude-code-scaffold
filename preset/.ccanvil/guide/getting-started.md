@@ -19,8 +19,8 @@ flowchart LR
 ```mermaid
 flowchart TD
     A["mkdir ~/projects/my-project<br/>cd ~/projects/my-project<br/>claude"] --> B["/init"]
-    B --> C["Claude reads scaffold README<br/>and SCAFFOLD_SYSTEM_PROMPT.md"]
-    C --> D["Copies all scaffold files<br/>to current directory"]
+    B --> C["Claude reads preset README<br/>and INIT_PROMPT.md"]
+    C --> D["Copies all preset files<br/>to current directory"]
     D --> E["Asks for project name<br/>and one-line description"]
     E --> F["Replaces placeholders<br/>in CLAUDE.md"]
     F --> G["Generates .claude/ccanvil.lock<br/><i>tracks sync state</i>"]

@@ -1,4 +1,4 @@
-Demote a scaffold-managed file to local-only override.
+Demote a hub-managed file to local-only override.
 
 This is a fully deterministic operation. No Claude judgment needed.
 
@@ -6,7 +6,7 @@ This is a fully deterministic operation. No Claude judgment needed.
 
 1. The user provides a file path as an argument: `/ccanvil-demote .claude/rules/workflow.md`
 
-2. Confirm with the user: "This will mark `<file>` as a local override. Future scaffold pulls will show diffs instead of auto-updating. Proceed?"
+2. Confirm with the user: "This will mark `<file>` as a local override. Future hub pulls will show diffs instead of auto-updating. Proceed?"
 
 3. **(DETERMINISTIC)** Run the full demote workflow:
 ```bash
@@ -15,7 +15,7 @@ This is a fully deterministic operation. No Claude judgment needed.
 
 This handles: status verification, lockfile update, and logging — all in one call.
 
-4. Report the result. Mention they can re-sync by running `/ccanvil-pull` and choosing "Take scaffold" for this file.
+4. Report the result. Mention they can re-sync by running `/ccanvil-pull` and choosing "Take hub" for this file.
 
 ## Rules
 - NEVER run `lock-update` or `log` manually. The `demote` command handles everything.

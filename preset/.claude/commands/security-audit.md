@@ -40,7 +40,7 @@ bash .ccanvil/scripts/security-audit.sh --files-only
 ## Rules
 - NEVER dismiss a CRITICAL finding. Secrets must be rotated even after removal.
 - NEVER suggest `.gitignore` as a fix for already-tracked files — the file is already in history.
-- For PII in paths, the fix is `get_scaffold_source_display()` pattern (store `~/` not absolute).
+- For PII in paths, the fix is `get_hub_source_display()` pattern (store `~/` not absolute).
 
 <!-- NODE-SPECIFIC-START -->
 <!-- Add project-specific content below this line. -->

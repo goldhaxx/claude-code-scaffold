@@ -60,7 +60,7 @@ ALLOWLIST_FILES=(
   'security-audit.sh'              # This script itself
   'tls-troubleshooting.md'         # Documents cert paths as instructions
   'hooks-reference.md'             # Documents hook patterns
-  'scaffold-framework.md'          # Research document
+  'foundations.md'                 # Research document
   '.bats'                          # Test fixtures contain fake tokens/secrets by design
 )
 

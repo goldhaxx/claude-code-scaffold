@@ -1,12 +1,12 @@
-# Scaffold Sync System
+# Sync System
 
-The scaffold is a hub with downstream project nodes. The sync system enables bi-directional flow of configuration.
+The hub has downstream project nodes. The sync system enables bi-directional flow of configuration.
 
 ## Architecture
 
 ```mermaid
 graph TB
-    subgraph HUB["Scaffold Hub<br/>~/projects/ccanvil"]
+    subgraph HUB["Hub<br/>~/projects/ccanvil"]
         H_RULES["rules/"]
         H_CMD["commands/"]
         H_AGENTS["agents/"]
@@ -15,7 +15,7 @@ graph TB
         H_SCRIPTS["scripts/"]
         H_GUIDE[".ccanvil/guide/<br/><i>hub sections</i>"]
         H_CLAUDE["CLAUDE.md<br/><i>hub methodology</i>"]
-        H_FRAMEWORK[".ccanvil/guide/scaffold-framework.md<br/><i>research — read-only</i>"]
+        H_FRAMEWORK[".ccanvil/guide/foundations.md<br/><i>research — read-only</i>"]
     end
 
     subgraph NODE["Downstream Project (e.g. fucina)"]
@@ -27,7 +27,7 @@ graph TB
         N_SCRIPTS["scripts/"]
         N_GUIDE[".ccanvil/guide/<br/><i>hub + node sections</i>"]
         N_CLAUDE["CLAUDE.md<br/><i>node identity + hub methodology</i>"]
-        N_FRAMEWORK[".ccanvil/guide/scaffold-framework.md<br/><i>read-only copy</i>"]
+        N_FRAMEWORK[".ccanvil/guide/foundations.md<br/><i>read-only copy</i>"]
         LOCK[".claude/ccanvil.lock<br/><i>provenance manifest</i>"]
     end
 
@@ -61,12 +61,12 @@ Every tracked file has a status in the lockfile. Status determines what happens 
 
 ```mermaid
 stateDiagram-v2
-    [*] --> clean: /init copies from scaffold
+    [*] --> clean: /init copies from hub
 
     clean --> modified: User edits locally
     clean --> modified: /ccanvil-demote
 
-    modified --> clean: /ccanvil-pull → Take scaffold
+    modified --> clean: /ccanvil-pull → Take hub
     modified --> clean: /ccanvil-pull → Merge (if result matches)
 
     [*] --> local_only: User creates new file
@@ -74,8 +74,8 @@ stateDiagram-v2
     local_only --> promoted: /ccanvil-promote
     promoted --> clean: Next /ccanvil-pull
 
-    [*] --> scaffold_only: New file added to scaffold hub
-    scaffold_only --> clean: /ccanvil-pull → Accept
+    [*] --> hub_only: New file added to hub
+    hub_only --> clean: /ccanvil-pull → Accept
 
     clean --> node_only: /ccanvil-ignore
     modified --> node_only: /ccanvil-ignore
@@ -94,7 +94,7 @@ stateDiagram-v2
     state promoted {
         [*]: Pushed to hub
     }
-    state scaffold_only {
+    state hub_only {
         [*]: Not yet in project
     }
     state node_only {
@@ -113,7 +113,7 @@ flowchart TD
         PLAN["pull-plan → JSON"]
         AUTO["pull-auto<br/><i>all clean files in one pass</i>"]
         SM["pull-apply file section-merge"]
-        TAKE["pull-apply file take-scaffold"]
+        TAKE["pull-apply file take-hub"]
         KEEP["pull-apply file keep-local"]
         ACCEPT["pull-apply file accept-new"]
         DEL["pull-apply file delete"]
@@ -138,7 +138,7 @@ flowchart TD
     PLAN -->|"new"| NEW_OPT
     PLAN -->|"removed"| RM_OPT
 
-    OPT -->|"Take scaffold"| TAKE
+    OPT -->|"Take hub"| TAKE
     OPT -->|"Keep local"| KEEP
     OPT -->|"Merge"| MERGE
     MERGE --> APPROVE
@@ -273,11 +273,11 @@ flowchart LR
 | Scripts (`*.sh`) | Can't splice bash — functions depend on each other. HTML comments aren't valid bash. | Whole-file tracked. Node customization via separate scripts or node-only fork. |
 | Hooks (`*.sh`) | Same as scripts. | Stack hooks: hub provides universal hooks, node adds additional hook entries in settings.json. |
 | `settings.json` | JSON has no comments. | Node-only. Hub hook scripts sync; settings.json references are node-managed. |
-| `scaffold-framework.md` | Research source material — identical everywhere, no node content. | Whole-file auto-update. |
+| `foundations.md` | Research source material — identical everywhere, no node content. | Whole-file auto-update. |
 
 ### How section-merge works
 
-Files with delimiters have a hub-managed section and a node-specific section. During `/ccanvil-pull`, the hub section is updated from the scaffold while the node section is preserved intact.
+Files with delimiters have a hub-managed section and a node-specific section. During `/ccanvil-pull`, the hub section is updated from the hub while the node section is preserved intact.
 
 ```mermaid
 flowchart LR
@@ -304,17 +304,17 @@ flowchart LR
 ```
 
 **During `/ccanvil-pull`:**
-- **Files with `NODE-SPECIFIC-START`:** Hub section (above delimiter) is replaced with scaffold's version. Node section (below) is untouched.
-- **CLAUDE.md** (`HUB-MANAGED-START`): Node section (above delimiter) is untouched. Hub section (below) is replaced with scaffold's version.
-- **scaffold-framework.md:** Auto-updated as a whole file (no delimiter, no node content).
+- **Files with `NODE-SPECIFIC-START`:** Hub section (above delimiter) is replaced with the hub's version. Node section (below) is untouched.
+- **CLAUDE.md** (`HUB-MANAGED-START`): Node section (above delimiter) is untouched. Hub section (below) is replaced with the hub's version.
+- **foundations.md:** Auto-updated as a whole file (no delimiter, no node content).
 
 **During `/ccanvil-push`:** Node sections are always classified as project-specific and never pushed upstream.
 
-**Legacy projects without delimiters:** The `section-merge` command gracefully handles files that don't have a delimiter yet — it treats the entire local file as node content and adds the hub section from the scaffold.
+**Legacy projects without delimiters:** The `section-merge` command gracefully handles files that don't have a delimiter yet — it treats the entire local file as node content and adds the hub section from the hub.
 
 ### Creating new markdown components
 
-When adding a new rule, command, agent, skill, or template to the scaffold, **always** include the delimiter at the end:
+When adding a new rule, command, agent, skill, or template to the hub, **always** include the delimiter at the end:
 
 ```
 <!-- NODE-SPECIFIC-START -->

@@ -143,11 +143,11 @@ exit 0  # allow
 - **Heavy processing in hooks** — Keep under 10 seconds. Use `async: true` for slow operations.
 - **Suppressing errors with `|| true` on everything** — Catch specific errors, not all.
 
-## Scaffold's Active Hooks
+## Preset's Active Hooks
 
 | Hook | Event | Script | What it does |
 |------|-------|--------|-------------|
-| File protection | PreToolUse (Write\|Edit\|MultiEdit) | `protect-files.sh` | Blocks writes to `.env`, credentials, `scaffold-framework.md`, generated dirs |
+| File protection | PreToolUse (Write\|Edit\|MultiEdit) | `protect-files.sh` | Blocks writes to `.env`, credentials, `foundations.md`, generated dirs |
 | Auto-format | PostToolUse (Write\|Edit\|MultiEdit) | `format-on-write.sh` | Runs project formatter (uncomment for your stack) |
 
 ## When to Add a Hook vs a Rule
@@ -163,4 +163,4 @@ exit 0  # allow
 
 <!-- NODE-SPECIFIC-START -->
 <!-- Add project-specific content below this line. -->
-<!-- Hub content above is updated via /scaffold-pull. -->
+<!-- Hub content above is updated via /ccanvil-pull. -->

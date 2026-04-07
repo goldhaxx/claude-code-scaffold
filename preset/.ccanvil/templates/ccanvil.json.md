@@ -1,12 +1,12 @@
-# scaffold.json — Configuration Template
+# ccanvil.json — Configuration Template
 
-`scaffold.json` is the hub-tracked configuration file for feature toggles and integration defaults.
+`ccanvil.json` is the hub-tracked configuration file for feature toggles and integration defaults.
 
 ## Override Pattern
 
-Project-specific overrides go in `.claude/scaffold.local.json` (gitignored, never synced). The effective config is a deep merge of both files — local wins on conflict.
+Project-specific overrides go in `.claude/ccanvil.local.json` (gitignored, never synced). The effective config is a deep merge of both files — local wins on conflict.
 
-**Hub file** (`scaffold.json` — tracked, auto-updated on pull):
+**Hub file** (`ccanvil.json` — tracked, auto-updated on pull):
 ```json
 {
   "features": {
@@ -15,7 +15,7 @@ Project-specific overrides go in `.claude/scaffold.local.json` (gitignored, neve
 }
 ```
 
-**Local override** (`scaffold.local.json` — gitignored, node-only):
+**Local override** (`ccanvil.local.json` — gitignored, node-only):
 ```json
 {
   "integrations": {

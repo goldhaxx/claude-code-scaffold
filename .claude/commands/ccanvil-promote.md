@@ -1,4 +1,4 @@
-Promote a local-only file to the scaffold hub.
+Promote a local-only file to the hub.
 
 Most of this workflow is deterministic. Claude's ONLY judgment call: checking for project-specific content.
 
@@ -15,7 +15,7 @@ Most of this workflow is deterministic. Claude's ONLY judgment call: checking fo
 ./.ccanvil/scripts/ccanvil-sync.sh promote <file>
 ```
 
-This handles: status verification, copy to scaffold, lockfile update, logging, git commit, version bump — all in one call.
+This handles: status verification, copy to hub, lockfile update, logging, git commit, version bump — all in one call.
 
 5. Report what was promoted.
 

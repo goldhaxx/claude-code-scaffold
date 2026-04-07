@@ -1,7 +1,7 @@
 # A first-principles framework for Claude Code
-**This document is the foundation of the scaffold system built from research and best practices as of March 2026.**
+**This document is the foundation of the ccanvil preset system built from research and best practices as of March 2026.**
 
-**Structured scaffolding dramatically improves AI code generation because transformer attention mechanisms are architecturally constrained — and every best practice flows from this single fact.** Claude Code's context window fills fast, performance degrades as it fills, and the most effective practitioners treat context as the scarce resource it is. This report synthesizes official Anthropic documentation, peer-reviewed research on transformer architectures, and battle-tested workflows from engineers consuming billions of tokens monthly to build a complete, drop-in framework for Claude Code projects of any size.
+**Structured configuration dramatically improves AI code generation because transformer attention mechanisms are architecturally constrained — and every best practice flows from this single fact.** Claude Code's context window fills fast, performance degrades as it fills, and the most effective practitioners treat context as the scarce resource it is. This report synthesizes official Anthropic documentation, peer-reviewed research on transformer architectures, and battle-tested workflows from engineers consuming billions of tokens monthly to build a complete, drop-in framework for Claude Code projects of any size.
 
 The framework rests on three pillars: **specification-driven development** (define what you want before coding), **test-driven verification** (give Claude an external oracle to check itself against), and **hierarchical memory management** (the right information at the right time through CLAUDE.md files, skills, hooks, and sub-agents). Together, these practices exploit how transformers actually process information while mitigating their known failure modes.
 
@@ -9,7 +9,7 @@ The framework rests on three pillars: **specification-driven development** (defi
 
 ## Why structured context is not optional — it's architectural
 
-The case for structured scaffolding isn't philosophical. It's grounded in how self-attention works at the hardware level, and the evidence is overwhelming.
+The case for structured configuration isn't philosophical. It's grounded in how self-attention works at the hardware level, and the evidence is overwhelming.
 
 **Softmax attention is zero-sum.** Every token in the context window competes for attention weight. At 10,000 tokens, the model manages 100 million pairwise relationships. At 200,000 tokens — Claude Code's working window — that balloons to 40 billion relationships. A 50-line function clearly relevant at 10K tokens becomes one signal among thousands at 200K. The noise floor rises while the signal stays constant. Research from MIT and Meta on "attention sinks" confirmed that initial tokens receive disproportionately high attention scores even when semantically unimportant — the model must "dump" attention somewhere, and the first tokens become default receptacles.
 
@@ -208,7 +208,7 @@ The anti-patterns that experienced practitioners consistently flag:
 - **The kitchen-sink session**: mixing unrelated tasks in one conversation. Fix: `/clear` between tasks.
 - **Correcting over and over**: context polluted with failed approaches. Fix: after two failed corrections, `/clear` and write a better initial prompt incorporating lessons learned.
 - **The over-specified CLAUDE.md**: too long, Claude ignores half. Fix: ruthlessly prune; if Claude already does something correctly without the instruction, delete it.
-- **Not using scaffolding**: one practitioner described spending "more time removing code and fixing bugs than if I'd just coded it myself" because autonomous loops without patterns produced hallucinated solutions and technical debt faster than cleanup could handle.
+- **Not using structured configuration**: one practitioner described spending "more time removing code and fixing bugs than if I'd just coded it myself" because autonomous loops without patterns produced hallucinated solutions and technical debt faster than cleanup could handle.
 - **@-mentioning docs in CLAUDE.md**: bloats context by embedding entire files on every run. Instead, "pitch" the agent on why and when to read a file using progressive disclosure.
 
 ---

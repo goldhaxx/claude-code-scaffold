@@ -1,12 +1,12 @@
-# Claude Code Scaffold System — Agent Customization Guide
+# Claude Code Preset System — Agent Customization Guide
 
-You are being asked to customize a Claude Code development scaffold for a specific project. Before making any changes, you must understand the system's architecture, constraints, and the reasoning behind them. **Every constraint below is grounded in transformer attention research and Anthropic's official best practices. Do not deviate from them.**
+You are being asked to customize a ccanvil preset for a specific project. Before making any changes, you must understand the system's architecture, constraints, and the reasoning behind them. **Every constraint below is grounded in transformer attention research and Anthropic's official best practices. Do not deviate from them.**
 
 ---
 
 ## What This System Is
 
-This is a structured scaffold for working with Claude Code (Anthropic's CLI coding agent). It consists of layered configuration files that control how Claude Code behaves during development sessions. The scaffold enforces three principles:
+This is a structured preset for working with Claude Code (Anthropic's CLI coding agent). It consists of layered configuration files that control how Claude Code behaves during development sessions. The preset enforces three principles:
 
 1. **Specification-driven development** — Define acceptance criteria before writing code
 2. **Test-driven verification** — Tests are the external oracle that keeps implementation honest
@@ -127,17 +127,17 @@ These constraints exist because of measured transformer attention limitations. T
 
 ## How to Customize the CLAUDE.md for a New Project
 
-When asked to set up or customize this scaffold for a specific project, follow this procedure:
+When asked to set up or customize this preset for a specific project, follow this procedure:
 
 ### Step 1: Gather Minimal Information
 Ask the user for only two things:
 - **Project name**
 - **One-line description of what it does**
 
-Do NOT ask about tech stack, framework, commands, directory structure, or conventions at initialization time. The scaffold provides opinionated defaults for all of these. Technical decisions are made later, during the spec-and-build workflow, as the project takes shape.
+Do NOT ask about tech stack, framework, commands, directory structure, or conventions at initialization time. The preset provides opinionated defaults for all of these. Technical decisions are made later, during the spec-and-build workflow, as the project takes shape.
 
 ### Step 2: Write the CLAUDE.md
-Replace only the `[Project Name]` and `[One-line description]` placeholders. Leave the Tech Stack section as TBD, leave the Commands section as the placeholder comment, and leave the Architecture, Conventions, and Do Not sections as their scaffold defaults.
+Replace only the `[Project Name]` and `[One-line description]` placeholders. Leave the Tech Stack section as TBD, leave the Commands section as the placeholder comment, and leave the Architecture, Conventions, and Do Not sections as their preset defaults.
 
 The CLAUDE.md template is designed to work as-is. Do not add sections. Do not exceed 80 lines.
 
@@ -154,7 +154,7 @@ Most supporting files work out of the box. Only modify if the user has a specifi
 After initialization, verify:
 - [ ] CLAUDE.md is under 80 lines
 - [ ] Only the project name and description placeholders were replaced
-- [ ] The scaffold defaults (architecture, conventions, do-not rules) are intact
+- [ ] The preset defaults (architecture, conventions, do-not rules) are intact
 - [ ] No overlap between CLAUDE.md and rules files
 - [ ] .claudeignore is present
 - [ ] settings.json is present with hooks
@@ -211,10 +211,10 @@ docs/
 └── checkpoint.md # Progress state for session continuity
 \```
 
-[... rest is scaffold defaults: Workflow, Conventions, Reference Documents, Do Not ...]
+[... rest is preset defaults: Workflow, Conventions, Reference Documents, Do Not ...]
 ```
 
-*Only the name and description were filled in. Everything else uses scaffold defaults.*
+*Only the name and description were filled in. Everything else uses preset defaults.*
 
 ### After several features built (evolved over weeks)
 
@@ -255,7 +255,7 @@ src/
 drizzle/              # Generated migrations (do not edit manually)
 \```
 
-[... Workflow section unchanged from scaffold ...]
+[... Workflow section unchanged from preset ...]
 
 ## Conventions
 - State management: Zustand stores in `lib/stores/`. No Redux, no React Context for global state.
@@ -278,7 +278,7 @@ drizzle/              # Generated migrations (do not edit manually)
 - Do not put DB queries in components or route handlers.
 \```
 
-*This evolved version is 58 lines. The CLAUDE.md grew organically from scaffold defaults as technical decisions were made during development.*
+*This evolved version is 58 lines. The CLAUDE.md grew organically from preset defaults as technical decisions were made during development.*
 
 ---
 

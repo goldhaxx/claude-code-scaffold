@@ -790,12 +790,12 @@ cmd_complete() {
 }
 
 # ---------------------------------------------------------------------------
-# merge_scaffold_config — Merge scaffold.json (hub) with scaffold.local.json (node).
+# merge_config — Merge ccanvil.json (hub) with ccanvil.local.json (node).
 # Duplicated from operations.sh (both scripts need it; keeping small and tested).
-merge_scaffold_config() {
+merge_config() {
   local dir="$1"
-  local hub_file="$dir/.claude/scaffold.json"
-  local local_file="$dir/.claude/scaffold.local.json"
+  local hub_file="$dir/.claude/ccanvil.json"
+  local local_file="$dir/.claude/ccanvil.local.json"
 
   if [[ ! -f "$hub_file" && ! -f "$local_file" ]]; then
     echo '{}'
@@ -803,12 +803,12 @@ merge_scaffold_config() {
   fi
 
   if [[ -f "$hub_file" ]] && ! jq empty "$hub_file" 2>/dev/null; then
-    echo "ERROR: .claude/scaffold.json is not valid JSON" >&2
+    echo "ERROR: .claude/ccanvil.json is not valid JSON" >&2
     return 1
   fi
 
   if [[ -f "$local_file" ]] && ! jq empty "$local_file" 2>/dev/null; then
-    echo "ERROR: .claude/scaffold.local.json is not valid JSON" >&2
+    echo "ERROR: .claude/ccanvil.local.json is not valid JSON" >&2
     return 1
   fi
 
@@ -821,13 +821,13 @@ merge_scaffold_config() {
   fi
 }
 
-# cmd_config_get — Read a feature toggle from merged scaffold config.
+# cmd_config_get — Read a feature toggle from merged preset config.
 #
 # Usage:
 #   docs-check.sh config-get <key> [project-dir]
 #
 # Returns the value of features.<key> from the merged effective config
-# (scaffold.json + scaffold.local.json). Returns "false" if files are
+# (ccanvil.json + ccanvil.local.json). Returns "false" if files are
 # missing, key is missing, or features object doesn't exist.
 # ---------------------------------------------------------------------------
 cmd_config_get() {
@@ -835,7 +835,7 @@ cmd_config_get() {
   local project_dir="${2:-.}"
 
   local merged
-  merged=$(merge_scaffold_config "$project_dir") || return 1
+  merged=$(merge_config "$project_dir") || return 1
 
   local value
   value=$(echo "$merged" | jq -r --arg k "$key" '.features[$k] // "false"' 2>/dev/null)
