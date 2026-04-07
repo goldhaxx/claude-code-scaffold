@@ -562,6 +562,27 @@ EOF
   jq -e '.files' "$NODE/.ccanvil/ccanvil.lock"
 }
 
+@test "init: prompts to register when project is not in registry" {
+  cd "$NODE"
+  # Remove lockfile and re-init (no registry exists yet)
+  rm -f "$NODE/.ccanvil/ccanvil.lock"
+  run bash "$NODE/.ccanvil/scripts/ccanvil-sync.sh" init "$HUB"
+  [ "$status" -eq 0 ]
+  echo "$output" | grep -q "not registered"
+  echo "$output" | grep -q "ccanvil-sync.sh register"
+}
+
+@test "init: no registration prompt when already registered" {
+  cd "$NODE"
+  # Register first
+  bash "$NODE/.ccanvil/scripts/ccanvil-sync.sh" register
+  # Re-init
+  rm -f "$NODE/.ccanvil/ccanvil.lock"
+  run bash "$NODE/.ccanvil/scripts/ccanvil-sync.sh" init "$HUB"
+  [ "$status" -eq 0 ]
+  ! echo "$output" | grep -q "not registered"
+}
+
 @test "init: files matching tracked patterns are in lockfile" {
   cd "$NODE"
 
