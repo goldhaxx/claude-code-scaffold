@@ -1,188 +1,94 @@
-# Implementation Plan: Eradicate "scaffold" terminology
+# Implementation Plan: CLAUDE.md context budget trim
 
-> Feature: scaffold-terminology-eradication
-> Created: 1775491798
-> Spec hash: 7e97bfa6
+> Feature: claudemd-budget-trim
+> Created: 1775520965
+> Spec hash: 9251316f
 > Based on: docs/spec.md
 
 ## Objective
 
-Remove every remaining use of "scaffold" from the ccanvil hub, preset, and downstream projects — replacing with clear, consistent terminology (hub, preset, node) — so the system is self-documenting and free of legacy naming confusion.
+Reduce the always-loaded context budget from 90.5% to ≤85% by trimming CLAUDE.md (both preset template and hub node section) and relocating removed content to on-demand files.
 
-## Scope Summary
+## Analysis
 
-~815 occurrences across 81+ files. Four risk tiers:
-- **High risk:** Lockfile schema, jq queries, function names in ccanvil-sync.sh (runtime behavior)
-- **Medium risk:** Config file renames (scaffold.json → ccanvil.json), TRACKED_PATTERNS, supporting scripts
-- **Low risk:** Guide/template file renames, documentation content
-- **Trivial:** Comments, help text, hub meta docs, downstream sweep
+**What to remove from preset CLAUDE.md hub-managed section (lines 45-83):**
+
+| Content | Lines | Action | Reason |
+|---------|-------|--------|--------|
+| Conventions section (5 items) | 60-65 | Remove entirely | 3 of 5 are framework-specific (API shape, barrel exports, typed env vars). The 2 universal ones (error handling, naming) already exist in `code-quality.md`. |
+| Reference: @docs/decisions.md | 71-72 | Remove | File doesn't exist in the preset. Projects add their own in node section. |
+| Reference: @docs/testing.md | 74-75 | Remove | Same — dangling reference. |
+| Do Not: "suppress type errors" | 81 | Remove | Framework-specific (TypeScript). |
+| Do Not: "database schema" | 82 | Remove | Framework-specific. |
+
+**Estimated savings:** ~16 lines / ~260 tokens from hub-managed section.
+
+**What to trim from hub CLAUDE.md node section (lines 1-48):**
+
+| Content | Lines | Action | Reason |
+|---------|-------|--------|--------|
+| Commands: 8 of 13 entries | 16-24 | Remove 8 | Keep 5 essential commands. Full list in command-reference.md. |
+| Architecture tree | 27-48 | Tighten | Remove placeholder comments, compress. |
+
+**Estimated savings:** ~10 lines / ~200 tokens from node section.
+
+**Projected result:** CLAUDE.md from 87 lines / 1,234 tokens → ~63 lines / ~780 tokens. Total budget from 90.5% → ~84.8%.
 
 ## Sequence
 
-### Step 1: Lockfile key renames in ccanvil-sync.sh (AC-4, AC-5)
-- **Test:** Update `scaffold-sync.bats` assertions — change `scaffold_source` → `hub_source`, `scaffold_version` → `hub_version`, `scaffold_hash` → `hub_hash`, status `scaffold-only` → `hub-only`, origin `"scaffold"` → `"hub"`. Confirm tests fail.
-- **Implement:** Update all jq queries in `ccanvil-sync.sh` that read/write these lockfile keys. Key functions: `cmd_init`, `cmd_status`, `cmd_pull_plan`, `cmd_pull_apply`, `cmd_lock_add`, `cmd_lock_set_version`, `get_scaffold_source_raw`, `get_scaffold_source_display`. ~30 jq query edits.
-- **Files:** `preset/.ccanvil/scripts/ccanvil-sync.sh`, `hub/tests/scaffold-sync.bats`
-- **Verify:** `bats hub/tests/scaffold-sync.bats` — all passing. Run `ccanvil-sync.sh init` in a temp dir and verify lockfile has new keys.
+### Step 1: Relocate framework-specific conventions to guide (AC-9)
+- **Test:** Grep `preset/.ccanvil/guide/getting-started.md` for "conventions" — should not exist yet.
+- **Implement:** Add a "Node-Specific Conventions (Examples)" subsection to `getting-started.md` (below NODE-SPECIFIC-START or in a new section) listing the 3 framework-specific conventions as copy-paste examples for downstream projects: API response shape, barrel exports, typed env vars.
+- **Files:** `preset/.ccanvil/guide/getting-started.md`
+- **Verify:** Content exists in on-demand file. Not always-loaded.
 
-### Step 2: Function renames in ccanvil-sync.sh (AC-6)
-- **Test:** Update any test helpers or assertions that reference old function names (if tests call functions directly via `source`). Confirm failures.
-- **Implement:** Rename all 6 scaffold-named functions:
-  - `get_scaffold_source_raw()` → `get_hub_source_raw()`
-  - `get_scaffold_source()` → `get_hub_source()`
-  - `get_scaffold_source_display()` → `get_hub_source_display()`
-  - `scaffold_dist_root()` → `hub_dist_root()`
-  - `scan_scaffold_files()` → `scan_hub_files()`
-  - `merge_scaffold_config()` → `merge_config()` (if defined here; otherwise AC-8)
-  - Update all call sites within the same file.
-- **Files:** `preset/.ccanvil/scripts/ccanvil-sync.sh`, `hub/tests/scaffold-sync.bats`
-- **Verify:** `bats hub/tests/scaffold-sync.bats`
-
-### Step 3: Variable renames in ccanvil-sync.sh (AC-7)
-- **Test:** Tests should already pass after step 2 since variables are internal. This step is refactor-only (green→green).
-- **Implement:** Rename all 12 scaffold-prefixed variable names:
-  - `$scaffold_source` → `$hub_source`, `$scaffold_hub` → `$hub_root`, `$scaffold_version` → `$hub_version`, `$scaffold_file` → `$hub_file`, `$scaffold_path` → `$hub_path`, `$scaffold_h` → `$hub_h`, `$scaffold_hash` → `$hub_hash`, `$scaffold_changed` → `$hub_changed`, `$new_scaffold_hash` → `$new_hub_hash`, `$new_scaffold_h` → `$new_hub_h`, `$scaffold_only` (count var) → `$hub_only`
-- **Files:** `preset/.ccanvil/scripts/ccanvil-sync.sh`
-- **Verify:** `bats hub/tests/scaffold-sync.bats`
-
-### Step 4: Action value and string literals in ccanvil-sync.sh (AC-5 partial)
-- **Test:** Update `scaffold-sync.bats` assertions for action name `take-scaffold` → `take-hub` and any output-matching assertions (e.g., "took scaffold" → "took hub", "Scaffold:" → "Hub:" in status output).
-- **Implement:** Update action values, output strings, help text, and commit message templates in ccanvil-sync.sh:
-  - Action: `take-scaffold` → `take-hub`
-  - Output: "Scaffold: ..." → "Hub: ...", "Scaffold-only:" → "Hub-only:"
-  - Help: "SCAFFOLD-ONLY=not yet pulled" → "HUB-ONLY=not yet pulled"
-  - Commit messages: `chore(scaffold): pull from hub` → `chore(sync): pull from hub`
-  - Comments: ~80 occurrences — bulk update "scaffold" → "hub"/"preset" depending on context
-- **Files:** `preset/.ccanvil/scripts/ccanvil-sync.sh`, `hub/tests/scaffold-sync.bats`
-- **Verify:** `bats hub/tests/scaffold-sync.bats`
-
-### Step 5: Config file rename — scaffold.json → ccanvil.json (AC-1, AC-2, AC-3)
-- **Test:** Update `scaffold-json-override.bats` to reference `ccanvil.json` / `ccanvil.local.json`. Update `feature-lifecycle.bats` (`scaffold-config` function refs). Update `operations.bats`. Confirm failures.
+### Step 2: Trim preset CLAUDE.md hub-managed section (AC-1, AC-2, AC-3)
+- **Test:** Count lines in hub-managed section — currently ~38.
 - **Implement:**
-  - Rename `preset/.claude/scaffold.json` → `preset/.claude/ccanvil.json`
-  - Update `TRACKED_PATTERNS` in ccanvil-sync.sh: `.claude/scaffold.json` → `.claude/ccanvil.json`
-  - Update `operations.sh`: rename `merge_scaffold_config()` → `merge_config()`, update all `.claude/scaffold.json` and `.claude/scaffold.local.json` path references (AC-8)
-  - Update `docs-check.sh`: rename `merge_scaffold_config()` → `merge_config()`, update path refs (AC-9)
-  - Rename template `preset/.ccanvil/templates/scaffold.json.md` → `ccanvil.json.md` (AC-3)
-  - Update `.claudeignore` (preset + hub root): `scaffold.local.json` → `ccanvil.local.json`, `scaffold.lock` → `ccanvil.lock`
-  - Update `.gitignore` if applicable
-- **Files:** `preset/.claude/scaffold.json`, `preset/.ccanvil/scripts/ccanvil-sync.sh`, `preset/.ccanvil/scripts/operations.sh`, `preset/.ccanvil/scripts/docs-check.sh`, `preset/.ccanvil/templates/scaffold.json.md`, `preset/.claudeignore`, `.claudeignore`, `hub/tests/scaffold-json-override.bats`, `hub/tests/operations.bats`, `hub/tests/feature-lifecycle.bats`
-- **Verify:** `bats hub/tests/` — full suite
+  - Remove entire Conventions section (lines 60-65)
+  - Remove Reference Documents entries for @docs/decisions.md and @docs/testing.md (keep Preset Guide pointer)
+  - Remove "Do Not" items: "suppress type errors" and "database schema"
+  - Tighten remaining whitespace
+- **Files:** `preset/CLAUDE.md`
+- **Verify:** Hub-managed section ≤ 30 lines. No dangling references. Only universal rules in "Do Not".
 
-### Step 6: security-audit.sh + context-budget.sh (AC-10, AC-11)
-- **Test:** Run `bats hub/tests/security-audit.bats` as baseline. If tests reference `scaffold-framework.md`, update.
+### Step 3: Trim hub CLAUDE.md node section (AC-4, AC-5)
+- **Test:** Count lines in node section — currently 48.
 - **Implement:**
-  - `security-audit.sh` line 63: update allowlist entry `scaffold-framework.md` → `foundations.md`
-  - `context-budget.sh`: update header comment if it mentions "scaffold files" → "preset files"
-- **Files:** `preset/.ccanvil/scripts/security-audit.sh`, `preset/.ccanvil/scripts/context-budget.sh`
-- **Verify:** `bats hub/tests/security-audit.bats` and `bats hub/tests/context-budget.bats`
+  - Commands: keep `bats hub/tests/`, `security-audit.sh`, `context-budget.sh check --text`, `docs-check.sh activate <id>`, `docs-check.sh complete <id>`. Remove the other 8. Add comment: "Full list: .ccanvil/guide/command-reference.md"
+  - Architecture tree: remove NODE-SPECIFIC placeholder comments, tighten whitespace
+- **Files:** `CLAUDE.md` (hub root)
+- **Verify:** Node section ≤ 45 lines. Architecture preserved.
 
-### Step 7: Test file renames (AC-20, AC-21)
-- **Test:** Verify `bats hub/tests/` still discovers renamed files.
-- **Implement:**
-  - `git mv hub/tests/scaffold-sync.bats hub/tests/ccanvil-sync.bats`
-  - `git mv hub/tests/scaffold-json-override.bats hub/tests/ccanvil-json-override.bats`
-  - Update any cross-references between test files (e.g., if one sources helpers from another by name)
-  - Update hub `CLAUDE.md` test commands section if it lists these filenames
-- **Files:** `hub/tests/scaffold-sync.bats`, `hub/tests/scaffold-json-override.bats`, `CLAUDE.md`
-- **Verify:** `bats hub/tests/` — full suite
+### Step 4: Propagate template to hub root (AC-6)
+- **Test:** Run `wc -l CLAUDE.md` — should be ≤ 80.
+- **Implement:** Section-merge the updated preset/CLAUDE.md into hub root CLAUDE.md to pick up the hub-managed changes while preserving the trimmed node section.
+- **Files:** `CLAUDE.md`
+- **Verify:** Total CLAUDE.md ≤ 80 lines.
 
-### Step 8: Guide file renames + content (AC-12, AC-13)
-- **Test:** No bats tests for guide content. Verify by grep sweep.
-- **Implement:**
-  - `git mv preset/.ccanvil/guide/scaffold-sync.md preset/.ccanvil/guide/sync.md` — update all internal links in `index.md` and cross-references in other guide files
-  - `git mv preset/.ccanvil/guide/scaffold-framework.md preset/.ccanvil/guide/foundations.md` — careful content edit: "structured scaffolding" → "structured configuration", "scaffold system" → "preset system" / "ccanvil". This is a **judgment call** step — not blind find-replace. The practitioner quote and research citations need contextual rewording.
-  - Sweep all 11 guide files: replace "scaffold hub" → "hub", "from the scaffold" → "from the hub", "scaffold automation" → "preset automation"
-  - Update protection rules that reference `scaffold-framework.md`: `code-quality.md`, hooks config
-- **Files:** All `preset/.ccanvil/guide/*.md` (12 files), `preset/.claude/rules/code-quality.md`, hook configs referencing the filename
-- **Verify:** `grep -ri scaffold preset/.ccanvil/guide/` returns 0 hits. `bats hub/tests/` still passes.
+### Step 5: Verify context budget (AC-7, AC-8)
+- **Test:** Run `bash .ccanvil/scripts/context-budget.sh check --text`.
+- **Implement:** If budget is still > 85%, identify next trim candidate (tls-troubleshooting.md is 16.1% — could extract tool-specific fixes to on-demand). Only trim further if needed.
+- **Files:** Potentially `preset/.claude/rules/tls-troubleshooting.md`
+- **Verify:** Budget ≤ 85%. Exit code 0 or 1 (not 2/CRITICAL).
 
-### Step 9: Templates — delimiter comments + content (AC-14)
-- **Test:** No bats tests for template content. Verify by grep.
-- **Implement:**
-  - All 6 template files: `/scaffold-pull` → `/ccanvil-pull` in delimiter comments
-  - `ccanvil.json.md` (renamed in step 5): update internal content references
-  - `hooks-reference.md` template: update `scaffold-framework.md` → `foundations.md`
-- **Files:** All `preset/.ccanvil/templates/*.md`
-- **Verify:** `grep -ri scaffold preset/.ccanvil/templates/` returns 0 hits
-
-### Step 10: Commands, agents, rules, skills (AC-16, AC-17, AC-18, AC-19)
-- **Test:** No bats tests for command content. Verify by grep.
-- **Implement:**
-  - `ccanvil-differ.md`: change `name: scaffold-differ` → `name: ccanvil-differ`, update all internal "scaffold" → "hub"
-  - All 7 `/ccanvil-*` command files: "scaffold hub" → "hub", "from the scaffold" → "from the hub", "take scaffold" → "take hub"
-  - `pr.md`: `scaffold.json` → `ccanvil.json`
-  - `plan.md` command: update guide reference if it mentions `scaffold-sync.md`
-  - Rules: `deterministic-first.md`, `workflow.md`, `code-quality.md`, `self-review.md` — update any remaining "scaffold" refs
-  - Skills: `tdd/SKILL.md` — `/scaffold-pull` → `/ccanvil-pull` delimiter
-- **Files:** `preset/.claude/agents/ccanvil-differ.md`, all `preset/.claude/commands/*.md`, all `preset/.claude/rules/*.md`, `preset/.claude/skills/tdd/SKILL.md`
-- **Verify:** `grep -ri scaffold preset/.claude/` returns 0 hits (excluding `scaffold.lock` pattern if still in ignore files)
-
-### Step 11: Preset CLAUDE.md + hub root files (AC-15, AC-22, AC-23)
-- **Test:** No bats tests. Verify by grep.
-- **Implement:**
-  - `preset/CLAUDE.md`: update architecture diagram (`scaffold.json` → `ccanvil.json`, `scaffold.local.json` → `ccanvil.local.json`), update "Do Not" section (`scaffold-framework.md` → `foundations.md`)
-  - Hub root `CLAUDE.md`: update test command filenames, any "scaffold" terminology
-  - Hub root `README.md`: comprehensive sweep (~83 occurrences) — "scaffold" → "hub"/"preset"/"ccanvil" depending on context. This is a **judgment call** — README describes the system architecture, so replacements are contextual.
-  - Hub root `.claudeignore`: update file references
-- **Files:** `preset/CLAUDE.md`, `CLAUDE.md`, `README.md`, `.claudeignore`
-- **Verify:** `grep -ri scaffold` at repo root (excluding `.git/`) returns 0 hits in these files
-
-### Step 12: Hub meta + specs (AC-22 continued)
-- **Test:** No bats tests. Verify by grep.
-- **Implement:**
-  - `hub/meta/SCAFFOLD_SYSTEM_PROMPT.md`: rename file to `hub/meta/SYSTEM_PROMPT.md` (or `CCANVIL_SYSTEM_PROMPT.md`), update ~50 "scaffold" references — this is another **judgment call** (prompt rewriting)
-  - `hub/meta/INIT_PROMPT.md`: ~5 references
-  - `hub/meta/HOW_TO_USE.md`: ~10 references
-  - `hub/specs/*.md`: update completed specs with new terminology (low priority, historical)
-- **Files:** All `hub/meta/*.md`, `hub/specs/*.md`
-- **Verify:** `grep -ri scaffold hub/` returns 0 hits (excluding git history)
-
-### Step 13: Downstream projects (AC-24, AC-25)
-- **Test:** After updates, `grep -ri scaffold ~/projects/fucina` and `grep -ri scaffold ~/projects/luxlook` return 0 hits.
-- **Implement:**
-  - For each project: rename `.claude/scaffold.json` → `.claude/ccanvil.json`, update `.claudeignore`, `.gitignore`, sweep all `.ccanvil/` and `.claude/` files for remaining "scaffold" refs
-  - Re-init lockfiles with `ccanvil-sync.sh init` (new lockfile keys)
-  - Commit in each downstream project
-- **Files:** All scaffold-referencing files in `~/projects/fucina/` and `~/projects/luxlook/`
-- **Verify:** Grep sweep returns 0 hits per project
-
-### Step 14: Final verification (AC-26, AC-27)
-- **Test:** Full test suite + comprehensive grep sweep.
-- **Implement:** Fix any remaining occurrences found by sweep.
-- **Files:** Any stragglers
-- **Verify:**
-  - `bats hub/tests/` — all 352+ tests pass
-  - `grep -ri scaffold --include='*.sh' --include='*.bats' --include='*.md' --include='*.json' .` returns 0 hits (excluding `.git/`, this spec, and historical specs in `hub/specs/`)
-  - `ccanvil-sync.sh init` in a temp dir produces lockfile with `hub_source`, `hub_version`, `hub_hash` keys
-
-### Step 15: Update guide documentation
-- **Test:** Read `.ccanvil/guide/index.md` and verify all links resolve, all diagrams are accurate.
-- **Implement:** Final pass on guide index — ensure renamed files are linked correctly, diagrams reference new filenames, and no broken cross-references remain.
-- **Files:** `preset/.ccanvil/guide/index.md`, any guide files with stale cross-refs
-- **Verify:** All internal links valid. `bats hub/tests/` passes.
+### Step 6: Full test suite + downstream check (AC-10, AC-11)
+- **Test:** `bats hub/tests/` — all 352+ pass.
+- **Implement:** Fix any failures.
+- **Files:** Any affected test files.
+- **Verify:** 352/352 pass. Downstream template is coherent.
 
 ## Risks
 
-| Risk | Impact | Mitigation |
-|------|--------|------------|
-| **Lockfile breaking change** | Existing downstream lockfiles incompatible | Re-init lockfiles after hub changes (step 13). Both downstreams are under our control. |
-| **Delimiter pattern breakage** | `cmd_section_merge` relies on `<!-- NODE-SPECIFIC-START -->` delimiter, not the `/scaffold-pull` comment | Verify delimiter detection logic is independent of the comment text. The comment is cosmetic. |
-| **Missed occurrence** | Runtime error or confusing mixed terminology | Final grep sweep (step 14) catches stragglers. Tests cover all runtime paths. |
-| **foundations.md protection rules** | Hooks/rules that protect `scaffold-framework.md` will break after rename | Update protection rules in step 8 before or alongside the file rename. |
-| **README.md contextual rewording** | Blind find-replace would produce nonsensical text | Steps 8, 11, 12 are marked as judgment calls — require reading and contextual replacement, not sed. |
-
-## Session Boundaries
-
-This is a large feature. Recommended checkpoint points:
-- **After step 4:** Core script complete — lockfile keys, functions, variables, actions all renamed. Tests green.
-- **After step 7:** All script + test file changes done. Pure documentation remaining.
-- **After step 12:** Hub fully clean. Only downstream sweep remaining.
+| Risk | Mitigation |
+|------|-----------|
+| Removing conventions breaks downstream expectations | AC-9 ensures all content relocated. Framework-specific items become examples in guide, not always-loaded. |
+| Budget still > 85% after CLAUDE.md trim | Step 5 has a fallback: trim tls-troubleshooting.md if needed. |
+| Section-merge loses hub node content | Step 4 uses the sync script's section-merge, which preserves node sections by design. |
 
 ## Definition of Done
 
-- [ ] All 27 acceptance criteria from spec pass
+- [ ] All acceptance criteria from spec pass (11 ACs)
 - [ ] All existing tests still pass (352+)
-- [ ] `grep -ri scaffold` across repo returns 0 hits (excluding `.git/` and historical spec files)
-- [ ] Downstream projects (`fucina`, `luxlook`) return 0 hits
+- [ ] `context-budget.sh check` exits non-CRITICAL
 - [ ] Code reviewed (run /review)
