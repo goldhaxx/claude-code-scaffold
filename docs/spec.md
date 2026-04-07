@@ -2,7 +2,7 @@
 
 > Feature: sync-subcommands
 > Created: 1775603749
-> Status: Draft
+> Status: In Progress
 
 ## Summary
 
