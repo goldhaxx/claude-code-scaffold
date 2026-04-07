@@ -2,7 +2,7 @@
 
 > Feature: claudemd-budget-trim
 > Created: 1775520520
-> Status: Draft
+> Status: In Progress
 
 ## Summary
 
