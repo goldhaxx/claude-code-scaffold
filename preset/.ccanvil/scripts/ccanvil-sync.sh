@@ -620,6 +620,14 @@ cmd_pre_check() {
     local_hash=$(file_hash "$local_script")
     if [[ "$hub_hash" != "$local_hash" ]]; then
       cp "$hub_script" "$local_script"
+      # Update lockfile hashes so status shows clean after bootstrap
+      local new_hash
+      new_hash=$(file_hash "$local_script")
+      local tmp; tmp=$(mktemp)
+      jq --arg f "$local_script" --arg h "$new_hash" \
+        '.files[$f].hub_hash = $h | .files[$f].local_hash = $h | .files[$f].status = "clean"' \
+        "$LOCKFILE" > "$tmp" || true
+      safe_lock_mv "$tmp" "$LOCKFILE" "bootstrap hash update"
       echo "BOOTSTRAPPED: Updated .ccanvil/scripts/ccanvil-sync.sh from hub"
       echo "  Re-run your command to use the updated script."
       exit 0
@@ -766,18 +774,7 @@ cmd_pull_auto() {
   plan=$(cmd_pull_plan)
 
   # Also adopt-clean files (identical local copies not yet in lockfile)
-  # Skip this script itself to avoid replacing a running process mid-execution.
-  # Bootstrap in pre-check handles sync script updates separately.
   echo "$plan" | jq -r '.[] | select(.action == "auto-update" or .action == "adopt-clean") | .file' | while IFS= read -r file; do
-    if [[ "$file" == ".ccanvil/scripts/ccanvil-sync.sh" ]]; then
-      if $dry_run; then
-        echo "DRY-RUN: would skip $file (updated via bootstrap)"
-      else
-        echo "SKIPPED: $file (updated via bootstrap in pre-check)"
-      fi
-      continue
-    fi
-
     if $dry_run; then
       echo "DRY-RUN: would copy $file"
       count=$((count + 1))

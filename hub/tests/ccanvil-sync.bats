@@ -782,6 +782,49 @@ EOF
   [ "$hub_h" = "$node_h" ]
 }
 
+@test "pre-check: bootstrap updates lockfile hashes for sync script" {
+  cd "$NODE"
+
+  # Modify the hub's sync script (simulate newer version)
+  echo '# updated version' >> "$HUB/.ccanvil/scripts/ccanvil-sync.sh"
+  git -C "$HUB" add -A && git -C "$HUB" commit -q -m "update sync script"
+
+  # Run pre-check — triggers bootstrap
+  run bash "$NODE/.ccanvil/scripts/ccanvil-sync.sh" pre-check
+  [ "$status" -eq 0 ]
+  echo "$output" | grep -q "BOOTSTRAPPED"
+
+  # Lockfile should show the sync script as clean (hashes updated)
+  local lock_hub_hash lock_local_hash
+  lock_hub_hash=$(jq -r '.files[".ccanvil/scripts/ccanvil-sync.sh"].hub_hash' "$NODE/.ccanvil/ccanvil.lock")
+  lock_local_hash=$(jq -r '.files[".ccanvil/scripts/ccanvil-sync.sh"].local_hash' "$NODE/.ccanvil/ccanvil.lock")
+  [ "$lock_hub_hash" = "$lock_local_hash" ]
+
+  # The lockfile hash should match the actual file hash
+  local actual_hash
+  actual_hash=$(shasum -a 256 "$NODE/.ccanvil/scripts/ccanvil-sync.sh" | awk '{print $1}')
+  [ "$lock_local_hash" = "$actual_hash" ]
+}
+
+@test "pre-check: bootstrap does not leave sync script in pull-plan" {
+  cd "$NODE"
+
+  # Modify the hub's sync script (simulate newer version)
+  echo '# newer version' >> "$HUB/.ccanvil/scripts/ccanvil-sync.sh"
+  git -C "$HUB" add -A && git -C "$HUB" commit -q -m "update sync script"
+
+  # Bootstrap
+  bash "$NODE/.ccanvil/scripts/ccanvil-sync.sh" pre-check
+
+  # Commit the bootstrapped script so node is clean for pull-plan
+  git -C "$NODE" add -A && git -C "$NODE" commit -q -m "bootstrapped"
+
+  # Pull-plan should not include the sync script
+  run bash "$NODE/.ccanvil/scripts/ccanvil-sync.sh" pull-plan
+  [ "$status" -eq 0 ]
+  ! echo "$output" | jq -e '.[] | select(.file == ".ccanvil/scripts/ccanvil-sync.sh")' 2>/dev/null
+}
+
 
 # =========================================================================
 # push-candidates tests
