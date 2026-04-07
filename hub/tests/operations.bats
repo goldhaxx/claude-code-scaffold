@@ -441,6 +441,48 @@ JSON
   grep -q "operations.sh" "$BATS_TEST_DIRNAME/../../.ccanvil/guide/command-reference.md"
 }
 
+# =========================================================================
+# exec subcommand (BTS-25)
+# =========================================================================
+
+@test "exec: bash mechanism runs command and outputs result" {
+  run bash "$SCRIPT" exec review.run --project-dir "$PROJECT"
+  [ "$status" -eq 0 ]
+  # review.run echoes a JSON object directly
+  echo "$output" | jq -e '.status == "not_implemented"'
+}
+
+@test "exec: mcp mechanism outputs resolution JSON instead of executing" {
+  mkdir -p "$PROJECT/.claude"
+  cat > "$PROJECT/.claude/ccanvil.json" <<'JSON'
+{
+  "integrations": {
+    "providers": {
+      "linear": {
+        "mechanism": "mcp",
+        "project": "test",
+        "team": "test-team"
+      }
+    },
+    "routing": {
+      "backlog": "linear"
+    }
+  }
+}
+JSON
+  run bash "$SCRIPT" exec backlog.list --project-dir "$PROJECT"
+  [ "$status" -eq 0 ]
+  # Should output the resolution JSON (same as resolve) since MCP can't be executed from bash
+  echo "$output" | jq -e '.mechanism == "mcp"'
+  echo "$output" | jq -e '.invocation.tool'
+}
+
+@test "exec: unknown operation exits with error" {
+  run bash "$SCRIPT" exec unknown.op --project-dir "$PROJECT"
+  [ "$status" -eq 1 ]
+  echo "$output" | grep -q 'ERROR: unknown operation'
+}
+
 @test "ccanvil.json with integrations key passes jq validation" {
   local REAL_CONFIG="$BATS_TEST_DIRNAME/../../.claude/ccanvil.json"
   jq empty "$REAL_CONFIG"
