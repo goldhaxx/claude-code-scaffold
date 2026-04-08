@@ -17,8 +17,8 @@ if [[ ! "$COMMAND" =~ git[[:space:]]+commit ]]; then
   exit 0
 fi
 
-# Allow bypass with --allow-main (for init commits, hotfixes)
-if [[ "$COMMAND" =~ --allow-main ]]; then
+# Allow bypass with ALLOW_MAIN=1 (for init commits, migrations, hotfixes)
+if [[ "$COMMAND" =~ ALLOW_MAIN=1 ]]; then
   exit 0
 fi
 
@@ -28,7 +28,7 @@ BRANCH=$(git branch --show-current 2>/dev/null || echo "")
 if [[ "$BRANCH" == "main" || "$BRANCH" == "master" ]]; then
   echo "BLOCKED: Direct commits to main are not allowed. Create a feature branch first." >&2
   echo "  Use docs-check.sh activate <feature-id> to create a branch." >&2
-  echo "  If this is an init commit or hotfix, add --allow-main to bypass." >&2
+  echo "  To bypass (init/migration/hotfix): ALLOW_MAIN=1 git commit -m \"...\"" >&2
   exit 2
 fi
 

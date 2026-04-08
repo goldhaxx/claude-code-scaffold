@@ -717,9 +717,9 @@ EOF
   [ "$status" -eq 0 ]
 }
 
-@test "protect-main: bypass with --allow-main" {
+@test "protect-main: bypass with ALLOW_MAIN=1" {
   HOOK="$BATS_TEST_DIRNAME/../../.claude/hooks/protect-main.sh"
-  input='{"tool_name":"Bash","tool_input":{"command":"git commit --allow-main -m init"}}'
+  input='{"tool_name":"Bash","tool_input":{"command":"ALLOW_MAIN=1 git commit -m init"}}'
   cd "$PROJECT"  # on main
   run bash -c "echo '$input' | '$HOOK'"
   [ "$status" -eq 0 ]
