@@ -2,7 +2,7 @@
 
 > Feature: feature-lifecycle
 > Created: 1775614129
-> Status: Draft
+> Status: In Progress
 
 ## Summary
 
