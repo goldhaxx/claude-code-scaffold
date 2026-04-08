@@ -250,10 +250,33 @@ cmd_init() {
   echo "  Hub: $display_path @ $hub_version"
   echo "  Total files: $total"
   echo "  Clean: $clean | Modified: $modified | Local: $local_only | Hub-only: $hub_only"
+
+  # Check if project is registered with the hub
+  local hub_root_abs="${hub_path/#\~/$HOME}"
+  local registry="$hub_root_abs/.ccanvil/registry.json"
+  local node_path
+  node_path=$(pwd)
+  if [[ ! -f "$registry" ]] || ! jq -e --arg p "$node_path" '.nodes[$p]' "$registry" >/dev/null 2>&1; then
+    echo ""
+    echo "NOTE: This project is not registered with the hub."
+    echo "  Register to enable project tracking and discovery."
+    echo "  Run: ccanvil-sync.sh register"
+  fi
 }
 
 cmd_status() {
   require_lockfile
+
+  # Parse flags
+  local json_mode=false
+  local filter_status=""
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --json) json_mode=true; shift ;;
+      --filter) filter_status="${2:-}"; shift 2 ;;
+      *) shift ;;
+    esac
+  done
 
   local hub_source
   hub_source=$(get_hub_source)
@@ -264,6 +287,39 @@ cmd_status() {
   local synced_at
   synced_at=$(jq -r '.synced_at' "$LOCKFILE")
 
+  # Build files array (shared by both output modes)
+  local files_json="[]"
+  while IFS= read -r file; do
+    local status origin hub_hash local_hash sync_field
+    status=$(jq -r --arg f "$file" '.files[$f].status' "$LOCKFILE")
+    origin=$(jq -r --arg f "$file" '.files[$f].origin' "$LOCKFILE")
+    hub_hash=$(jq -r --arg f "$file" '.files[$f].hub_hash // "null"' "$LOCKFILE")
+    local_hash=$(jq -r --arg f "$file" '.files[$f].local_hash // "null"' "$LOCKFILE")
+    sync_field=$(get_sync_field "$file")
+
+    # Apply filter
+    if [[ -n "$filter_status" ]]; then
+      if [[ "$filter_status" == "non-clean" ]]; then
+        [[ "$status" == "clean" && "$sync_field" != "node-only" ]] && continue
+      else
+        [[ "$status" != "$filter_status" ]] && continue
+      fi
+    fi
+
+    files_json=$(echo "$files_json" | jq --arg f "$file" --arg o "$origin" --arg s "$status" \
+      --arg sy "$sync_field" --arg hh "$hub_hash" --arg lh "$local_hash" \
+      '. + [{"file": $f, "origin": $o, "status": $s, "sync": $sy, "hub_hash": $hh, "local_hash": $lh}]')
+  done < <(jq -r '.files | keys[]' "$LOCKFILE" | sort)
+
+  # JSON output mode
+  if $json_mode; then
+    jq -n --arg hs "$(get_hub_source_display)" --arg hv "$hub_version" \
+      --arg sa "$synced_at" --argjson files "$files_json" \
+      '{"hub_source": $hs, "hub_version": $hv, "synced_at": $sa, "files": $files}'
+    return 0
+  fi
+
+  # Human-readable output mode (original behavior)
   echo "Hub: $(get_hub_source_display) @ $hub_version"
   echo "Last synced: $synced_at"
   echo ""
@@ -280,46 +336,23 @@ cmd_status() {
 
   # Print each file's status
   local has_output=false
-  while IFS= read -r file; do
-    local status origin hub_hash local_hash
-    status=$(jq -r --arg f "$file" '.files[$f].status' "$LOCKFILE")
-    origin=$(jq -r --arg f "$file" '.files[$f].origin' "$LOCKFILE")
-
-    # Check if local file has changed since lockfile was written
-    local current_hash=""
-    if [[ -f "$file" ]]; then
-      current_hash=$(file_hash "$file")
-    fi
-    local recorded_local_hash
-    recorded_local_hash=$(jq -r --arg f "$file" '.files[$f].local_hash // "null"' "$LOCKFILE")
-
-    # Check node-only classification
-    local sync_field
-    sync_field=$(get_sync_field "$file")
-
+  echo "$files_json" | jq -r '.[] | "\(.status)\t\(.sync)\t\(.file)"' | while IFS=$'\t' read -r status sync_field file; do
     local display_status
     if [[ "$sync_field" == "node-only" ]]; then
       display_status="NODE-ONLY"
     else
       case "$status" in
-        clean)
-          if [[ -n "$current_hash" && "$current_hash" != "$recorded_local_hash" ]]; then
-            display_status="MODIFIED*"  # Changed since last sync
-          else
-            display_status="CLEAN"
-          fi
-          ;;
+        clean)        display_status="CLEAN" ;;
         modified)     display_status="MODIFIED" ;;
         local-only)   display_status="LOCAL" ;;
         promoted)     display_status="PROMOTED" ;;
-        hub-only) display_status="HUB-ONLY" ;;
+        hub-only)     display_status="HUB-ONLY" ;;
         *)            display_status="UNKNOWN" ;;
       esac
     fi
-
     printf "  %-16s %s\n" "$display_status" "$file"
     has_output=true
-  done < <(jq -r '.files | keys[]' "$LOCKFILE" | sort)
+  done
 
   if [[ "$has_output" == "false" ]]; then
     echo "  No tracked files."
@@ -1299,6 +1332,145 @@ cmd_scan() {
   fi
 }
 
+# migrate: Copy all hub-managed files to the current project, handle renames, re-init lockfile.
+# Usage: migrate <hub-path> [--dry-run]
+cmd_migrate() {
+  local hub_path="${1:?Usage: ccanvil-sync.sh migrate <hub-path> [--dry-run]}"
+  hub_path="${hub_path/#\~/$HOME}"
+  local dry_run=false
+  [[ "${2:-}" == "--dry-run" ]] && dry_run=true
+
+  [[ -d "$hub_path" ]] || die "Hub not found at: $hub_path"
+
+  local dist_root
+  dist_root=$(hub_dist_root "$hub_path")
+
+  # Remove stale-named files from previous structure
+  local stale_files=(
+    ".ccanvil/guide/scaffold-sync.md"
+    ".ccanvil/guide/scaffold-framework.md"
+    ".ccanvil/templates/scaffold.json.md"
+  )
+  for stale in "${stale_files[@]}"; do
+    if [[ -f "$stale" ]]; then
+      if $dry_run; then
+        echo "DRY-RUN: would remove stale file $stale"
+      else
+        rm "$stale"
+        echo "REMOVED: $stale (stale name)"
+      fi
+    fi
+  done
+
+  # Rename scaffold.json → ccanvil.json if present
+  if [[ -f ".claude/scaffold.json" ]]; then
+    if $dry_run; then
+      echo "DRY-RUN: would rename .claude/scaffold.json → .claude/ccanvil.json"
+    else
+      mv ".claude/scaffold.json" ".claude/ccanvil.json"
+      echo "RENAMED: .claude/scaffold.json → .claude/ccanvil.json"
+    fi
+  fi
+
+  # Copy all hub-managed files
+  local count=0
+  while IFS= read -r file; do
+    local hub_file="$dist_root/$file"
+    [[ -f "$hub_file" ]] || continue
+
+    if $dry_run; then
+      echo "DRY-RUN: would copy $file"
+      count=$((count + 1))
+      continue
+    fi
+
+    # For delimited markdown files, use section-merge to preserve node content
+    if [[ "$file" == *.md ]] && [[ -f "$file" ]] && \
+       (grep -qx '<!-- NODE-SPECIFIC-START -->' "$hub_file" 2>/dev/null || \
+        grep -qx '<!-- HUB-MANAGED-START -->' "$hub_file" 2>/dev/null); then
+      local merged
+      merged=$(cmd_section_merge "$hub_file" "$file" 2>/dev/null) && {
+        echo "$merged" > "$file"
+        echo "MERGED: $file (section-merge)"
+        count=$((count + 1))
+        continue
+      }
+    fi
+
+    # Plain copy for non-delimited files or new files
+    mkdir -p "$(dirname "$file")"
+    cp "$hub_file" "$file"
+    echo "COPIED: $file"
+    count=$((count + 1))
+  done < <(scan_hub_files "$hub_path")
+
+  if $dry_run; then
+    echo ""
+    echo "DRY-RUN: would copy $count files. No changes made."
+    return 0
+  fi
+
+  echo ""
+  echo "MIGRATE: copied $count files from hub."
+
+  # Re-init lockfile
+  cmd_init "$hub_path"
+  echo ""
+  echo "MIGRATE complete. Run 'git add -A && git commit' to finalize."
+}
+
+# register: Add the current project to the hub's registry.
+# Run from a downstream project. Reads hub path from lockfile.
+cmd_register() {
+  require_lockfile
+  local hub_root
+  hub_root=$(get_hub_source_raw)
+  local registry="$hub_root/.ccanvil/registry.json"
+  local node_path
+  node_path=$(pwd)
+  local node_name
+  node_name=$(basename "$node_path")
+  local ts
+  ts=$(timestamp)
+
+  # Create registry file if it doesn't exist
+  if [[ ! -f "$registry" ]]; then
+    mkdir -p "$(dirname "$registry")"
+    echo '{"nodes":{}}' > "$registry"
+  fi
+
+  # Add or update this project's entry
+  local tmp; tmp=$(mktemp)
+  jq --arg p "$node_path" --arg n "$node_name" --arg t "$ts" \
+    '.nodes[$p] = {"name": $n, "registered_at": $t}' "$registry" > "$tmp" || true
+  if [[ -s "$tmp" ]] && jq empty "$tmp" 2>/dev/null; then
+    mv "$tmp" "$registry"
+  else
+    rm -f "$tmp"
+    die "Failed to update registry"
+  fi
+
+  echo "REGISTERED: $node_name ($node_path)"
+}
+
+# registry: List all registered downstream projects.
+# Can be run from anywhere with a lockfile.
+cmd_registry() {
+  require_lockfile
+  local hub_root
+  hub_root=$(get_hub_source_raw)
+  local registry="$hub_root/.ccanvil/registry.json"
+
+  if [[ ! -f "$registry" ]]; then
+    echo "No registry found. Run 'ccanvil-sync.sh register' from a downstream project."
+    return 0
+  fi
+
+  echo "Registered downstream projects:"
+  echo ""
+  jq -r '.nodes | to_entries[] | "  \(.value.name) — \(.key) (registered: \(.value.registered_at))"' "$registry"
+}
+
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
@@ -1313,7 +1485,7 @@ fi
 case "${1:-}" in
   # --- Atomic commands (building blocks) ---
   init)             shift; cmd_init "$@" ;;
-  status)           cmd_status ;;
+  status)           shift; cmd_status "$@" ;;
   diff)             shift; cmd_diff "${1:-}" ;;
   hash)             shift; cmd_hash "$@" ;;
   lock-get)         shift; cmd_lock_get "$@" ;;
@@ -1340,6 +1512,9 @@ case "${1:-}" in
   push-finalize)    shift; cmd_push_finalize "$@" ;;
   promote)          shift; cmd_promote "$@" ;;
   demote)           shift; cmd_demote "$@" ;;
+  migrate)          shift; cmd_migrate "$@" ;;
+  register)         cmd_register ;;
+  registry)         cmd_registry ;;
 
   *)
     echo "Usage: ccanvil-sync.sh <command> [args]"

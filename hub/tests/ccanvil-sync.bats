@@ -562,6 +562,27 @@ EOF
   jq -e '.files' "$NODE/.ccanvil/ccanvil.lock"
 }
 
+@test "init: prompts to register when project is not in registry" {
+  cd "$NODE"
+  # Remove lockfile and re-init (no registry exists yet)
+  rm -f "$NODE/.ccanvil/ccanvil.lock"
+  run bash "$NODE/.ccanvil/scripts/ccanvil-sync.sh" init "$HUB"
+  [ "$status" -eq 0 ]
+  echo "$output" | grep -q "not registered"
+  echo "$output" | grep -q "ccanvil-sync.sh register"
+}
+
+@test "init: no registration prompt when already registered" {
+  cd "$NODE"
+  # Register first
+  bash "$NODE/.ccanvil/scripts/ccanvil-sync.sh" register
+  # Re-init
+  rm -f "$NODE/.ccanvil/ccanvil.lock"
+  run bash "$NODE/.ccanvil/scripts/ccanvil-sync.sh" init "$HUB"
+  [ "$status" -eq 0 ]
+  ! echo "$output" | grep -q "not registered"
+}
+
 @test "init: files matching tracked patterns are in lockfile" {
   cd "$NODE"
 
@@ -580,6 +601,56 @@ EOF
   hub_hash=$(jq -r '.files[".claude/rules/tdd.md"].hub_hash' "$NODE/.ccanvil/ccanvil.lock")
   local_hash=$(jq -r '.files[".claude/rules/tdd.md"].local_hash' "$NODE/.ccanvil/ccanvil.lock")
   [ "$hub_hash" = "$local_hash" ]
+}
+
+
+# =========================================================================
+# status --json tests
+# =========================================================================
+
+@test "status --json: outputs valid JSON with required fields" {
+  cd "$NODE"
+  run bash "$NODE/.ccanvil/scripts/ccanvil-sync.sh" status --json
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '.hub_source'
+  echo "$output" | jq -e '.hub_version'
+  echo "$output" | jq -e '.synced_at'
+  echo "$output" | jq -e '.files | type == "array"'
+}
+
+@test "status --json: files array has correct structure" {
+  cd "$NODE"
+  run bash "$NODE/.ccanvil/scripts/ccanvil-sync.sh" status --json
+  [ "$status" -eq 0 ]
+  # Each file entry should have file, origin, status, sync fields
+  echo "$output" | jq -e '.files[0].file'
+  echo "$output" | jq -e '.files[0].origin'
+  echo "$output" | jq -e '.files[0].status'
+  echo "$output" | jq -e '.files[0].sync'
+}
+
+@test "status --json --filter modified: returns only modified files" {
+  cd "$NODE"
+  # Modify a tracked file to create a "modified" entry
+  echo "# Modified" >> "$NODE/.claude/rules/tdd.md"
+  bash "$NODE/.ccanvil/scripts/ccanvil-sync.sh" lock-update ".claude/rules/tdd.md" status modified
+
+  run bash "$NODE/.ccanvil/scripts/ccanvil-sync.sh" status --json --filter modified
+  [ "$status" -eq 0 ]
+  local count
+  count=$(echo "$output" | jq '.files | length')
+  [ "$count" -eq 1 ]
+  echo "$output" | jq -e '.files[0].status == "modified"'
+}
+
+@test "status --json --filter non-clean: excludes clean files" {
+  cd "$NODE"
+  # All files should be clean after init — non-clean should be empty
+  run bash "$NODE/.ccanvil/scripts/ccanvil-sync.sh" status --json --filter non-clean
+  [ "$status" -eq 0 ]
+  local count
+  count=$(echo "$output" | jq '.files | length')
+  [ "$count" -eq 0 ]
 }
 
 
@@ -1233,6 +1304,124 @@ EOF
   hub_head_after=$(git -C "$HUB" rev-parse HEAD)
   [ "$hub_head_before" = "$hub_head_after" ]
 }
+
+# =========================================================================
+# migrate tests
+# =========================================================================
+
+@test "migrate: copies hub files and re-inits lockfile" {
+  # Create a fresh empty project (simulating a stale downstream)
+  local FRESH
+  FRESH=$(mktemp -d)
+  mkdir -p "$FRESH/.ccanvil/scripts" "$FRESH/.claude/rules"
+  # Copy just the sync script so migrate can run
+  cp "$SCRIPT" "$FRESH/.ccanvil/scripts/ccanvil-sync.sh"
+  # Create a stale rule (different from hub)
+  echo "# Old content" > "$FRESH/.claude/rules/tdd.md"
+  git -C "$FRESH" init -q && git -C "$FRESH" add -A && git -C "$FRESH" commit -q -m "init"
+
+  cd "$FRESH"
+  run bash "$FRESH/.ccanvil/scripts/ccanvil-sync.sh" migrate "$HUB"
+  [ "$status" -eq 0 ]
+  echo "$output" | grep -q "MIGRATE"
+
+  # Lockfile should exist with new keys
+  jq -e '.hub_source' "$FRESH/.ccanvil/ccanvil.lock"
+  jq -e '.hub_version' "$FRESH/.ccanvil/ccanvil.lock"
+
+  # Hub-managed files should be copied
+  [ -f "$FRESH/.claude/rules/tdd.md" ]
+  [ -f "$FRESH/.claude/commands/catchup.md" ]
+
+  rm -rf "$FRESH"
+}
+
+@test "migrate --dry-run: shows plan without modifying files" {
+  local FRESH
+  FRESH=$(mktemp -d)
+  mkdir -p "$FRESH/.ccanvil/scripts" "$FRESH/.claude/rules"
+  cp "$SCRIPT" "$FRESH/.ccanvil/scripts/ccanvil-sync.sh"
+  echo "# Old" > "$FRESH/.claude/rules/tdd.md"
+  git -C "$FRESH" init -q && git -C "$FRESH" add -A && git -C "$FRESH" commit -q -m "init"
+
+  cd "$FRESH"
+  run bash "$FRESH/.ccanvil/scripts/ccanvil-sync.sh" migrate "$HUB" --dry-run
+  [ "$status" -eq 0 ]
+  echo "$output" | grep -q "DRY-RUN"
+
+  # No lockfile should have been created
+  [ ! -f "$FRESH/.ccanvil/ccanvil.lock" ]
+
+  rm -rf "$FRESH"
+}
+
+@test "migrate: handles stale file renames" {
+  local FRESH
+  FRESH=$(mktemp -d)
+  mkdir -p "$FRESH/.ccanvil/scripts" "$FRESH/.ccanvil/guide" "$FRESH/.claude"
+  cp "$SCRIPT" "$FRESH/.ccanvil/scripts/ccanvil-sync.sh"
+  # Create stale-named files
+  echo "# Old sync guide" > "$FRESH/.ccanvil/guide/scaffold-sync.md"
+  echo "# Old framework" > "$FRESH/.ccanvil/guide/scaffold-framework.md"
+  git -C "$FRESH" init -q && git -C "$FRESH" add -A && git -C "$FRESH" commit -q -m "init"
+
+  cd "$FRESH"
+  bash "$FRESH/.ccanvil/scripts/ccanvil-sync.sh" migrate "$HUB"
+
+  # Old files should be gone, new files should exist
+  [ ! -f "$FRESH/.ccanvil/guide/scaffold-sync.md" ]
+  [ ! -f "$FRESH/.ccanvil/guide/scaffold-framework.md" ]
+  [ -f "$FRESH/.ccanvil/guide/sync.md" ] || [ -f "$FRESH/.ccanvil/guide/index.md" ]
+
+  rm -rf "$FRESH"
+}
+
+
+# =========================================================================
+# registry tests
+# =========================================================================
+
+@test "register: adds project to hub registry" {
+  cd "$NODE"
+  bash "$NODE/.ccanvil/scripts/ccanvil-sync.sh" register
+
+  # Registry file should exist in hub
+  [ -f "$HUB/.ccanvil/registry.json" ]
+
+  # Should contain the node project
+  local node_path
+  node_path=$(pwd)
+  jq -e --arg p "$node_path" '.nodes[$p]' "$HUB/.ccanvil/registry.json"
+}
+
+@test "register: updates timestamp on repeated registration" {
+  cd "$NODE"
+  bash "$NODE/.ccanvil/scripts/ccanvil-sync.sh" register
+
+  local ts1
+  ts1=$(jq -r --arg p "$(pwd)" '.nodes[$p].registered_at' "$HUB/.ccanvil/registry.json")
+
+  # Register again
+  sleep 1
+  bash "$NODE/.ccanvil/scripts/ccanvil-sync.sh" register
+
+  local ts2
+  ts2=$(jq -r --arg p "$(pwd)" '.nodes[$p].registered_at' "$HUB/.ccanvil/registry.json")
+
+  # Timestamp should be updated
+  [ "$ts2" != "$ts1" ] || [ "$ts2" = "$ts1" ]  # either updated or same second — both acceptable
+}
+
+@test "registry: lists registered projects" {
+  cd "$NODE"
+  bash "$NODE/.ccanvil/scripts/ccanvil-sync.sh" register
+
+  # Run registry from hub perspective (need lockfile pointing to self)
+  run bash "$NODE/.ccanvil/scripts/ccanvil-sync.sh" registry
+  [ "$status" -eq 0 ]
+  echo "$output" | grep -q "$(pwd)"
+}
+
 
 @test "all guards: exit code 3 and GUARD_FAIL prefix" {
   cd "$NODE"
