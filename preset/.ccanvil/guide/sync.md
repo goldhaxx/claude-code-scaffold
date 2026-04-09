@@ -161,7 +161,23 @@ flowchart TD
     style USER fill:#e3f2fd,stroke:#333,stroke-width:2px
 ```
 
-**Bootstrap requirement:** The pull process uses `ccanvil-sync.sh` itself. If the hub has a newer version of the script with new commands, the node's old script won't know them. When this happens, manually copy the new script first: `cp <hub>/scripts/ccanvil-sync.sh scripts/ccanvil-sync.sh`, then run `/ccanvil-pull`.
+**Bootstrap requirement:** The pull process uses `ccanvil-sync.sh` itself. If the hub has a newer version of the script with new commands, the node's old script won't know them. `pre-check` handles this automatically — it compares script hashes and copies the newer version before proceeding.
+
+## Migrate vs Pull — When to Use Each
+
+**Pull (`/ccanvil-pull`) is the default for ALL updates.** It detects changes, classifies them, and asks for resolution on conflicts. Non-delimited files with local modifications are flagged for review — nothing is silently overwritten.
+
+**Migrate (`ccanvil-sync.sh migrate`) is destructive.** It copies ALL hub files unconditionally. For delimited `.md` files it section-merges (preserving node content), but for non-delimited files (scripts, JSON, hooks) it overwrites without checking for local modifications.
+
+| Scenario | Use | Why |
+|----------|-----|-----|
+| Hub shipped new features, node needs them | **Pull** | Detects conflicts, preserves local changes |
+| Node has been running for a while, routine sync | **Pull** | Safe, surgical, reviewable |
+| Brand-new project, first-time ccanvil setup | **Init** (`/init` with preflight) | Preflight detects conflicts if files exist |
+| Major structural change (e.g., rename across all files) | **Migrate** | Bulk reset when the delta is too large for pull |
+| Node is corrupted or needs factory reset | **Migrate** | Intentional full overwrite |
+
+**Never use migrate as a shortcut for pull.** If you're unsure, run `pull-plan` first to see what changed — it's read-only and shows you the full picture before any files are touched.
 
 ## Push Flow (Project → Hub)
 

@@ -1552,6 +1552,14 @@ cmd_migrate() {
   local dry_run=false
   [[ "${2:-}" == "--dry-run" ]] && dry_run=true
 
+  # Warn: migrate is destructive for non-delimited files
+  if ! $dry_run; then
+    echo "WARNING: migrate overwrites non-delimited files (scripts, JSON, hooks) without conflict check." >&2
+    echo "  For routine updates, use: pre-check → pull-plan → pull-auto → pull-finalize" >&2
+    echo "  Migrate is intended for first-time setup or major restructuring only." >&2
+    echo "" >&2
+  fi
+
   [[ -d "$hub_path" ]] || die "Hub not found at: $hub_path"
 
   local dist_root
