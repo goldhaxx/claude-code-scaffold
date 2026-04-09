@@ -74,6 +74,21 @@
 | `docs-check.sh land [--force]` | Switch to main, fetch, reset to origin, delete local and remote feature branch. `--force` skips PR-merged check |
 | `docs-check.sh config-get <key> [project-dir]` | Read feature toggle from `.claude/ccanvil.json` (returns `true`/`false`) |
 
+## Idea Management Scripts
+
+| Command | What it does |
+|---------|-------------|
+| `docs-check.sh idea-add "<text>" [docs-dir]` | Append an idea to `docs/ideas.md` with timestamp and `new` status |
+| `docs-check.sh idea-list [--status <status>] [docs-dir]` | List ideas as JSON array. Filter: `new`, `promoted`, `dismissed`, `merged` |
+| `docs-check.sh idea-count [docs-dir]` | Count ideas by status → JSON `{total, new, promoted, dismissed, merged}` |
+| `docs-check.sh idea-update <num> <status> [docs-dir]` | Update idea #N's status and check its checkbox |
+
+## Radar Scripts
+
+| Command | What it does |
+|---------|-------------|
+| `docs-check.sh radar-gather [docs-dir]` | Collect project state as JSON: active spec, completed specs, idea counts, roadmap theme, git activity, backlog |
+
 ## Manifest Verification Scripts
 
 | Command | What it does |

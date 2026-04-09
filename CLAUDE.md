@@ -9,11 +9,13 @@ Configuration preset hub for Claude Code — spec-driven development, determinis
 
 ## Commands
 ```bash
-bats hub/tests/                                          # Run all tests
-bash .ccanvil/scripts/context-budget.sh check --text     # Context budget
-bash .ccanvil/scripts/docs-check.sh activate <id>        # Activate a spec → create branch
-bash .ccanvil/scripts/docs-check.sh complete <id>        # Mark spec complete
-bash .ccanvil/scripts/security-audit.sh                  # Run PII/secrets scan
+bats hub/tests/                                           # Run all tests
+bash .ccanvil/scripts/docs-check.sh activate <id>         # Activate spec → branch + draft PR
+bash .ccanvil/scripts/docs-check.sh complete <id>         # Complete spec → cleanup + PR ready
+bash .ccanvil/scripts/docs-check.sh land                  # Return to main after merge
+bash .ccanvil/scripts/docs-check.sh idea-add "text"       # Capture an idea
+bash .ccanvil/scripts/docs-check.sh radar-gather          # Project state JSON for /radar
+bash .ccanvil/scripts/context-budget.sh check --text      # Context budget
 # Full command list: .ccanvil/guide/command-reference.md
 ```
 

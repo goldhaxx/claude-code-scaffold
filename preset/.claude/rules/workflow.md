@@ -23,6 +23,13 @@ Spec → Activate → Plan → Implement → Complete → Merge → Land
 - `/pr` is a finalize command: run it if `complete` wasn't used, or to re-check tests and mark the PR ready.
 - **Main is protected:** A PreToolUse hook blocks direct commits to main/master. This guarantees `land` can always fast-forward safely.
 
+## Strategic Awareness
+
+- **`/radar`** provides a comprehensive project briefing. Run it at session start, between features, or when deciding what to work on next. It connects tactical work to the roadmap.
+- **`/idea <text>`** captures ideas instantly without interrupting flow. Ideas are logged to `docs/ideas.md` and triaged later via `/idea triage`.
+- **`docs/roadmap.md`** is the strategic source of truth: vision, goals, active theme, upcoming priorities, and horizon. Update it when direction changes, not every session.
+- The **strategic-advisor** agent can be spawned for deep analysis: prioritization, alignment checks, and roadmap update recommendations.
+
 ## Session Discipline
 
 - Each session has ONE objective. State it explicitly at the start.

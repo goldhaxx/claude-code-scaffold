@@ -8,14 +8,13 @@
 ## Commands
 <!-- NODE-SPECIFIC: Replace with your project's actual commands -->
 ```bash
-bash .ccanvil/scripts/security-audit.sh       # Run PII/secrets scan
-bash .ccanvil/scripts/permissions-audit.sh check --settings-dir .claude  # Audit permissions
-bash .ccanvil/scripts/context-budget.sh check --text                     # Context budget
-bash .ccanvil/scripts/docs-check.sh list-specs    # List specs in backlog
-bash .ccanvil/scripts/docs-check.sh activate <id> # Activate a spec → create branch
-bash .ccanvil/scripts/docs-check.sh complete <id> # Mark spec complete
-bash .ccanvil/scripts/operations.sh resolve <operation>   # Resolve operation routing
-bash .ccanvil/scripts/operations.sh merge-config          # Merged effective config (JSON)
+bash .ccanvil/scripts/docs-check.sh activate <id> # Activate a spec → create branch + draft PR
+bash .ccanvil/scripts/docs-check.sh complete <id> # Mark spec complete, clean up, mark PR ready
+bash .ccanvil/scripts/docs-check.sh land           # Return to main after merge
+bash .ccanvil/scripts/docs-check.sh idea-add "text" # Capture an idea
+bash .ccanvil/scripts/docs-check.sh radar-gather    # Project state JSON for /radar
+bash .ccanvil/scripts/context-budget.sh check --text # Context budget
+bash .ccanvil/scripts/security-audit.sh              # PII/secrets scan
 ```
 
 ## Architecture
