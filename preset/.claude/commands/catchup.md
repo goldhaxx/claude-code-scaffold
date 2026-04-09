@@ -14,9 +14,12 @@ Read the current state of the project to resume work after a context reset.
 6. If `docs/checkpoint.md` has a `## Determinism Review` section with candidates_found > 0, read it and prepare to surface those items.
 7. If `.ccanvil/scripts/docs-check.sh` exists, run `.ccanvil/scripts/docs-check.sh audit-session --since <last-checkpoint-commit>` (extract the commit from checkpoint metadata or use the last 10 commits) and note any new findings.
 
+8. If `.ccanvil/scripts/docs-check.sh` exists, run `.ccanvil/scripts/docs-check.sh idea-count` and note any untriaged ideas.
+
 Then provide a brief summary:
 - Lifecycle state (from steps 0a/0b — aligned/stale/mismatched/no-active-spec + recommended action)
 - **Spec backlog** — count of specs by status from step 0c, and which spec (if any) is active on the current branch
+- **Ideas** — untriaged idea count from step 8 (if > 0, note: "N untriaged ideas — run /idea triage")
 - **Branch** — current branch name and whether it follows convention (from step 0d)
 - **Outstanding determinism improvements** — if the previous checkpoint's `## Determinism Review` had candidates, list them under this heading before the regular summary
 - **Post-checkpoint audit findings** — if `audit-session` found patterns since the last checkpoint, list them here

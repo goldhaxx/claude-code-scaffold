@@ -25,6 +25,7 @@ Initialize a new project using the ccanvil preset located at ~/projects/ccanvil.
    - `docs/plan.md` (copy from `.ccanvil/templates/plan.md`)
    - `docs/checkpoint.md` (copy from `.ccanvil/templates/checkpoint.md`)
    - `docs/specs/` (empty directory for spec backlog)
+   - `docs/roadmap.md` (copy from `.ccanvil/templates/roadmap.md`)
 8. Copy the ISSUE_TEMPLATE directory (not covered by sync patterns):
    ```bash
    mkdir -p .github/ISSUE_TEMPLATE

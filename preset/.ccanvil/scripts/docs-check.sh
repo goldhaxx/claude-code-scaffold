@@ -945,6 +945,136 @@ cmd_config_get() {
 }
 
 # ---------------------------------------------------------------------------
+# Idea management
+# ---------------------------------------------------------------------------
+
+cmd_idea_add() {
+  local text="${1:?Usage: idea-add <text> [docs-dir]}"
+  local docs_dir="${2:-$DEFAULT_DOCS_DIR}"
+  local ideas_file="$docs_dir/ideas.md"
+  local date_str
+  date_str=$(date +%Y-%m-%d)
+
+  # Create file with header if it doesn't exist
+  if [[ ! -f "$ideas_file" ]]; then
+    mkdir -p "$docs_dir"
+    echo "# Ideas" > "$ideas_file"
+    echo "" >> "$ideas_file"
+  fi
+
+  echo "- [ ] ${date_str}: ${text} <!-- status:new -->" >> "$ideas_file"
+  echo "Captured: $text"
+}
+
+cmd_idea_list() {
+  local filter_status=""
+  local docs_dir="$DEFAULT_DOCS_DIR"
+
+  # Parse args
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --status) filter_status="$2"; shift 2 ;;
+      *) docs_dir="$1"; shift ;;
+    esac
+  done
+
+  local ideas_file="$docs_dir/ideas.md"
+  local result="[]"
+
+  if [[ ! -f "$ideas_file" ]]; then
+    echo "$result"
+    return 0
+  fi
+
+  local line_num=0
+  local idea_num=0
+  while IFS= read -r line; do
+    line_num=$((line_num + 1))
+    # Match idea lines: - [ ] or - [x] followed by date: text <!-- status:xxx -->
+    if [[ "$line" =~ ^-\ \[(.)\]\ ([0-9]{4}-[0-9]{2}-[0-9]{2}):\ (.*)\ \<!--\ status:([a-z:A-Z0-9_-]+)\ --\> ]]; then
+      idea_num=$((idea_num + 1))
+      local date="${BASH_REMATCH[2]}"
+      local text="${BASH_REMATCH[3]}"
+      local status="${BASH_REMATCH[4]}"
+
+      # Apply filter
+      if [[ -n "$filter_status" && "$status" != "$filter_status" ]]; then
+        continue
+      fi
+
+      result=$(echo "$result" | jq --arg d "$date" --arg t "$text" --arg s "$status" --argjson n "$idea_num" \
+        '. + [{"num": $n, "date": $d, "text": $t, "status": $s}]')
+    fi
+  done < "$ideas_file"
+
+  echo "$result" | jq '.'
+}
+
+cmd_idea_count() {
+  local docs_dir="${1:-$DEFAULT_DOCS_DIR}"
+  local ideas_file="$docs_dir/ideas.md"
+
+  if [[ ! -f "$ideas_file" ]]; then
+    jq -n '{"total":0,"new":0,"promoted":0,"dismissed":0,"merged":0}'
+    return 0
+  fi
+
+  local total=0 new=0 promoted=0 dismissed=0 merged=0
+  while IFS= read -r line; do
+    if [[ "$line" =~ \<!--\ status:([a-z:A-Z0-9_-]+)\ --\> ]]; then
+      local status="${BASH_REMATCH[1]}"
+      total=$((total + 1))
+      case "$status" in
+        new) new=$((new + 1)) ;;
+        promoted) promoted=$((promoted + 1)) ;;
+        dismissed) dismissed=$((dismissed + 1)) ;;
+        merged*) merged=$((merged + 1)) ;;
+      esac
+    fi
+  done < "$ideas_file"
+
+  jq -n --argjson t "$total" --argjson n "$new" --argjson p "$promoted" --argjson d "$dismissed" --argjson m "$merged" \
+    '{"total":$t,"new":$n,"promoted":$p,"dismissed":$d,"merged":$m}'
+}
+
+cmd_idea_update() {
+  local idea_num="${1:?Usage: idea-update <idea-number> <status> [docs-dir]}"
+  local new_status="${2:?Usage: idea-update <idea-number> <status> [docs-dir]}"
+  local docs_dir="${3:-$DEFAULT_DOCS_DIR}"
+  local ideas_file="$docs_dir/ideas.md"
+
+  [[ -f "$ideas_file" ]] || { echo "ERROR: $ideas_file not found" >&2; exit 1; }
+
+  # Find the Nth idea line and update it
+  local current_num=0
+  local target_line=0
+  local line_num=0
+  while IFS= read -r line; do
+    line_num=$((line_num + 1))
+    if [[ "$line" =~ ^-\ \[.\].*\<!--\ status: ]]; then
+      current_num=$((current_num + 1))
+      if [[ "$current_num" -eq "$idea_num" ]]; then
+        target_line=$line_num
+        break
+      fi
+    fi
+  done < "$ideas_file"
+
+  if [[ "$target_line" -eq 0 ]]; then
+    echo "ERROR: idea #$idea_num not found" >&2
+    exit 1
+  fi
+
+  # Update the status and check the box
+  sed -i '' "${target_line}s/\[ \]/[x]/" "$ideas_file" 2>/dev/null || \
+    sed -i "${target_line}s/\[ \]/[x]/" "$ideas_file"
+  sed -i '' "${target_line}s/status:[a-zA-Z0-9:_-]*/status:${new_status}/" "$ideas_file" 2>/dev/null || \
+    sed -i "${target_line}s/status:[a-zA-Z0-9:_-]*/status:${new_status}/" "$ideas_file"
+
+  echo "Updated idea #$idea_num to $new_status"
+}
+
+# ---------------------------------------------------------------------------
 # Dispatch
 # ---------------------------------------------------------------------------
 
@@ -961,8 +1091,12 @@ case "$cmd" in
   activate)      cmd_activate "$@" ;;
   complete)      cmd_complete "$@" ;;
   land)          cmd_land "$@" ;;
+  idea-add)      cmd_idea_add "$@" ;;
+  idea-list)     cmd_idea_list "$@" ;;
+  idea-count)    cmd_idea_count "$@" ;;
+  idea-update)   cmd_idea_update "$@" ;;
   *)
-    echo "Usage: docs-check.sh {status|validate|recommend|audit-session|config-get|list-specs|activate|complete|land} [args...]" >&2
+    echo "Usage: docs-check.sh {status|validate|recommend|audit-session|config-get|list-specs|activate|complete|land|idea-add|idea-list|idea-count|idea-update} [args...]" >&2
     exit 1
     ;;
 esac
