@@ -22,7 +22,7 @@ If the argument is NOT `list` or `triage`, treat everything after `/idea` as the
 ## List
 
 1. Run: `bash .ccanvil/scripts/docs-check.sh idea-list`
-2. Display as a table: # | Date | Idea | Status
+2. Display as a table: ID | Created | Idea | Status
 
 ## Triage
 
@@ -35,7 +35,7 @@ If the argument is NOT `list` or `triage`, treat everything after `/idea` as the
    - **park** — add to roadmap Horizon section (good idea, not yet)
    - **dismiss** — not aligned with project direction
 5. Present recommendations as a table. Ask for approval.
-6. For each approved recommendation, run: `bash .ccanvil/scripts/docs-check.sh idea-update <num> <status>`
+6. For each approved recommendation, run: `bash .ccanvil/scripts/docs-check.sh idea-update <uid> <status>`
 7. For promoted ideas, create the Linear ticket.
 
 <!-- NODE-SPECIFIC-START -->

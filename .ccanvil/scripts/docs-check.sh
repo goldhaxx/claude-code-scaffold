@@ -1042,8 +1042,10 @@ cmd_idea_add() {
   local text="${1:?Usage: idea-add <text> [docs-dir]}"
   local docs_dir="${2:-$DEFAULT_DOCS_DIR}"
   local ideas_file="$docs_dir/ideas.md"
-  local date_str
-  date_str=$(date +%Y-%m-%d)
+  local uid epoch
+
+  uid=$(head -c 2 /dev/urandom | xxd -p)
+  epoch=$(date +%s)
 
   # Create file with header if it doesn't exist
   if [[ ! -f "$ideas_file" ]]; then
@@ -1052,7 +1054,7 @@ cmd_idea_add() {
     echo "" >> "$ideas_file"
   fi
 
-  echo "- [ ] ${date_str}: ${text} <!-- status:new -->" >> "$ideas_file"
+  echo "- [ ] ${uid} ${epoch}: ${text} <!-- status:new -->" >> "$ideas_file"
   echo "Captured: $text"
 }
 
@@ -1076,25 +1078,34 @@ cmd_idea_list() {
     return 0
   fi
 
-  local line_num=0
   local idea_num=0
   while IFS= read -r line; do
-    line_num=$((line_num + 1))
-    # Match idea lines: - [ ] or - [x] followed by date: text <!-- status:xxx -->
-    if [[ "$line" =~ ^-\ \[(.)\]\ ([0-9]{4}-[0-9]{2}-[0-9]{2}):\ (.*)\ \<!--\ status:([a-z:A-Z0-9_-]+)\ --\> ]]; then
+    local id="" created="" text="" status=""
+
+    # New format: - [ ] <uid> <epoch>: text <!-- status:xxx -->
+    if [[ "$line" =~ ^-\ \[(.)\]\ ([0-9a-f]{4})\ ([0-9]+):\ (.*)\ \<!--\ status:([a-z:A-Z0-9_-]+)\ --\> ]]; then
+      id="${BASH_REMATCH[2]}"
+      created="${BASH_REMATCH[3]}"
+      text="${BASH_REMATCH[4]}"
+      status="${BASH_REMATCH[5]}"
+    # Legacy format: - [ ] YYYY-MM-DD: text <!-- status:xxx -->
+    elif [[ "$line" =~ ^-\ \[(.)\]\ ([0-9]{4}-[0-9]{2}-[0-9]{2}):\ (.*)\ \<!--\ status:([a-z:A-Z0-9_-]+)\ --\> ]]; then
       idea_num=$((idea_num + 1))
-      local date="${BASH_REMATCH[2]}"
-      local text="${BASH_REMATCH[3]}"
-      local status="${BASH_REMATCH[4]}"
-
-      # Apply filter
-      if [[ -n "$filter_status" && "$status" != "$filter_status" ]]; then
-        continue
-      fi
-
-      result=$(echo "$result" | jq --arg d "$date" --arg t "$text" --arg s "$status" --argjson n "$idea_num" \
-        '. + [{"num": $n, "date": $d, "text": $t, "status": $s}]')
+      id="$idea_num"
+      created="${BASH_REMATCH[2]}"
+      text="${BASH_REMATCH[3]}"
+      status="${BASH_REMATCH[4]}"
+    else
+      continue
     fi
+
+    # Apply filter
+    if [[ -n "$filter_status" && "$status" != "$filter_status" ]]; then
+      continue
+    fi
+
+    result=$(echo "$result" | jq --arg i "$id" --arg c "$created" --arg t "$text" --arg s "$status" \
+      '. + [{"id": $i, "created": $c, "text": $t, "status": $s}]')
   done < "$ideas_file"
 
   echo "$result" | jq '.'
@@ -1128,30 +1139,46 @@ cmd_idea_count() {
 }
 
 cmd_idea_update() {
-  local idea_num="${1:?Usage: idea-update <idea-number> <status> [docs-dir]}"
-  local new_status="${2:?Usage: idea-update <idea-number> <status> [docs-dir]}"
+  local idea_ref="${1:?Usage: idea-update <uid-or-number> <status> [docs-dir]}"
+  local new_status="${2:?Usage: idea-update <uid-or-number> <status> [docs-dir]}"
   local docs_dir="${3:-$DEFAULT_DOCS_DIR}"
   local ideas_file="$docs_dir/ideas.md"
 
   [[ -f "$ideas_file" ]] || { echo "ERROR: $ideas_file not found" >&2; exit 1; }
 
-  # Find the Nth idea line and update it
-  local current_num=0
   local target_line=0
   local line_num=0
-  while IFS= read -r line; do
-    line_num=$((line_num + 1))
-    if [[ "$line" =~ ^-\ \[.\].*\<!--\ status: ]]; then
-      current_num=$((current_num + 1))
-      if [[ "$current_num" -eq "$idea_num" ]]; then
+
+  # Try UID match first (4-char hex), then fall back to numeric index
+  if [[ "$idea_ref" =~ ^[0-9a-f]{4}$ ]]; then
+    # UID lookup
+    while IFS= read -r line; do
+      line_num=$((line_num + 1))
+      if [[ "$line" =~ ^-\ \[.\]\ ${idea_ref}\  ]]; then
         target_line=$line_num
         break
       fi
-    fi
-  done < "$ideas_file"
+    done < "$ideas_file"
+  fi
+
+  # Fall back to numeric index if UID not found or ref is numeric
+  if [[ "$target_line" -eq 0 && "$idea_ref" =~ ^[0-9]+$ ]]; then
+    local current_num=0
+    line_num=0
+    while IFS= read -r line; do
+      line_num=$((line_num + 1))
+      if [[ "$line" =~ ^-\ \[.\].*\<!--\ status: ]]; then
+        current_num=$((current_num + 1))
+        if [[ "$current_num" -eq "$idea_ref" ]]; then
+          target_line=$line_num
+          break
+        fi
+      fi
+    done < "$ideas_file"
+  fi
 
   if [[ "$target_line" -eq 0 ]]; then
-    echo "ERROR: idea #$idea_num not found" >&2
+    echo "ERROR: idea '$idea_ref' not found" >&2
     exit 1
   fi
 
@@ -1161,7 +1188,7 @@ cmd_idea_update() {
   sed -i '' "${target_line}s/status:[a-zA-Z0-9:_-]*/status:${new_status}/" "$ideas_file" 2>/dev/null || \
     sed -i "${target_line}s/status:[a-zA-Z0-9:_-]*/status:${new_status}/" "$ideas_file"
 
-  echo "Updated idea #$idea_num to $new_status"
+  echo "Updated idea $idea_ref to $new_status"
 }
 
 # ---------------------------------------------------------------------------
