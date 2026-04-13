@@ -15,9 +15,10 @@
 
 | Command | When | What it does |
 |---------|------|-------------|
-| `/catchup` | After `/clear` | Reads checkpoint + git state, reports status |
+| `/catchup` | After `/compact` or `/clear` | Reads checkpoint + git state, reports status |
 | *"Checkpoint this"* | Pausing work | Writes state to `docs/checkpoint.md`, commits |
-| `/clear` | Between tasks | Resets context (built-in) |
+| `/compact` | Between tasks | Compresses context, retains summary (built-in) |
+| `/clear` | Full reset (rare) | Resets context entirely (built-in) |
 | `/compact` | Context heavy | Summarizes context to free space (built-in) |
 | `/cost` | Monitoring | Shows token usage (built-in) |
 

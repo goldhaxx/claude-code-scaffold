@@ -16,7 +16,7 @@ flowchart TD
     REVIEW["5. REVIEW<br/><i>/review spawns code-reviewer agent</i>"]
     REV_FB{"Issues found?"}
     FIX["Fix issues"]
-    DONE["6. DONE<br/><i>/clear for next feature</i>"]
+    DONE["6. DONE<br/><i>/compact for next feature</i>"]
 
     DESC --> SPEC
     SPEC --> REV_SPEC

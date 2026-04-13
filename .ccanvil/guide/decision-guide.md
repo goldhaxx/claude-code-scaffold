@@ -14,7 +14,7 @@ flowchart TD
     Q -->|"Pull hub updates"| A6["/ccanvil-pull"]
     Q -->|"Share a local file globally"| A7["/ccanvil-promote file"]
     Q -->|"Fix TLS certificate errors"| A8["/fix-certs"]
-    Q -->|"Session feels degraded"| A9["'Checkpoint this'<br/>→ /clear → /catchup"]
+    Q -->|"Session feels degraded"| A9["'Checkpoint this'<br/>→ /compact → /catchup"]
 
     style A1 fill:#e3f2fd
     style A2 fill:#e8f4e8
@@ -29,16 +29,18 @@ flowchart TD
 flowchart TD
     Q["Context concern?"]
 
-    Q -->|"Finished a feature"| CLEAR["/clear<br/><i>Full reset, start fresh</i>"]
-    Q -->|"Need a break,<br/>coming back later"| CP["'Checkpoint this'<br/>→ /clear"]
-    Q -->|"Context at ~60%<br/>but mid-task"| COMPACT["/compact<br/><i>Summarize to free space</i>"]
-    Q -->|"Session > 30 min"| CP2["'Checkpoint this'<br/>→ /clear → /catchup → 'Continue'"]
-    Q -->|"Stuck after<br/>2 failed attempts"| STOP["STOP<br/>Write alternatives to checkpoint<br/>→ /clear → restart with better approach"]
+    Q -->|"Finished a feature"| COMPACT["/compact<br/><i>Compress context, start fresh</i>"]
+    Q -->|"Need a break,<br/>coming back later"| CP["'Checkpoint this'<br/>→ /compact"]
+    Q -->|"Context at ~60%<br/>but mid-task"| COMPACT_MID["/compact<br/><i>Summarize to free space</i>"]
+    Q -->|"Session > 30 min"| CP2["'Checkpoint this'<br/>→ /compact → /catchup → 'Continue'"]
+    Q -->|"Stuck after<br/>2 failed attempts"| STOP["STOP<br/>Write alternatives to checkpoint<br/>→ /compact → restart with better approach"]
+    Q -->|"Completely unrelated<br/>new task"| CLEAR["/clear<br/><i>Full reset (rare)</i>"]
 
-    style CLEAR fill:#ffcdd2
-    style CP fill:#fff3e0
     style COMPACT fill:#e3f2fd
+    style CP fill:#fff3e0
+    style COMPACT_MID fill:#e3f2fd
     style STOP fill:#ffcdd2,stroke:#333,stroke-width:2px
+    style CLEAR fill:#ffcdd2
 ```
 
 ## "When should I sync with the hub?"

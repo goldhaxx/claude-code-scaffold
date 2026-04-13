@@ -33,7 +33,7 @@ Spec → Activate → Plan → Implement → Complete → Merge → Land
 ## Session Discipline
 
 - Each session has ONE objective. State it explicitly at the start.
-- **Forward momentum:** After completing work, always close with an explicit directive — not just a summary. The user should never have to ask "what's next?" End with: one-line summary → clear next action (e.g., "Session complete. `/clear` → `/catchup` when ready for [next thing]."). If there's a choice, present options with a recommendation.
+- **Forward momentum:** After completing work, always close with an explicit directive — not just a summary. The user should never have to ask "what's next?" End with: one-line summary → clear next action (e.g., "Session complete. `/compact` when ready for [next thing]."). If there's a choice, present options with a recommendation.
 - If a session exceeds ~30 minutes of complex work, proactively suggest checkpointing.
 
 ## Before Writing Code
@@ -55,19 +55,19 @@ Spec → Activate → Plan → Implement → Complete → Merge → Land
   - `> Last updated: <epoch>` (using `date +%s`)
   - `> Plan hash: <hash>` (run `scripts/docs-check.sh status` and read `.plan.content_hash`)
 - **Plan before checkpoint:** If a spec exists but no plan, run `/plan` before checkpointing. Planning in warm context is cheaper than in cold context.
-- **Determinism Review at checkpoint:** Before suggesting `/clear`, perform the warm-context determinism review and fill the `## Determinism Review` section in `docs/checkpoint.md`. The checkpoint flow order is:
+- **Determinism Review at checkpoint:** Before ending a session, perform the warm-context determinism review and fill the `## Determinism Review` section in `docs/checkpoint.md`. The checkpoint flow order is:
   1. Write checkpoint content (accomplished, state, next steps)
   2. Walk through the determinism checklist (below) while you still have full session awareness
   3. Write the Determinism Review section with `operations_reviewed` and `candidates_found` counts
   4. Commit
-  5. Close with forward directive: one-line summary + explicit next action + `/clear`
-- **Determinism checklist** (review before clearing context):
+  5. Close with forward directive: one-line summary + explicit next action + `/compact`
+- **Determinism checklist** (review before compacting context):
   - (a) Did I run manual `cp`, `jq`, `shasum`, or `git -C` commands that a script should handle?
   - (b) Did I improvise a multi-step sequence that could be a single script call?
   - (c) Did I work around a missing feature in a script?
   - (d) Did I perform any operation more than once that should be automated?
   - Even if no candidates are found, write: "No candidates this session."
-- When resuming after `/clear`, read `docs/checkpoint.md` first.
+- When resuming after a context reset, read `docs/checkpoint.md` first.
 
 ## Commit Practices
 

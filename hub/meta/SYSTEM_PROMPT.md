@@ -51,7 +51,7 @@ project-root/
 │   │   ├── code-reviewer.md           # Code review sub-agent
 │   │   └── spec-writer.md             # Specification writing sub-agent
 │   └── commands/
-│       ├── catchup.md                 # /catchup — Resume after /clear
+│       ├── catchup.md                 # /catchup — Resume after /compact or /clear
 │       ├── plan.md                    # /plan — Create implementation plan
 │       └── review.md                  # /review — Review uncommitted changes
 └── docs/

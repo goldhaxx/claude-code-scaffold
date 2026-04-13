@@ -19,7 +19,7 @@ flowchart TD
     subgraph "Ending a Session"
         CP["'Checkpoint this'<br/><i>writes docs/checkpoint.md</i>"]
         COMMIT["Commit current work"]
-        CLEAR["/clear<br/><i>reset context</i>"]
+        COMPACT["/compact<br/><i>compress context</i>"]
     end
 
     NEW --> WORK
@@ -31,20 +31,20 @@ flowchart TD
     LONG -->|"Yes — checkpoint"| CP
     LONG -->|"No — keep going"| WORK
     CP --> COMMIT
-    COMMIT --> CLEAR
+    COMMIT --> COMPACT
 
-    CLEAR -->|"Next session"| RESUME
+    COMPACT -->|"Next session"| RESUME
 
     style NEW fill:#e3f2fd,stroke:#333,stroke-width:2px
     style RESUME fill:#e3f2fd,stroke:#333,stroke-width:2px
-    style CLEAR fill:#ffcdd2,stroke:#333,stroke-width:2px
+    style COMPACT fill:#e3f2fd,stroke:#333,stroke-width:2px
     style STUCK fill:#fffde7
     style LONG fill:#fffde7
 ```
 
 ## What `/catchup` reads
 
-When you run `/catchup` after a `/clear`, Claude reads these sources to orient:
+When you run `/catchup` after `/compact` (or `/clear`), Claude reads these sources to orient:
 
 | Source | Purpose |
 |--------|---------|
@@ -56,17 +56,18 @@ When you run `/catchup` after a `/clear`, Claude reads these sources to orient:
 
 It reports the state but does NOT start implementing. You say "Continue" when ready.
 
-## When to `/clear`
+## When to reset context
 
 | Situation | Action |
 |-----------|--------|
-| Finished a feature | `/clear` → start fresh |
-| Switching to a different task | Checkpoint → `/clear` → new task |
-| Session feels slow or confused | Checkpoint → `/clear` → `/catchup` → "Continue" |
-| After ~30 minutes of complex work | Checkpoint → `/clear` → `/catchup` |
-| Context at ~60% | `/compact` first, or checkpoint → `/clear` |
+| Finished a feature | `/compact` → start fresh |
+| Switching to a different task | Checkpoint → `/compact` → new task |
+| Session feels slow or confused | Checkpoint → `/compact` → `/catchup` → "Continue" |
+| After ~30 minutes of complex work | Checkpoint → `/compact` |
+| Context at ~60% | `/compact` proactively |
+| Completely unrelated new task | `/clear` for full reset (rare) |
 
-**Why aggressive clearing works:** A fresh 30-minute session with clear context outperforms a degraded 3-hour session. Structured prompts preserve 92% fidelity through compaction vs 71% for narrative prompts.
+**Why aggressive compaction works:** `/compact` preserves a compressed summary of the conversation, reducing cold-start penalty when resuming. Structured prompts preserve 92% fidelity through compaction vs 71% for narrative prompts. Use `/clear` only when you want a truly blank slate.
 
 <!-- NODE-SPECIFIC-START -->
 <!-- Add project-specific content below this line. -->

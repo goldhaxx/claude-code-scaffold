@@ -24,7 +24,7 @@ Each level is optional. ccanvil never requires external tools — it adapts to w
 
 - **Spec-first workflow** — acceptance criteria before code, every time
 - **TDD enforcement** — red-green-refactor cycle with automatic verification
-- **Context management** — hierarchical loading, aggressive clearing, checkpoint/resume
+- **Context management** — hierarchical loading, aggressive compaction, checkpoint/resume
 - **Modular tool integration** — pluggable providers for backlog, specs, plans, and more. Local files by default; MCP, CLIs, and APIs when you're ready
 - **Bi-directional sync** — hub/node architecture with section-merge, conflict resolution, lockfile tracking
 - **Security audit** — deterministic PII/secrets scanner, pre-push hook, integrated into reviews
@@ -113,7 +113,7 @@ You're set. Use the ccanvil workflow:
 /plan                → writes docs/plan.md with ordered TDD steps
 "Start Step 1"       → enters red-green-refactor cycle
 /review              → code review before committing
-/catchup             → resume after /clear
+/catchup             → resume after /compact
 ```
 
 ---
@@ -157,7 +157,7 @@ Copy the whole directory with `cp -r .claude ./.claude`. Here's what's inside:
 | `.claude/agents/code-reviewer.md` | `./.claude/agents/code-reviewer.md` | A sub-agent that reviews uncommitted changes for correctness, test coverage, security issues, performance, and convention adherence. Runs in its own isolated context window. Invoked by the `/review` command. | Rarely. Modify if you want to add project-specific review criteria. |
 | `.claude/agents/spec-writer.md` | `./.claude/agents/spec-writer.md` | A sub-agent that analyzes feature requests and produces structured specifications with testable acceptance criteria. Runs in its own isolated context window. Writes output to `docs/spec.md`. | Rarely. Modify if your team uses a different specification format. |
 | `.claude/agents/ccanvil-differ.md` | `./.claude/agents/ccanvil-differ.md` | A sub-agent that classifies project changes as generalizable vs project-specific. Used by `/ccanvil-push` to determine what should be upstreamed. | Rarely. Modify if you want to change classification heuristics. |
-| `.claude/commands/catchup.md` | `./.claude/commands/catchup.md` | Defines the `/catchup` slash command. When invoked, reads `docs/checkpoint.md`, recent git history, and current diff to orient after a `/clear` reset. Does NOT implement anything — it only reports status. | No. This is workflow infrastructure. |
+| `.claude/commands/catchup.md` | `./.claude/commands/catchup.md` | Defines the `/catchup` slash command. When invoked, reads `docs/checkpoint.md`, recent git history, and current diff to orient after a `/compact` or `/clear`. Does NOT implement anything — it only reports status. | No. This is workflow infrastructure. |
 | `.claude/commands/plan.md` | `./.claude/commands/plan.md` | Defines the `/plan` slash command. When invoked, reads the spec and codebase, then writes an ordered implementation plan to `docs/plan.md`. Each step is sized for one TDD cycle. Does NOT implement anything — it only plans. | No. This is workflow infrastructure. |
 | `.claude/commands/review.md` | `./.claude/commands/review.md` | Defines the `/review` slash command. When invoked, delegates to the code-reviewer sub-agent to review all uncommitted changes. | No. This is workflow infrastructure. |
 | `.claude/commands/ccanvil-status.md` | `./.claude/commands/ccanvil-status.md` | `/ccanvil-status` — show sync state between project and hub. | No. Sync infrastructure. |
@@ -249,7 +249,7 @@ You:  "Looks good. Let's start with Step 1."
 ### Resuming after a break
 
 ```
-You:  /clear
+You:  /compact
 You:  /catchup
 
 Claude: "Last session completed Steps 1-3 of the auth feature.
@@ -281,13 +281,13 @@ You:  "I need to pause auth and fix a critical bug in billing."
          ↓ Claude writes checkpoint
 
 Claude: "Checkpointed auth progress to docs/checkpoint.md.
-         Committed current work. Ready for /clear."
+         Committed current work. Ready for /compact."
 
-You:  /clear
+You:  /compact
 You:  "Fix the billing calculation bug: invoice totals are off by 1 cent
        on orders with 3+ line items."
 
-         ↓ Fresh session, full context budget for the bug fix
+         ↓ Compressed context, full budget for the bug fix
 ```
 
 ### Syncing preset changes between projects
@@ -354,8 +354,8 @@ You:  "Yes"
 | `/ccanvil-audit` | Analyze preset for stochastic-to-deterministic improvements |
 | `/security-audit` | Scan repo for PII, secrets, and sensitive information |
 | `/fix-certs` | Diagnose and fix Cloudflare WARP TLS certificate issues |
-| `/clear` | Reset context (built-in). Use between tasks. |
-| `/compact` | Summarize context to free space (built-in). Use proactively at ~60%. |
+| `/compact` | Compress context, retaining summary (built-in). Default between tasks. |
+| `/clear` | Full context reset (built-in). Use only for completely unrelated tasks. |
 | `/cost` | Show token usage (built-in). Monitor your burn rate. |
 
 ---
@@ -372,7 +372,7 @@ Without tests, Claude's only verification is its own judgment — which degrades
 LLMs perform best with clear, constrained objectives. A spec with binary acceptance criteria transforms a vague request into a concrete implementation target. The spec-first approach front-loads the thinking, which is the part humans do best.
 
 ### 4. Small sessions beat long sessions
-A fresh 30-minute session with clear context outperforms a degraded 3-hour session every time. Commit early, checkpoint often, /clear aggressively. Each session should have ONE objective.
+A fresh 30-minute session with clear context outperforms a degraded 3-hour session every time. Commit early, checkpoint often, /compact aggressively. Each session should have ONE objective.
 
 ### 5. Hooks for determinism, rules for judgment
 Use hooks for things that must ALWAYS happen — formatting, security blocks, lint checks. Use rules for things requiring judgment — coding patterns, architectural decisions. Use `.claude/lint.json` to configure project-specific linters and formatters without modifying hub scripts.
@@ -455,7 +455,7 @@ Rules that apply when working in this area of the codebase.
 - Use property-based testing for complex logic
 
 **Claude keeps making the same mistake:**
-- After 2 failed attempts, `/clear` and write a better initial prompt
+- After 2 failed attempts, `/compact` and write a better initial prompt
 - Add the mistake as a "Do Not" rule in CLAUDE.md
 - Check if a hook could prevent the mistake deterministically
 

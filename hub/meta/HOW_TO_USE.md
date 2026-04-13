@@ -105,13 +105,13 @@ Just say:
 "Checkpoint this and stop."
 ```
 
-Claude Code writes progress, current state, and next steps to `docs/checkpoint.md`, commits any uncommitted work, and tells you it's ready for `/clear`.
+Claude Code writes progress, current state, and next steps to `docs/checkpoint.md`, commits any uncommitted work, and tells you it's ready for `/compact`.
 
 ```
-/clear
+/compact
 ```
 
-This resets context. Your progress is safe in git and the checkpoint file.
+This compresses context while retaining a summary. Your progress is safe in git and the checkpoint file.
 
 ### Switching to something urgent
 ```
@@ -119,9 +119,9 @@ This resets context. Your progress is safe in git and the checkpoint file.
 throws a 500 error when the session cookie is expired."
 ```
 
-Claude Code checkpoints the current work, and you start fresh on the bug:
+Claude Code checkpoints the current work, and you compress context for the bug:
 ```
-/clear
+/compact
 "Fix the login 500 error when the session cookie is expired."
 ```
 
@@ -135,8 +135,9 @@ Most of the time, natural language is all you need. The preset's rules and agent
 |---|---|---|
 | `/plan` | Creates an ordered implementation plan from the current spec | After you've reviewed and approved `docs/spec.md` |
 | `/review` | Spawns a sub-agent to review all uncommitted changes | Before committing significant work — catches issues in a fresh context |
-| `/catchup` | Reads checkpoint + git state, reports where things stand | After a `/clear` or when starting a new session on an existing project |
-| `/clear` | Resets the context window (built-in) | Between tasks, when switching focus, or when a session feels degraded |
+| `/catchup` | Reads checkpoint + git state, reports where things stand | After `/compact` or `/clear`, or when starting a new session |
+| `/compact` | Compresses context, retaining summary (built-in) | Between tasks, when switching focus, or when a session feels degraded |
+| `/clear` | Full context reset (built-in) | Only for completely unrelated tasks (rare) |
 
 You don't need to type `/spec` — just describe what you want and Claude Code will spec it. You don't need to type `/tdd` — the preset's rules enforce the test-first workflow automatically. You don't need to type `/commit` — Claude Code commits after each passing TDD cycle.
 
@@ -219,12 +220,12 @@ Claude Code will plan the migration, update affected tests, modify the implement
 
 ```
 "Checkpoint this."
-/clear
+/compact
 /catchup
 "Continue."
 ```
 
-Fresh context fixes most issues. ccanvil is designed for short, focused sessions — not marathon coding.
+Compressed context fixes most issues. ccanvil is designed for short, focused sessions — not marathon coding.
 
 ---
 
@@ -253,8 +254,8 @@ Fresh context fixes most issues. ccanvil is designed for short, focused sessions
  │                                                     │
  └─────────────────────────────────────────────────────┘
 
- Between features: /clear to reset context
- Between sessions: "checkpoint" → /clear → /catchup to resume
+ Between features: /compact to compress context
+ Between sessions: "checkpoint" → /compact → /catchup to resume
 ```
 
 ---
@@ -265,7 +266,7 @@ Fresh context fixes most issues. ccanvil is designed for short, focused sessions
 
 **The CLAUDE.md fills in over time.** It starts mostly empty and grows as technical decisions are made. This is by design — decisions are deferred until there's enough context to make them well.
 
-**You `/clear` a lot.** Short focused sessions produce better results than long degraded ones. If you're clearing context 5–10 times in a day, you're doing it right.
+**You `/compact` a lot.** Short focused sessions produce better results than long degraded ones. If you're compacting context 5–10 times in a day, you're doing it right.
 
 **Specs feel like overhead at first.** They're not. A 5-minute spec review prevents 30 minutes of building the wrong thing. This is where your attention has the highest return.
 
