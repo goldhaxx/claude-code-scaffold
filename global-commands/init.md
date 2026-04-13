@@ -52,8 +52,8 @@ Initialize a new project using the ccanvil preset located at ~/projects/ccanvil.
    - Scan `.claude/rules/`, `.claude/commands/`, `.claude/agents/`, `.claude/skills/` for any files that are NOT from the preset (pre-existing local files).
    - If found: add a summary listing each local file and its purpose below the `NODE-SPECIFIC-START` delimiter.
    - If the project is empty (fresh init): leave the placeholder as-is.
-14. Generate the lockfile by running: `./.ccanvil/scripts/ccanvil-sync.sh init ~/projects/ccanvil`
-    This creates `.ccanvil/ccanvil.lock` which tracks the sync state between this project and the hub.
+14. Generate the lockfile and register with the hub: `./.ccanvil/scripts/ccanvil-sync.sh init ~/projects/ccanvil`
+    This creates `.ccanvil/ccanvil.lock` and automatically registers the project in the hub's registry.
 15. Initialize git and install hooks:
     ```bash
     git init
