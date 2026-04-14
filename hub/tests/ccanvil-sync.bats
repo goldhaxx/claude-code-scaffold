@@ -1821,3 +1821,223 @@ EOF
 
   rm -rf "$FRESH"
 }
+
+
+# =========================================================================
+# broadcast tests
+# =========================================================================
+
+@test "broadcast: empty registry prints message and exits 0" {
+  cd "$NODE"
+
+  # Overwrite registry with empty nodes
+  echo '{"nodes":{}}' > "$HUB/.ccanvil/registry.json"
+  git -C "$HUB" add -A && git -C "$HUB" commit -q -m "empty registry"
+
+  run bash "$NODE/.ccanvil/scripts/ccanvil-sync.sh" broadcast
+  [ "$status" -eq 0 ]
+  echo "$output" | grep -q "No registered nodes"
+}
+
+@test "broadcast: unreachable node reports and continues" {
+  cd "$NODE"
+
+  # Add a fake node path to registry
+  local fake_path="/tmp/nonexistent-node-$(date +%s)"
+  local tmp; tmp=$(mktemp)
+  jq --arg p "$fake_path" '.nodes[$p] = {"name": "ghost", "registered_at": "1234"}' \
+    "$HUB/.ccanvil/registry.json" > "$tmp" && mv "$tmp" "$HUB/.ccanvil/registry.json"
+  git -C "$HUB" add -A && git -C "$HUB" commit -q -m "add fake node"
+
+  run bash "$NODE/.ccanvil/scripts/ccanvil-sync.sh" broadcast
+  [ "$status" -eq 0 ]
+  echo "$output" | grep -q "Unreachable: 1"
+  echo "$output" | grep -q "path does not exist"
+}
+
+@test "broadcast: skips node with dirty working tree" {
+  cd "$NODE"
+
+  # Create a second node that has uncommitted changes
+  local NODE2
+  NODE2=$(mktemp -d)
+  cp -R "$HUB/.claude" "$NODE2/.claude"
+  mkdir -p "$NODE2/.ccanvil/scripts"
+  cp "$SCRIPT" "$NODE2/.ccanvil/scripts/ccanvil-sync.sh"
+  cp "$HUB/CLAUDE.md" "$NODE2/CLAUDE.md"
+  mkdir -p "$NODE2/.ccanvil/guide"
+  cp "$HUB/.ccanvil/guide/index.md" "$NODE2/.ccanvil/guide/index.md"
+  git -C "$NODE2" init -q
+  git -C "$NODE2" add -A && git -C "$NODE2" commit -q -m "init node2"
+  cd "$NODE2"
+  bash "$NODE2/.ccanvil/scripts/ccanvil-sync.sh" init "$HUB"
+  git -C "$NODE2" add -A && git -C "$NODE2" commit -q -m "ccanvil init"
+  git -C "$HUB" add -A && git -C "$HUB" commit -q -m "register node2"
+
+  # Make node2 dirty
+  echo "dirty" > "$NODE2/dirty-file.txt"
+
+  cd "$NODE"
+  run bash "$NODE/.ccanvil/scripts/ccanvil-sync.sh" broadcast
+  [ "$status" -eq 0 ]
+  echo "$output" | grep -q "Skipped: 1"
+
+  rm -rf "$NODE2"
+}
+
+@test "broadcast: syncs auto-updates to node" {
+  cd "$NODE"
+
+  # Update a hub file
+  cat > "$HUB/.claude/rules/tdd.md" <<'EOF'
+# TDD Rules v2
+
+Updated hub content.
+
+<!-- NODE-SPECIFIC-START -->
+<!-- Add project-specific content below this line. -->
+<!-- Hub content above is updated via /ccanvil-pull. -->
+EOF
+  git -C "$HUB" add -A && git -C "$HUB" commit -q -m "update tdd rules"
+
+  run bash "$NODE/.ccanvil/scripts/ccanvil-sync.sh" broadcast
+  [ "$status" -eq 0 ]
+  echo "$output" | grep -q "Synced: 1"
+
+  # Verify the node was updated
+  grep -q "TDD Rules v2" "$NODE/.claude/rules/tdd.md"
+}
+
+@test "broadcast: section-merges preserve node content" {
+  cd "$NODE"
+
+  # Node has customized the node section
+  cat > "$NODE/.claude/rules/tdd.md" <<'EOF'
+# TDD Rules
+
+Always test first.
+
+<!-- NODE-SPECIFIC-START -->
+<!-- Add project-specific content below this line. -->
+
+## My Custom Tests
+Use pytest.
+EOF
+  git -C "$NODE" add -A && git -C "$NODE" commit -q -m "customize tdd"
+
+  # Hub updates the hub section
+  cat > "$HUB/.claude/rules/tdd.md" <<'EOF'
+# TDD Rules v3
+
+Always test first. Updated.
+
+<!-- NODE-SPECIFIC-START -->
+<!-- Add project-specific content below this line. -->
+<!-- Hub content above is updated via /ccanvil-pull. -->
+EOF
+  git -C "$HUB" add -A && git -C "$HUB" commit -q -m "update tdd v3"
+
+  run bash "$NODE/.ccanvil/scripts/ccanvil-sync.sh" broadcast
+  [ "$status" -eq 0 ]
+
+  # Verify hub content updated AND node content preserved
+  grep -q "TDD Rules v3" "$NODE/.claude/rules/tdd.md"
+  grep -q "My Custom Tests" "$NODE/.claude/rules/tdd.md"
+}
+
+@test "broadcast: collects and reports conflicts" {
+  cd "$NODE"
+
+  # Both hub and node modify tdd.md (a whole-file scenario without section-merge)
+  # First, node modifies tdd.md
+  cat > "$NODE/.claude/rules/tdd.md" <<'EOF'
+# TDD Rules — Node Version
+
+My local changes.
+EOF
+  git -C "$NODE" add -A && git -C "$NODE" commit -q -m "local tdd"
+
+  # Update lockfile to reflect local_hash changed (simulate node edit after sync)
+  local node_hash
+  node_hash=$(shasum -a 256 "$NODE/.claude/rules/tdd.md" | awk '{print $1}')
+  local tmp; tmp=$(mktemp)
+  jq --arg f ".claude/rules/tdd.md" --arg lh "$node_hash" \
+    '.files[$f].local_hash = $lh | .files[$f].status = "modified"' \
+    "$NODE/.ccanvil/ccanvil.lock" > "$tmp" && mv "$tmp" "$NODE/.ccanvil/ccanvil.lock"
+
+  # Hub also modifies tdd.md (remove delimiter to make it a conflict, not section-merge)
+  cat > "$HUB/.claude/rules/tdd.md" <<'EOF'
+# TDD Rules — Hub Version
+
+Hub changes with no delimiter.
+EOF
+  git -C "$HUB" add -A && git -C "$HUB" commit -q -m "hub tdd"
+
+  # Commit lockfile change in node
+  git -C "$NODE" add -A && git -C "$NODE" commit -q -m "update lockfile"
+
+  run bash "$NODE/.ccanvil/scripts/ccanvil-sync.sh" broadcast
+  [ "$status" -eq 0 ]
+  echo "$output" | grep -q "Conflicts pending"
+}
+
+@test "broadcast: --dry-run makes no changes" {
+  cd "$NODE"
+
+  # Update a hub file
+  cat > "$HUB/.claude/rules/tdd.md" <<'EOF'
+# TDD Rules DRY
+
+Dry run test.
+
+<!-- NODE-SPECIFIC-START -->
+<!-- Add project-specific content below this line. -->
+<!-- Hub content above is updated via /ccanvil-pull. -->
+EOF
+  git -C "$HUB" add -A && git -C "$HUB" commit -q -m "dry run update"
+
+  # Save node file before broadcast
+  local before
+  before=$(cat "$NODE/.claude/rules/tdd.md")
+
+  run bash "$NODE/.ccanvil/scripts/ccanvil-sync.sh" broadcast --dry-run
+  [ "$status" -eq 0 ]
+  echo "$output" | grep -q "DRY-RUN"
+
+  # Verify node file unchanged
+  local after
+  after=$(cat "$NODE/.claude/rules/tdd.md")
+  [ "$before" = "$after" ]
+}
+
+@test "broadcast: registry shows last_synced as never for unsynced nodes" {
+  cd "$NODE"
+
+  run bash "$NODE/.ccanvil/scripts/ccanvil-sync.sh" registry
+  [ "$status" -eq 0 ]
+  echo "$output" | grep -q "last_synced: never"
+}
+
+@test "broadcast: updates registry with last_synced fields" {
+  cd "$NODE"
+
+  # Update a hub file to trigger sync
+  cat > "$HUB/.claude/rules/tdd.md" <<'EOF'
+# TDD Rules Updated
+
+New content for registry test.
+
+<!-- NODE-SPECIFIC-START -->
+<!-- Add project-specific content below this line. -->
+<!-- Hub content above is updated via /ccanvil-pull. -->
+EOF
+  git -C "$HUB" add -A && git -C "$HUB" commit -q -m "update for registry test"
+
+  bash "$NODE/.ccanvil/scripts/ccanvil-sync.sh" broadcast
+
+  # Verify registry has last_synced for this node
+  local node_path
+  node_path=$(cd "$NODE" && pwd)
+  jq -e --arg p "$node_path" '.nodes[$p].last_synced' "$HUB/.ccanvil/registry.json"
+  jq -e --arg p "$node_path" '.nodes[$p].last_synced_version' "$HUB/.ccanvil/registry.json"
+}

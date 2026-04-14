@@ -32,6 +32,7 @@
 | `/ccanvil-promote <file>` | Project → Hub | Promotes a local file to the hub |
 | `/ccanvil-demote <file>` | Local | Marks a hub file as local override |
 | `/ccanvil-ignore <file>` | Local | Marks file as node-only (permanently excluded from sync) |
+| `ccanvil-sync.sh broadcast [--dry-run]` | Hub → All nodes | Pushes auto-updates to all registered nodes in one pass |
 
 ## Utility Commands
 

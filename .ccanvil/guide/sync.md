@@ -218,6 +218,43 @@ flowchart TD
     style USER fill:#e3f2fd,stroke:#333,stroke-width:2px
 ```
 
+## Broadcast (Hub → All Nodes)
+
+`ccanvil-sync.sh broadcast` pushes hub updates to every registered downstream node in one pass. It runs only the deterministic phases — conflicts are collected and reported, not resolved.
+
+```mermaid
+flowchart TD
+    REG["Read registry.json"]
+    REG --> LOOP["For each node"]
+
+    subgraph PER_NODE ["Per node (deterministic)"]
+        CHECK["pre-check<br/><i>clean tree?</i>"]
+        PLAN["pull-plan<br/><i>classify changes</i>"]
+        AUTO["pull-auto<br/><i>auto-update clean files</i>"]
+        SM["pull-apply section-merge<br/><i>merge delimited files</i>"]
+        FIN["pull-finalize<br/><i>commit + version</i>"]
+        CHECK --> PLAN --> AUTO --> SM --> FIN
+    end
+
+    LOOP --> PER_NODE
+    CHECK -->|"fail"| SKIP["Skip node<br/><i>report reason</i>"]
+    FIN --> UPDATE["Update registry<br/><i>last_synced + version</i>"]
+    UPDATE --> LOOP
+
+    LOOP -->|"done"| SUMMARY["Summary<br/><i>synced / skipped / conflicts</i>"]
+
+    style PER_NODE fill:#c8e6c9,stroke:#333,stroke-width:2px
+    style SKIP fill:#ffcdd2
+    style SUMMARY fill:#e3f2fd
+```
+
+| Flag | Effect |
+|------|--------|
+| `--dry-run` | Runs full broadcast without modifying files in any node |
+| *(none)* | Applies auto-updates and section-merges, commits per node |
+
+Conflicts (files needing Claude judgment) are reported at the end. Run `/ccanvil-pull` in the specific project to resolve them.
+
 ## Sync Hardening: Guards and Dry-Run
 
 Every destructive operation in the sync system is self-validating. Guards verify preconditions immediately before execution; `--dry-run` previews changes without applying them.
