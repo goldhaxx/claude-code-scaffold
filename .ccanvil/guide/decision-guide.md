@@ -51,6 +51,7 @@ flowchart TD
 
     Q -->|"Created a useful<br/>new rule/command/agent"| PROMOTE["/ccanvil-promote file<br/><i>Share with all projects</i>"]
     Q -->|"Want to check for<br/>hub updates"| STATUS["/ccanvil-status<br/><i>then /ccanvil-pull if updates exist</i>"]
+    Q -->|"Push hub changes to<br/>all downstream nodes"| BCAST["ccanvil-sync.sh broadcast<br/><i>auto-updates + section-merges in one pass</i>"]
     Q -->|"Customized a hub file<br/>and want to keep my version"| DEMOTE["/ccanvil-demote file<br/><i>Prevents auto-update on pull</i>"]
     Q -->|"File is permanently<br/>project-specific"| IGNORE["/ccanvil-ignore file<br/><i>Excluded from all future sync</i>"]
     Q -->|"Made improvements to<br/>a modified hub file"| PUSH["/ccanvil-push<br/><i>Claude extracts generalizable parts</i>"]
@@ -61,6 +62,7 @@ flowchart TD
     style DEMOTE fill:#fff3e0
     style IGNORE fill:#ffcdd2
     style PUSH fill:#c8e6c9
+    style BCAST fill:#c8e6c9
     style PULL fill:#e3f2fd
 ```
 
