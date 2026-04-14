@@ -21,9 +21,9 @@ Autonomy & Friction Reduction — remove the friction between intent and executi
 
 ## Up Next
 
-1. **Permission optimization** — expand settings.json allow-list for hook-guarded commands (git workflow, test runners, directory creation), add new guard hooks (force-push blocker, delete guard) to maintain safety without manual approval
-2. **Downstream sync automation** — streamline the pull workflow across registered nodes; reduce the manual steps to propagate hub changes to fucina, luxlook, and future projects
-3. **Init validation** — end-to-end test of init on a fresh project with BTS-68/69 fixes applied; confirm the full flow works from empty directory to registered, syncing node
+1. **Downstream sync automation** — streamline the pull workflow across registered nodes; reduce the manual steps to propagate hub changes to fucina, luxlook, and future projects
+2. **Init validation** — end-to-end test of init on a fresh project with BTS-68/69 fixes applied; confirm the full flow works from empty directory to registered, syncing node
+3. **workflow.md budget trim** — at 102 lines (20.9% of context budget), workflow.md exceeds the 40-line rule max; split or compress
 
 ## Horizon
 
