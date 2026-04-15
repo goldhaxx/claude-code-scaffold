@@ -1021,28 +1021,27 @@ SCRIPT
 
 RULES="$BATS_TEST_DIRNAME/../../.claude/rules"
 
-@test "workflow: has determinism review checkpoint flow" {
-  run grep -c "Determinism Review" "$RULES/workflow.md"
+@test "workflow: references determinism review via self-review.md" {
+  run grep -c "Determinism review.*self-review" "$RULES/workflow.md"
   [ "$status" -eq 0 ]
   [ "$output" -ge 1 ]
 }
 
-@test "workflow: specifies review before /clear" {
-  # The rule should mention reviewing before suggesting /clear
-  run grep -c "before.*clear\|before.*context" "$RULES/workflow.md"
+@test "self-review: specifies mandatory Determinism Review section" {
+  run grep -c "Determinism Review.*mandatory" "$RULES/self-review.md"
   [ "$status" -eq 0 ]
   [ "$output" -ge 1 ]
 }
 
-@test "workflow: has the 4-item determinism checklist" {
-  # Check for the key checklist items from AC-3
-  run grep -c "manual.*cp\|jq\|shasum\|git -C" "$RULES/workflow.md"
+@test "self-review: has judgment criteria for flagging operations" {
+  # Check for the key criteria from self-review.md
+  run grep -c "computable\|script.*hook\|meaningful context" "$RULES/self-review.md"
   [ "$status" -eq 0 ]
   [ "$output" -ge 1 ]
 }
 
-@test "workflow: requires entry even when no candidates found" {
-  run grep -c "No candidates" "$RULES/workflow.md"
+@test "self-review: requires entry even when no candidates found" {
+  run grep -c "No candidates" "$RULES/self-review.md"
   [ "$status" -eq 0 ]
   [ "$output" -ge 1 ]
 }
@@ -1340,4 +1339,32 @@ EOF
   local new_count
   new_count=$(echo "$output" | jq '.ideas.new')
   [ "$new_count" -eq 2 ]
+}
+
+# ===========================================================================
+# YAML frontmatter metadata parsing
+# ===========================================================================
+
+@test "status: extracts metadata from YAML frontmatter spec" {
+  cat > "$DOCS/spec.md" <<'EOF'
+---
+Feature: yaml-feature
+Created: 1742860800
+Status: In Progress
+---
+
+## Summary
+
+This spec uses YAML frontmatter.
+EOF
+  run bash "$SCRIPT" status "$DOCS"
+  [ "$status" -eq 0 ]
+
+  spec_feature=$(echo "$output" | jq -r '.spec.feature_id')
+  spec_status=$(echo "$output" | jq -r '.spec.status')
+  spec_created=$(echo "$output" | jq -r '.spec.created')
+
+  [ "$spec_feature" = "yaml-feature" ]
+  [ "$spec_status" = "In Progress" ]
+  [ "$spec_created" = "1742860800" ]
 }

@@ -91,40 +91,70 @@ parse_metadata() {
   local status_field=""
   local spec_hash=""
   local plan_hash=""
-  local past_heading=false
 
-  while IFS= read -r line || [[ -n "$line" ]]; do
-    # Skip blank lines before heading
-    if [[ -z "$line" ]] && ! $past_heading; then
-      continue
-    fi
-    # Skip heading
-    if [[ "$line" =~ ^#\  ]] && ! $past_heading; then
-      past_heading=true
-      continue
-    fi
-    # After heading, skip blanks before blockquote
-    if $past_heading && [[ -z "$line" ]]; then
-      continue
-    fi
-    # Parse blockquote lines
-    if $past_heading && [[ "$line" =~ ^\> ]]; then
-      local value="${line#> }"
-      case "$value" in
-        Feature:*)    feature_id="${value#Feature: }" ;;
-        Created:*)    created="${value#Created: }" ;;
-        "Last updated:"*) last_updated="${value#Last updated: }" ;;
-        Status:*)     status_field="${value#Status: }" ;;
-        "Spec hash:"*) spec_hash="${value#Spec hash: }" ;;
-        "Plan hash:"*) plan_hash="${value#Plan hash: }" ;;
-      esac
-      continue
-    fi
-    # First non-blockquote line after heading = end of metadata
-    if $past_heading; then
-      break
-    fi
-  done < "$file"
+  # Detect YAML frontmatter: first non-empty line is ---
+  local first_line
+  first_line=$(head -1 "$file")
+  if [[ "$first_line" == "---" ]]; then
+    # YAML frontmatter mode: parse key: value lines until closing ---
+    local in_frontmatter=false
+    while IFS= read -r line || [[ -n "$line" ]]; do
+      if [[ "$line" == "---" ]]; then
+        if $in_frontmatter; then
+          break  # closing delimiter
+        fi
+        in_frontmatter=true
+        continue
+      fi
+      if $in_frontmatter; then
+        local key="${line%%:*}"
+        local val="${line#*: }"
+        case "$key" in
+          [Ff]eature)        feature_id="$val" ;;
+          [Cc]reated)        created="$val" ;;
+          [Ss]tatus)         status_field="$val" ;;
+          "Last updated"|"last_updated") last_updated="$val" ;;
+          "Spec hash"|"spec_hash")       spec_hash="$val" ;;
+          "Plan hash"|"plan_hash")       plan_hash="$val" ;;
+        esac
+      fi
+    done < "$file"
+  else
+    # Blockquote mode: original parser
+    local past_heading=false
+    while IFS= read -r line || [[ -n "$line" ]]; do
+      # Skip blank lines before heading
+      if [[ -z "$line" ]] && ! $past_heading; then
+        continue
+      fi
+      # Skip heading
+      if [[ "$line" =~ ^#\  ]] && ! $past_heading; then
+        past_heading=true
+        continue
+      fi
+      # After heading, skip blanks before blockquote
+      if $past_heading && [[ -z "$line" ]]; then
+        continue
+      fi
+      # Parse blockquote lines
+      if $past_heading && [[ "$line" =~ ^\> ]]; then
+        local value="${line#> }"
+        case "$value" in
+          Feature:*)    feature_id="${value#Feature: }" ;;
+          Created:*)    created="${value#Created: }" ;;
+          "Last updated:"*) last_updated="${value#Last updated: }" ;;
+          Status:*)     status_field="${value#Status: }" ;;
+          "Spec hash:"*) spec_hash="${value#Spec hash: }" ;;
+          "Plan hash:"*) plan_hash="${value#Plan hash: }" ;;
+        esac
+        continue
+      fi
+      # First non-blockquote line after heading = end of metadata
+      if $past_heading; then
+        break
+      fi
+    done < "$file"
+  fi
 
   # Build JSON
   local json="{"
