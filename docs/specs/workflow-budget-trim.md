@@ -1,6 +1,6 @@
 ---
 feature_id: workflow-budget-trim
-status: Draft
+status: Ready
 created: 1776364800
 type: chore
 ---
