@@ -180,6 +180,23 @@ parse_metadata() {
   echo "$json"
 }
 
+# Update the Status field in a metadata file (handles both blockquote and YAML frontmatter)
+update_metadata_status() {
+  local file="$1"
+  local new_status="$2"
+  local first_line
+  first_line=$(head -1 "$file")
+  if [[ "$first_line" == "---" ]]; then
+    # YAML frontmatter: replace Status line between --- delimiters
+    sed -i '' "s/^[Ss]tatus: .*/Status: $new_status/" "$file" 2>/dev/null || \
+      sed -i "s/^[Ss]tatus: .*/Status: $new_status/" "$file"
+  else
+    # Blockquote format
+    sed -i '' "s/^> Status: .*/> Status: $new_status/" "$file" 2>/dev/null || \
+      sed -i "s/^> Status: .*/> Status: $new_status/" "$file"
+  fi
+}
+
 # doc_entry <file> <doc-name>
 # Build a complete JSON entry for one document.
 doc_entry() {
@@ -425,8 +442,8 @@ cmd_recommend() {
       next_action="Activate a spec: docs-check.sh activate $ready_spec"
       reason="No active spec. Ready specs available in docs/specs/."
     else
-      next_action="Mark a spec as Ready, then activate it"
-      reason="Specs exist in docs/specs/ but none are marked Ready."
+      next_action="Activate a spec: docs-check.sh activate <id>"
+      reason="Specs exist in docs/specs/ but none are activated."
     fi
 
   # No docs at all
@@ -751,8 +768,7 @@ cmd_activate() {
   }
 
   # Update status in specs/ to "In Progress"
-  sed -i '' "s/^> Status: .*/> Status: In Progress/" "$spec_file" 2>/dev/null || \
-    sed -i "s/^> Status: .*/> Status: In Progress/" "$spec_file"
+  update_metadata_status "$spec_file" "In Progress"
 
   # Copy spec to docs/spec.md (after status update so it gets the new status)
   cp "$spec_file" "$docs_dir/spec.md"
@@ -825,8 +841,7 @@ cmd_complete() {
   fi
 
   # Update status to Complete
-  sed -i '' "s/^> Status: .*/> Status: Complete/" "$spec_file" 2>/dev/null || \
-    sed -i "s/^> Status: .*/> Status: Complete/" "$spec_file"
+  update_metadata_status "$spec_file" "Complete"
 
   # Clear assumptions.md if it exists
   local assumptions_file="$docs_dir/assumptions.md"

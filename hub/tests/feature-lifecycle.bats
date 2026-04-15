@@ -125,6 +125,33 @@ EOF
   [ "$count" -eq 2 ]
 }
 
+@test "list-specs: finds specs with YAML frontmatter metadata" {
+  cat > "$PROJECT/docs/specs/blockquote-spec.md" <<'EOF'
+# Feature: Blockquote Spec
+
+> Feature: blockquote-spec
+> Created: 1774200000
+> Status: Ready
+EOF
+  cat > "$PROJECT/docs/specs/yaml-spec.md" <<'EOF'
+---
+Feature: yaml-spec
+Created: 1774200100
+Status: Draft
+---
+
+## Summary
+YAML frontmatter spec.
+EOF
+  run "$PROJECT/.ccanvil/scripts/docs-check.sh" list-specs "$PROJECT/docs"
+  [ "$status" -eq 0 ]
+  local count
+  count=$(echo "$output" | jq 'length')
+  [ "$count" -eq 2 ]
+  echo "$output" | jq -e '.[] | select(.feature_id == "yaml-spec") | .status == "Draft"'
+  echo "$output" | jq -e '.[] | select(.feature_id == "blockquote-spec") | .status == "Ready"'
+}
+
 @test "list-specs: empty specs directory returns empty array" {
   # docs/specs/ exists but is empty
   run "$PROJECT/.ccanvil/scripts/docs-check.sh" list-specs "$PROJECT/docs"
@@ -416,6 +443,68 @@ EOF
   # 7. Verify: spec file exists in the squash commit (came from branch)
   git -C "$PROJECT" show HEAD:docs/specs/auth-system.md | grep -q "Status: In Progress"
   git -C "$PROJECT" show HEAD:docs/spec.md | grep -q "auth-system"
+}
+
+# ---------------------------------------------------------------------------
+# YAML frontmatter: activate and complete (spec-metadata-format AC-4, AC-5)
+# ---------------------------------------------------------------------------
+
+@test "activate: works on spec with YAML frontmatter" {
+  cat > "$PROJECT/docs/specs/yaml-feature.md" <<'EOF'
+---
+Feature: yaml-feature
+Created: 1774200000
+Status: Ready
+---
+
+## Summary
+YAML frontmatter feature.
+EOF
+
+  run "$PROJECT/.ccanvil/scripts/docs-check.sh" activate yaml-feature "$PROJECT/docs"
+  [ "$status" -eq 0 ]
+
+  local branch
+  branch=$(git -C "$PROJECT" branch --show-current)
+  [ "$branch" = "claude/feat/yaml-feature" ]
+  [ -f "$PROJECT/docs/spec.md" ]
+  grep -q "yaml-feature" "$PROJECT/docs/spec.md"
+}
+
+@test "complete: works on spec with YAML frontmatter" {
+  cat > "$PROJECT/docs/specs/yaml-feature.md" <<'EOF'
+---
+Feature: yaml-feature
+Created: 1774200000
+Status: Ready
+---
+
+## Summary
+YAML frontmatter feature.
+EOF
+
+  # Activate first
+  "$PROJECT/.ccanvil/scripts/docs-check.sh" activate yaml-feature "$PROJECT/docs"
+
+  # Create plan so complete doesn't fail on missing plan
+  cat > "$PROJECT/docs/plan.md" <<'EOF'
+# Implementation Plan
+
+> Feature: yaml-feature
+> Created: 1774200100
+> Spec hash: abc123
+
+## Objective
+Do the thing.
+EOF
+  git -C "$PROJECT" add -A
+  git -C "$PROJECT" commit -q -m "add plan"
+
+  run "$PROJECT/.ccanvil/scripts/docs-check.sh" complete yaml-feature "$PROJECT/docs"
+  [ "$status" -eq 0 ]
+
+  # Spec status should be updated to Complete
+  grep -q "Complete" "$PROJECT/docs/specs/yaml-feature.md"
 }
 
 # ---------------------------------------------------------------------------
