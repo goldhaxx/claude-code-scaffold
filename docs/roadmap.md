@@ -21,15 +21,14 @@ Autonomy & Friction Reduction — remove the friction between intent and executi
 
 ## Up Next
 
-1. **workflow.md budget trim** — at 102 lines (20.9% of context budget), workflow.md exceeds the 40-line rule max; compress and eliminate redundancy with other rule files
-2. **Init validation** — end-to-end test of init on a fresh project with BTS-68/69 fixes applied; confirm the full flow works from empty directory to registered, syncing node
+1. **Spec metadata bug** — `parse_metadata()` only reads blockquote format but `/spec` skill can produce YAML frontmatter; `recommend` tells users to set Ready status but `activate` doesn't gate on it. Fix the parser or align the skill output.
+2. **Checkpoint evolution** — evaluate whether checkpoint is still needed given `/compact`, `/catchup`, and auto-memory; may evolve into decision log or be retired
 
 ## Horizon
 
 - **BTS-22: Docs directory strategy** — multi-file specs/plans/checkpoints to reduce write friction and enable parallel features (Medium, needs-research)
 - **BTS-20: Workflow engine** — deterministic state machine for lifecycle transitions; depends on lifecycle primitives stabilizing (Low, needs-research)
 - **BTS-21: GitHub Agentic Workflows** — evaluate gh-aw integration once it reaches GA (Low, needs-research)
-- **Checkpoint evolution** — evaluate whether checkpoint is still needed given /compact, /catchup, and auto-memory; may evolve into decision log or session summary
 - **Lifecycle timing** — branch creation before or after spec; the full chain may be idea → branch → spec → plan → implement → complete → merge → land
 - **Open-source packaging** — documentation, onboarding UX, multi-tool support; deferred until tool stabilizes for personal use
 
