@@ -1943,6 +1943,177 @@ cmd_stack_list() {
   echo "$result"
 }
 
+cmd_stack_apply() {
+  local stack_id="${1:?Usage: ccanvil-sync.sh stack-apply <stack-id>}"
+  require_lockfile
+  local hub_path
+  hub_path=$(get_hub_source)
+  local stack_dir="$hub_path/hub/stacks/$stack_id"
+  local manifest="$stack_dir/manifest.json"
+
+  [[ -f "$manifest" ]] || die "Stack not found: $stack_id (no manifest at $manifest)"
+
+  local copied=0 skipped=0 errors=0
+
+  # --- File copy flow (AC-3) ---
+  local file_count
+  file_count=$(jq '.files | length' "$manifest")
+  for i in $(seq 0 $((file_count - 1))); do
+    local source target action
+    source=$(jq -r ".files[$i].source" "$manifest")
+    target=$(jq -r ".files[$i].target" "$manifest")
+    action=$(jq -r ".files[$i].action" "$manifest")
+
+    local source_path="$stack_dir/$source"
+    [[ -f "$source_path" ]] || { echo "WARNING: Missing source: $source" >&2; errors=$((errors + 1)); continue; }
+
+    case "$action" in
+      copy)
+        if [[ -f "$target" ]]; then
+          # Patch flow (AC-4): skip if local file was customized
+          local hub_h local_h
+          hub_h=$(file_hash "$source_path")
+          local_h=$(file_hash "$target")
+          local lock_hub_h
+          lock_hub_h=$(jq -r --arg f "$target" '.files[$f].hub_hash // empty' "$LOCKFILE" 2>/dev/null || true)
+          if [[ -n "$lock_hub_h" && "$local_h" != "$lock_hub_h" && "$hub_h" == "$lock_hub_h" ]]; then
+            # Local was customized and hub hasn't changed — skip
+            skipped=$((skipped + 1))
+            continue
+          elif [[ "$hub_h" == "$local_h" ]]; then
+            skipped=$((skipped + 1))
+            continue
+          fi
+        fi
+        mkdir -p "$(dirname "$target")"
+        cp "$source_path" "$target"
+        # Preserve executable bit
+        [[ -x "$source_path" ]] && chmod +x "$target"
+        copied=$((copied + 1))
+        ;;
+      *)
+        echo "WARNING: Unknown action '$action' for $source" >&2
+        errors=$((errors + 1))
+        continue
+        ;;
+    esac
+
+    # Update lockfile entry (AC-7)
+    local hub_h local_h
+    hub_h=$(file_hash "$source_path")
+    local_h=$(file_hash "$target")
+    bash "$0" lock-add "$target" "stack:$stack_id" "$hub_h" "$local_h" "clean"
+  done
+
+  # --- CLAUDE.md section merge (AC-3, AC-4) ---
+  local section_file
+  section_file=$(jq -r '.claudemd_section // empty' "$manifest")
+  if [[ -n "$section_file" && -f "$stack_dir/$section_file" ]]; then
+    local section_content
+    section_content=$(cat "$stack_dir/$section_file")
+    local start_marker="<!-- STACK:${stack_id}-START -->"
+    local end_marker="<!-- STACK:${stack_id}-END -->"
+
+    if [[ -f "CLAUDE.md" ]]; then
+      local section_tmp
+      section_tmp=$(mktemp)
+      echo "$section_content" > "$section_tmp"
+
+      if grep -q "$start_marker" "CLAUDE.md"; then
+        # Update existing section (idempotent)
+        local tmp
+        tmp=$(mktemp)
+        awk -v start="$start_marker" -v end="$end_marker" -v sfile="$section_tmp" '
+          $0 == start { while ((getline line < sfile) > 0) print line; close(sfile); skip=1; next }
+          $0 == end { skip=0; next }
+          !skip { print }
+        ' "CLAUDE.md" > "$tmp"
+        mv "$tmp" "CLAUDE.md"
+      elif grep -q '<!-- HUB-MANAGED-START -->' "CLAUDE.md"; then
+        # Insert above HUB-MANAGED-START
+        local tmp
+        tmp=$(mktemp)
+        awk -v marker="<!-- HUB-MANAGED-START -->" -v sfile="$section_tmp" '
+          $0 == marker { while ((getline line < sfile) > 0) print line; close(sfile); print ""; print $0; next }
+          { print }
+        ' "CLAUDE.md" > "$tmp"
+        mv "$tmp" "CLAUDE.md"
+      else
+        # Append to end
+        printf '\n' >> "CLAUDE.md"
+        cat "$section_tmp" >> "CLAUDE.md"
+      fi
+      rm -f "$section_tmp"
+    fi
+  fi
+
+  # --- settings.json hook merge (AC-3) ---
+  local hooks_file
+  hooks_file=$(jq -r '.settings_hooks // empty' "$manifest")
+  if [[ -n "$hooks_file" && -f "$stack_dir/$hooks_file" ]]; then
+    local settings_path=".claude/settings.json"
+    if [[ -f "$settings_path" ]]; then
+      local new_hook
+      new_hook=$(cat "$stack_dir/$hooks_file")
+      local new_matcher
+      new_matcher=$(echo "$new_hook" | jq -r '.matcher')
+      local new_commands
+      new_commands=$(echo "$new_hook" | jq '[.hooks[].command]')
+
+      # Check if matcher group exists
+      local tmp
+      tmp=$(mktemp)
+      local has_matcher
+      has_matcher=$(jq --arg m "$new_matcher" '[.hooks.PreToolUse[] | select(.matcher == $m)] | length' "$settings_path" 2>/dev/null || echo "0")
+
+      if [[ "$has_matcher" -gt 0 ]]; then
+        # Merge new hooks into existing matcher, dedup by command string
+        jq --arg m "$new_matcher" --argjson cmds "$new_commands" '
+          .hooks.PreToolUse = [.hooks.PreToolUse[] |
+            if .matcher == $m then
+              .hooks = (.hooks + [($cmds[] as $c | {"type":"command","command":$c})] | unique_by(.command))
+            else . end
+          ]
+        ' "$settings_path" > "$tmp"
+      else
+        # Add new matcher group
+        jq --argjson entry "$new_hook" '
+          .hooks.PreToolUse = (.hooks.PreToolUse // []) + [$entry]
+        ' "$settings_path" > "$tmp"
+      fi
+      if [[ -s "$tmp" ]] && jq empty "$tmp" 2>/dev/null; then
+        mv "$tmp" "$settings_path"
+      else
+        rm -f "$tmp"
+        echo "WARNING: settings.json merge produced invalid JSON" >&2
+        errors=$((errors + 1))
+      fi
+    fi
+  fi
+
+  # --- Update ccanvil.json (AC-3) ---
+  local ccanvil_json=".claude/ccanvil.json"
+  if [[ ! -f "$ccanvil_json" ]]; then
+    mkdir -p "$(dirname "$ccanvil_json")"
+    echo '{}' > "$ccanvil_json"
+  fi
+  local tmp
+  tmp=$(mktemp)
+  jq --arg s "$stack_id" '
+    .stacks = ((.stacks // []) | if index($s) then . else . + [$s] end)
+  ' "$ccanvil_json" > "$tmp"
+  if [[ -s "$tmp" ]] && jq empty "$tmp" 2>/dev/null; then
+    mv "$tmp" "$ccanvil_json"
+  else
+    rm -f "$tmp"
+    echo "WARNING: ccanvil.json update failed" >&2
+    errors=$((errors + 1))
+  fi
+
+  jq -n --argjson copied "$copied" --argjson skipped "$skipped" --argjson errors "$errors" \
+    '{"copied": $copied, "skipped": $skipped, "errors": $errors}'
+}
+
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
@@ -1996,6 +2167,7 @@ case "${1:-}" in
 
   # --- Stack commands ---
   stack-list)       cmd_stack_list ;;
+  stack-apply)      shift; cmd_stack_apply "$@" ;;
 
   *)
     echo "Usage: ccanvil-sync.sh <command> [args]"
