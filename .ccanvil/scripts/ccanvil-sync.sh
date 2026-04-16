@@ -1919,6 +1919,31 @@ cmd_broadcast() {
 }
 
 # ---------------------------------------------------------------------------
+# Stack commands
+# ---------------------------------------------------------------------------
+
+cmd_stack_list() {
+  require_lockfile
+  local hub_path
+  hub_path=$(get_hub_source)
+  local stacks_dir="$hub_path/hub/stacks"
+
+  if [[ ! -d "$stacks_dir" ]]; then
+    echo "[]"
+    return 0
+  fi
+
+  local result="[]"
+  for manifest in "$stacks_dir"/*/manifest.json; do
+    [[ -f "$manifest" ]] || continue
+    local entry
+    entry=$(jq '{id: .id, description: .description, files: [.files[].target]}' "$manifest")
+    result=$(echo "$result" | jq --argjson e "$entry" '. + [$e]')
+  done
+  echo "$result"
+}
+
+# ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 
@@ -1968,6 +1993,9 @@ case "${1:-}" in
   register)         cmd_register ;;
   registry)         cmd_registry ;;
   broadcast)        shift; cmd_broadcast "$@" ;;
+
+  # --- Stack commands ---
+  stack-list)       cmd_stack_list ;;
 
   *)
     echo "Usage: ccanvil-sync.sh <command> [args]"
