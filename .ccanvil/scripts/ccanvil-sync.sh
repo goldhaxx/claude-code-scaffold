@@ -6,6 +6,7 @@
 #   ccanvil-sync.sh init-preflight <hub>       Scan for conflicts, output merge plan
 #   ccanvil-sync.sh init-apply <hub> <plan>    Execute an approved merge plan
 #   ccanvil-sync.sh status                     Show file provenance and sync state
+#   ccanvil-sync.sh changelog                List hub commits since last sync (JSON)
 #   ccanvil-sync.sh diff [file]            Show diff between local and hub versions
 #   ccanvil-sync.sh hash <file>            Compute sha256 of a file
 #   ccanvil-sync.sh lock-get <file>        Read a lockfile entry (JSON)
@@ -560,6 +561,54 @@ cmd_status() {
   echo "Statuses: CLEAN=synced, MODIFIED=locally changed, MODIFIED*=changed since last sync,"
   echo "          LOCAL=project-only, PROMOTED=pushed to hub, HUB-ONLY=not yet pulled,"
   echo "          NODE-ONLY=excluded from sync (use /ccanvil-ignore to set, ccanvil-sync.sh track to undo)"
+}
+
+cmd_changelog() {
+  require_lockfile
+  local hub_root
+  hub_root=$(get_hub_source_raw)
+
+  [[ -d "$hub_root" ]] || die "Hub not found at: $hub_root"
+
+  local last_version
+  last_version=$(jq -r '.hub_version' "$LOCKFILE")
+
+  local current_version
+  current_version=$(git -C "$hub_root" rev-parse --short HEAD)
+
+  # Up-to-date: no new commits
+  if [[ "$last_version" == "$current_version" ]]; then
+    jq -n --arg from "$last_version" --arg to "$current_version" \
+      '{"status":"up-to-date","from":$from,"to":$to,"commit_count":0,"commits":[],"files_changed":[]}'
+    return 0
+  fi
+
+  # Validate last_version exists in hub repo
+  if ! git -C "$hub_root" rev-parse "$last_version" >/dev/null 2>&1; then
+    die "Last synced version $last_version not found in hub repo. History may have been rewritten."
+  fi
+
+  # Commit log
+  local commits_json="[]"
+  while IFS=$'\t' read -r hash subject; do
+    commits_json=$(echo "$commits_json" | jq --arg h "$hash" --arg s "$subject" \
+      '. + [{"hash": $h, "subject": $s}]')
+  done < <(git -C "$hub_root" log --format="%h%x09%s" "$last_version".."$current_version")
+
+  local commit_count
+  commit_count=$(echo "$commits_json" | jq 'length')
+
+  # Files changed across the range
+  local files_json="[]"
+  while IFS=$'\t' read -r change_type filepath; do
+    files_json=$(echo "$files_json" | jq --arg t "$change_type" --arg f "$filepath" \
+      '. + [{"type": $t, "file": $f}]')
+  done < <(git -C "$hub_root" diff --name-status "$last_version".."$current_version")
+
+  jq -n --arg from "$last_version" --arg to "$current_version" \
+    --argjson count "$commit_count" \
+    --argjson commits "$commits_json" --argjson files "$files_json" \
+    '{"status":"behind","from":$from,"to":$to,"commit_count":$count,"commits":$commits,"files_changed":$files}'
 }
 
 cmd_diff() {
@@ -1711,6 +1760,7 @@ cmd_broadcast() {
   local synced=0 skipped=0 unreachable=0
   local skip_reasons=""
   local all_conflicts=""
+  local synced_nodes=""
   local hub_version
   hub_version=$(git -C "$hub_root" rev-parse --short HEAD 2>/dev/null || echo "unknown")
 
@@ -1739,9 +1789,18 @@ cmd_broadcast() {
       continue
     }
 
-    # Handle bootstrap: if pre-check printed BOOTSTRAPPED, re-run pre-check
+    # Handle bootstrap: if pre-check printed BOOTSTRAPPED, commit the
+    # bootstrapped files (sync script + lockfile) so the working tree is
+    # clean, then re-run pre-check.
     if echo "$precheck_out" | grep -q "^BOOTSTRAPPED:"; then
-      echo "  Bootstrapped sync script — re-checking..."
+      echo "  Bootstrapped sync script — committing..."
+      if ! $dry_run; then
+        (cd "$node_path" && \
+          git add .ccanvil/scripts/ccanvil-sync.sh .ccanvil/ccanvil.lock && \
+          git commit -m "chore(sync): bootstrap sync script from hub @ $hub_version" \
+            --no-gpg-sign --quiet 2>&1) | sed 's/^/  /'
+      fi
+      echo "  Re-checking..."
       precheck_out=$(cd "$node_path" && bash "$node_path/.ccanvil/scripts/ccanvil-sync.sh" pre-check 2>&1) || {
         echo "  SKIP: pre-check failed after bootstrap"
         skipped=$((skipped + 1))
@@ -1765,19 +1824,7 @@ cmd_broadcast() {
     if [[ "$plan_count" -eq 0 ]]; then
       echo "  Already up to date."
       synced=$((synced + 1))
-
-      # Update registry even if no changes (records sync attempt)
-      if ! $dry_run; then
-        local tmp; tmp=$(mktemp)
-        jq --arg p "$node_path" --arg t "$(timestamp)" --arg v "$hub_version" \
-          '.nodes[$p].last_synced = $t | .nodes[$p].last_synced_version = $v' \
-          "$registry" > "$tmp" || true
-        if [[ -s "$tmp" ]] && jq empty "$tmp" 2>/dev/null; then
-          mv "$tmp" "$registry"
-        else
-          rm -f "$tmp"
-        fi
-      fi
+      synced_nodes+="$node_path"$'\n'
       continue
     fi
 
@@ -1822,11 +1869,20 @@ cmd_broadcast() {
     (cd "$node_path" && bash "$node_path/.ccanvil/scripts/ccanvil-sync.sh" pull-finalize $dry_flag 2>&1) | sed 's/^/  /' || true
 
     synced=$((synced + 1))
+    synced_nodes+="$node_path"$'\n'
 
-    # AC-5: update registry with last_synced
-    if ! $dry_run; then
+  done < <(jq -r '.nodes | keys[]' "$registry")
+
+  # AC-5: batch-update registry after all nodes are processed.
+  # Doing this after the loop prevents registry.json modifications from
+  # dirtying the hub mid-broadcast (which would fail pre-check for later nodes).
+  if ! $dry_run && [[ -n "$synced_nodes" ]]; then
+    local sync_ts
+    sync_ts=$(timestamp)
+    while IFS= read -r sp; do
+      [[ -z "$sp" ]] && continue
       local tmp; tmp=$(mktemp)
-      jq --arg p "$node_path" --arg t "$(timestamp)" --arg v "$hub_version" \
+      jq --arg p "$sp" --arg t "$sync_ts" --arg v "$hub_version" \
         '.nodes[$p].last_synced = $t | .nodes[$p].last_synced_version = $v' \
         "$registry" > "$tmp" || true
       if [[ -s "$tmp" ]] && jq empty "$tmp" 2>/dev/null; then
@@ -1834,9 +1890,8 @@ cmd_broadcast() {
       else
         rm -f "$tmp"
       fi
-    fi
-
-  done < <(jq -r '.nodes | keys[]' "$registry")
+    done <<< "$synced_nodes"
+  fi
 
   # AC-9: Summary
   echo ""
@@ -1878,6 +1933,7 @@ case "${1:-}" in
   # --- Atomic commands (building blocks) ---
   init)             shift; cmd_init "$@" ;;
   status)           shift; cmd_status "$@" ;;
+  changelog)        cmd_changelog ;;
   diff)             shift; cmd_diff "${1:-}" ;;
   hash)             shift; cmd_hash "$@" ;;
   lock-get)         shift; cmd_lock_get "$@" ;;
@@ -1941,6 +1997,7 @@ case "${1:-}" in
     echo "Atomic commands (building blocks — prefer compound commands):"
     echo "  init [hub-path]                  Generate lockfile from current state"
     echo "  status                                Show file provenance and sync state"
+    echo "  changelog                             List hub commits since last sync (JSON)"
     echo "  diff [file]                           Show diff between local and hub"
     echo "  hash <file>                           Compute sha256 of a file"
     echo "  lock-get <file>                       Read a lockfile entry"

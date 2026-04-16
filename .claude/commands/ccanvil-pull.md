@@ -2,6 +2,24 @@ Pull updates from the hub into this project.
 
 All deterministic operations (copy, hash, lockfile, logging) are handled by the script. Claude's role is LIMITED to judgment calls: conflict resolution and merge proposals.
 
+## Step 0: Pre-pull assessment (deterministic + judgment)
+
+```bash
+./.ccanvil/scripts/ccanvil-sync.sh changelog
+```
+
+Read the JSON output. If `status` is `"up-to-date"`, tell the user "Already up to date with hub" and **stop** — skip all subsequent steps.
+
+If `status` is `"behind"`, present the assessment:
+1. Show the commit range and count: "Hub has **N** commits since last sync (`from` → `to`)"
+2. Summarize the changes in a table with columns: **Change** | **Impact**
+   - Group commits by feature/area (JUDGMENT CALL — Claude interprets commit messages)
+   - Impact is one of: cosmetic, config, rules, scripts, commands, workflow
+3. Run `context-budget.sh check --text` and note the current budget status as a baseline.
+4. Ask the user: "Proceed with pull?" — **wait for confirmation** before continuing to Step 1.
+
+This is a checkpoint. Do NOT proceed to Step 1 until the user confirms.
+
 ## Step 1: Pre-check and plan (deterministic)
 
 ```bash
@@ -73,6 +91,14 @@ For each file with action `removed`:
 This commits all changes with a structured message listing every synced file. The commit is browsable on GitHub.
 
 Report what happened: N auto-updated, N section-merged, N conflicts resolved, N new files, N skipped.
+
+## Step 8: Post-pull verification (deterministic)
+
+```bash
+./.ccanvil/scripts/context-budget.sh check --text
+```
+
+Report the budget status. If it changed from the Step 0 baseline (e.g., WARNING → HEALTHY or HEALTHY → WARNING), call it out explicitly. This catches pulls that improve or degrade the context budget.
 
 ## Rules
 - NEVER run `cp`, `jq`, `shasum`, or `lock-update` manually. Use compound commands.

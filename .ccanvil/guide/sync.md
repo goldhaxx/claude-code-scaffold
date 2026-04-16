@@ -104,11 +104,14 @@ stateDiagram-v2
 
 ## Pull Flow (Hub → Project)
 
-Every step is handled by a script command except conflict merge proposals, which require Claude's semantic understanding.
+Every step is handled by a script command except conflict merge proposals and the impact summary, which require Claude's semantic understanding.
+
+The flow starts with a **pre-pull assessment** (`changelog`) that shows what changed and asks for confirmation before modifying any files.
 
 ```mermaid
 flowchart TD
     subgraph DETERMINISTIC ["Deterministic (script handles)"]
+        CHANGELOG["changelog → JSON<br/><i>commits + files since last sync</i>"]
         START["pre-check"]
         PLAN["pull-plan → JSON"]
         AUTO["pull-auto<br/><i>all clean files in one pass</i>"]
@@ -118,19 +121,25 @@ flowchart TD
         ACCEPT["pull-apply file accept-new"]
         DEL["pull-apply file delete"]
         FIN["pull-finalize"]
+        BUDGET["context-budget.sh check"]
     end
 
     subgraph STOCHASTIC ["Claude judgment"]
+        IMPACT["Summarize changes<br/>in impact table"]
         MERGE["Read both versions,<br/>propose combined content"]
     end
 
     subgraph USER ["User decision"]
+        CONFIRM{"Proceed<br/>with pull?"}
         OPT{"Conflict:<br/>keep / take /<br/>merge / diff?"}
         NEW_OPT{"New file:<br/>accept / skip?"}
         RM_OPT{"Removed:<br/>keep / delete?"}
         APPROVE{"Approve<br/>merged content?"}
     end
 
+    CHANGELOG --> IMPACT --> CONFIRM
+    CONFIRM -->|"Yes"| START
+    CONFIRM -->|"No"| STOP["Stop"]
     START --> PLAN
     PLAN -->|"auto-update"| AUTO
     PLAN -->|"section-merge"| SM
@@ -155,6 +164,7 @@ flowchart TD
     KEEP --> FIN
     ACCEPT --> FIN
     DEL --> FIN
+    FIN --> BUDGET
 
     style DETERMINISTIC fill:#c8e6c9,stroke:#333,stroke-width:2px
     style STOCHASTIC fill:#fff3e0,stroke:#333,stroke-width:2px

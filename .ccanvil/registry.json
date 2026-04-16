@@ -2,15 +2,21 @@
   "nodes": {
     "/Users/zacharywright/projects/fucina": {
       "name": "fucina",
-      "registered_at": "1775680942"
+      "registered_at": "1775680942",
+      "last_synced": "1776300174",
+      "last_synced_version": "e7ac4ab"
     },
     "/Users/zacharywright/projects/fieldnation-toolbox": {
       "name": "fieldnation-toolbox",
-      "registered_at": "1775764225"
+      "registered_at": "1775764225",
+      "last_synced": "1776300174",
+      "last_synced_version": "e7ac4ab"
     },
     "/Users/zacharywright/projects/luxlook": {
       "name": "luxlook",
-      "registered_at": "1775793584"
+      "registered_at": "1775793584",
+      "last_synced": "1776300174",
+      "last_synced_version": "e7ac4ab"
     }
   }
 }
