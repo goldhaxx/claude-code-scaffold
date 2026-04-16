@@ -2,7 +2,9 @@
   "nodes": {
     "/Users/zacharywright/projects/fucina": {
       "name": "fucina",
-      "registered_at": "1775680942"
+      "registered_at": "1775680942",
+      "last_synced": "1776299644",
+      "last_synced_version": "2810f70"
     },
     "/Users/zacharywright/projects/fieldnation-toolbox": {
       "name": "fieldnation-toolbox",

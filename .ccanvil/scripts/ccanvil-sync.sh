@@ -1760,6 +1760,7 @@ cmd_broadcast() {
   local synced=0 skipped=0 unreachable=0
   local skip_reasons=""
   local all_conflicts=""
+  local synced_nodes=""
   local hub_version
   hub_version=$(git -C "$hub_root" rev-parse --short HEAD 2>/dev/null || echo "unknown")
 
@@ -1823,19 +1824,7 @@ cmd_broadcast() {
     if [[ "$plan_count" -eq 0 ]]; then
       echo "  Already up to date."
       synced=$((synced + 1))
-
-      # Update registry even if no changes (records sync attempt)
-      if ! $dry_run; then
-        local tmp; tmp=$(mktemp)
-        jq --arg p "$node_path" --arg t "$(timestamp)" --arg v "$hub_version" \
-          '.nodes[$p].last_synced = $t | .nodes[$p].last_synced_version = $v' \
-          "$registry" > "$tmp" || true
-        if [[ -s "$tmp" ]] && jq empty "$tmp" 2>/dev/null; then
-          mv "$tmp" "$registry"
-        else
-          rm -f "$tmp"
-        fi
-      fi
+      synced_nodes+="$node_path"$'\n'
       continue
     fi
 
@@ -1880,11 +1869,20 @@ cmd_broadcast() {
     (cd "$node_path" && bash "$node_path/.ccanvil/scripts/ccanvil-sync.sh" pull-finalize $dry_flag 2>&1) | sed 's/^/  /' || true
 
     synced=$((synced + 1))
+    synced_nodes+="$node_path"$'\n'
 
-    # AC-5: update registry with last_synced
-    if ! $dry_run; then
+  done < <(jq -r '.nodes | keys[]' "$registry")
+
+  # AC-5: batch-update registry after all nodes are processed.
+  # Doing this after the loop prevents registry.json modifications from
+  # dirtying the hub mid-broadcast (which would fail pre-check for later nodes).
+  if ! $dry_run && [[ -n "$synced_nodes" ]]; then
+    local sync_ts
+    sync_ts=$(timestamp)
+    while IFS= read -r sp; do
+      [[ -z "$sp" ]] && continue
       local tmp; tmp=$(mktemp)
-      jq --arg p "$node_path" --arg t "$(timestamp)" --arg v "$hub_version" \
+      jq --arg p "$sp" --arg t "$sync_ts" --arg v "$hub_version" \
         '.nodes[$p].last_synced = $t | .nodes[$p].last_synced_version = $v' \
         "$registry" > "$tmp" || true
       if [[ -s "$tmp" ]] && jq empty "$tmp" 2>/dev/null; then
@@ -1892,9 +1890,8 @@ cmd_broadcast() {
       else
         rm -f "$tmp"
       fi
-    fi
-
-  done < <(jq -r '.nodes | keys[]' "$registry")
+    done <<< "$synced_nodes"
+  fi
 
   # AC-9: Summary
   echo ""
