@@ -1788,9 +1788,18 @@ cmd_broadcast() {
       continue
     }
 
-    # Handle bootstrap: if pre-check printed BOOTSTRAPPED, re-run pre-check
+    # Handle bootstrap: if pre-check printed BOOTSTRAPPED, commit the
+    # bootstrapped files (sync script + lockfile) so the working tree is
+    # clean, then re-run pre-check.
     if echo "$precheck_out" | grep -q "^BOOTSTRAPPED:"; then
-      echo "  Bootstrapped sync script — re-checking..."
+      echo "  Bootstrapped sync script — committing..."
+      if ! $dry_run; then
+        (cd "$node_path" && \
+          git add .ccanvil/scripts/ccanvil-sync.sh .ccanvil/ccanvil.lock && \
+          git commit -m "chore(sync): bootstrap sync script from hub @ $hub_version" \
+            --no-gpg-sign --quiet 2>&1) | sed 's/^/  /'
+      fi
+      echo "  Re-checking..."
       precheck_out=$(cd "$node_path" && bash "$node_path/.ccanvil/scripts/ccanvil-sync.sh" pre-check 2>&1) || {
         echo "  SKIP: pre-check failed after bootstrap"
         skipped=$((skipped + 1))
