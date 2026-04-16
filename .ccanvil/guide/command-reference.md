@@ -103,6 +103,14 @@
 | `manifest-check.sh check <readme>` | Full report: verified + stale (with diffs) + missing + untracked (with identity) |
 | `manifest-check.sh verify <paths...>` | Update lockfile entries for confirmed paths |
 
+## Stack Distribution Scripts
+
+| Command | What it does |
+|---------|-------------|
+| `ccanvil-sync.sh stack-list` | List available stack profiles as JSON array `[{id, description, files}]` |
+| `ccanvil-sync.sh stack-apply <stack-id>` | Apply a stack profile: copy files, merge CLAUDE.md section, merge settings.json hooks, update lockfile + ccanvil.json. Idempotent — re-running patches without clobbering |
+| `ccanvil-sync.sh init-preflight <hub> --stack <id>` | Include stack files in init preflight plan |
+
 ## Docs Lifecycle Scripts
 
 | Command | What it does |

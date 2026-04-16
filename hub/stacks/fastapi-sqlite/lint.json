@@ -1,0 +1,14 @@
+{
+  "formatters": {
+    "python": {
+      "command": "ruff format",
+      "patterns": ["*.py"]
+    }
+  },
+  "linters": {
+    "python": {
+      "command": "ruff check --fix",
+      "patterns": ["*.py"]
+    }
+  }
+}

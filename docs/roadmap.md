@@ -21,8 +21,9 @@ Autonomy & Friction Reduction — remove the friction between intent and executi
 
 ## Up Next
 
-1. **Spec metadata bug** — `parse_metadata()` only reads blockquote format but `/spec` skill can produce YAML frontmatter; `recommend` tells users to set Ready status but `activate` doesn't gate on it. Fix the parser or align the skill output.
-2. **Checkpoint evolution** — evaluate whether checkpoint is still needed given `/compact`, `/catchup`, and auto-memory; may evolve into decision log or be retired
+1. **Tech stack distribution** — distribute tech stack profiles (hooks, rules, CLAUDE.md sections) from hub to nodes. Init-time provisioning + patch-time application. First profile: FastAPI/SQLite with protect-db.sh and API-first rules. Spec written, ready to activate.
+2. **Dark code / Three-Layer Solution** — evaluate Nate B Jones' framework for ccanvil integration: self-describing systems (module manifests) is the biggest gap; spec-driven dev and comprehension gate partially covered already.
+3. **Checkpoint evolution** — evaluate whether checkpoint is still needed given `/compact`, `/catchup`, and auto-memory; may evolve into decision log or be retired
 
 ## Horizon
 

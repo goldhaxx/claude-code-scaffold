@@ -16,6 +16,8 @@ bash .ccanvil/scripts/docs-check.sh land                  # Return to main after
 bash .ccanvil/scripts/docs-check.sh idea-add "text"       # Capture an idea
 bash .ccanvil/scripts/docs-check.sh radar-gather          # Project state JSON for /radar
 bash .ccanvil/scripts/context-budget.sh check --text      # Context budget
+bash .ccanvil/scripts/ccanvil-sync.sh stack-list          # List stack profiles
+bash .ccanvil/scripts/ccanvil-sync.sh stack-apply <id>    # Apply stack to project
 # Full command list: .ccanvil/guide/command-reference.md
 ```
 
@@ -28,7 +30,8 @@ bash .ccanvil/scripts/context-budget.sh check --text      # Context budget
 └── templates/              # Format guides, GitHub templates
 CLAUDE.md                   # Project template (node + hub-managed sections)
 hub/                        # Hub-only — NOT distributed
-├── tests/                  # bats-core test suite (11 .bats files)
+├── stacks/                 # Tech stack profiles (fastapi-sqlite, etc.)
+├── tests/                  # bats-core test suite (12 .bats files)
 ├── specs/                  # Completed spec archive
 └── meta/                   # SYSTEM_PROMPT.md, INIT_PROMPT.md
 docs/                       # Active feature lifecycle (branch-local)

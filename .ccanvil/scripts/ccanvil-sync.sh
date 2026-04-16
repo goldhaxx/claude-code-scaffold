@@ -264,8 +264,31 @@ cmd_init() {
 cmd_init_preflight() {
   local hub_path="${1:?Usage: ccanvil-sync.sh init-preflight <hub-path>}"
   hub_path="${hub_path/#\~/$HOME}"
+  shift
 
   [[ -d "$hub_path" ]] || die "Hub not found at: $hub_path"
+
+  # Parse --stack flags
+  local stack_ids=()
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --stack) shift; stack_ids+=("${1:?--stack requires an argument}"); shift ;;
+      *) shift ;;
+    esac
+  done
+
+  # Also read stacks from ccanvil.json if present
+  if [[ -f ".claude/ccanvil.json" ]]; then
+    while IFS= read -r sid; do
+      [[ -z "$sid" ]] && continue
+      # Avoid duplicates
+      local already=false
+      for existing in "${stack_ids[@]+"${stack_ids[@]}"}"; do
+        [[ "$existing" == "$sid" ]] && already=true && break
+      done
+      $already || stack_ids+=("$sid")
+    done < <(jq -r '.stacks[]? // empty' ".claude/ccanvil.json" 2>/dev/null)
+  fi
 
   local dist_root
   dist_root="$hub_path"
@@ -355,6 +378,43 @@ cmd_init_preflight() {
     done < <(scan_tracked_files)
   fi
 
+  # 5. Scan stack profile files (AC-5)
+  for sid in "${stack_ids[@]+"${stack_ids[@]}"}"; do
+    local stack_manifest="$dist_root/hub/stacks/$sid/manifest.json"
+    [[ -f "$stack_manifest" ]] || continue
+    local stack_dir="$dist_root/hub/stacks/$sid"
+    local fc
+    fc=$(jq '.files | length' "$stack_manifest")
+    for i in $(seq 0 $((fc - 1))); do
+      local src tgt
+      src=$(jq -r ".files[$i].source" "$stack_manifest")
+      tgt=$(jq -r ".files[$i].target" "$stack_manifest")
+      # Skip if already seen
+      local already_seen=false
+      for s in "${seen_files[@]+"${seen_files[@]}"}"; do
+        [[ "$s" == "$tgt" ]] && already_seen=true && break
+      done
+      $already_seen && continue
+
+      if [[ -f "$tgt" ]]; then
+        local hub_h local_h
+        hub_h=$(file_hash "$stack_dir/$src")
+        local_h=$(file_hash "$tgt")
+        if [[ "$hub_h" == "$local_h" ]]; then
+          plan=$(echo "$plan" | jq --arg f "$tgt" --arg s "stack:$sid" \
+            '. + [{"file": $f, "source": $s, "recommended_action": "skip", "reason": "Already matches stack"}]')
+        else
+          plan=$(echo "$plan" | jq --arg f "$tgt" --arg s "stack:$sid" \
+            '. + [{"file": $f, "source": $s, "recommended_action": "review", "reason": "Local differs from stack; needs user decision"}]')
+        fi
+      else
+        plan=$(echo "$plan" | jq --arg f "$tgt" --arg s "stack:$sid" \
+          '. + [{"file": $f, "source": $s, "recommended_action": "copy", "reason": "New file from stack"}]')
+      fi
+      seen_files+=("$tgt")
+    done
+  done
+
   # Compute summary
   local conflicts auto total
   conflicts=$(echo "$plan" | jq '[.[] | select(.recommended_action == "review")] | length')
@@ -393,21 +453,38 @@ cmd_init_apply() {
 
   local i=0
   while [[ $i -lt $entry_count ]]; do
-    local file action
+    local file action source
     file=$(jq -r "$plan_expr | .[$i].file" "$plan_file")
     action=$(jq -r "$plan_expr | .[$i].recommended_action" "$plan_file")
+    source=$(jq -r "$plan_expr | .[$i].source // empty" "$plan_file")
 
     # Resolve hub source file path
-    # Check GitHub template mappings first, then tracked patterns
     local hub_file=""
-    for mapping in "${INIT_GITHUB_TEMPLATES[@]}"; do
-      local tpl_src="${mapping%%:*}"
-      local tpl_dst="${mapping#*:}"
-      if [[ "$tpl_dst" == "$file" ]]; then
-        hub_file="$github_tpl_root/$tpl_src"
-        break
+
+    # Check stack source first (AC-6)
+    if [[ "$source" == stack:* ]]; then
+      local stack_id="${source#stack:}"
+      local stack_manifest="$dist_root/hub/stacks/$stack_id/manifest.json"
+      if [[ -f "$stack_manifest" ]]; then
+        local stack_src
+        stack_src=$(jq -r --arg t "$file" '.files[] | select(.target == $t) | .source' "$stack_manifest")
+        if [[ -n "$stack_src" ]]; then
+          hub_file="$dist_root/hub/stacks/$stack_id/$stack_src"
+        fi
       fi
-    done
+    fi
+
+    # Check GitHub template mappings
+    if [[ -z "$hub_file" ]]; then
+      for mapping in "${INIT_GITHUB_TEMPLATES[@]}"; do
+        local tpl_src="${mapping%%:*}"
+        local tpl_dst="${mapping#*:}"
+        if [[ "$tpl_dst" == "$file" ]]; then
+          hub_file="$github_tpl_root/$tpl_src"
+          break
+        fi
+      done
+    fi
     if [[ -z "$hub_file" && -f "$dist_root/$file" ]]; then
       hub_file="$dist_root/$file"
     fi
@@ -1919,6 +1996,202 @@ cmd_broadcast() {
 }
 
 # ---------------------------------------------------------------------------
+# Stack commands
+# ---------------------------------------------------------------------------
+
+cmd_stack_list() {
+  require_lockfile
+  local hub_path
+  hub_path=$(get_hub_source)
+  local stacks_dir="$hub_path/hub/stacks"
+
+  if [[ ! -d "$stacks_dir" ]]; then
+    echo "[]"
+    return 0
+  fi
+
+  local result="[]"
+  for manifest in "$stacks_dir"/*/manifest.json; do
+    [[ -f "$manifest" ]] || continue
+    local entry
+    entry=$(jq '{id: .id, description: .description, files: [.files[].target]}' "$manifest")
+    result=$(echo "$result" | jq --argjson e "$entry" '. + [$e]')
+  done
+  echo "$result"
+}
+
+cmd_stack_apply() {
+  local stack_id="${1:?Usage: ccanvil-sync.sh stack-apply <stack-id>}"
+  require_lockfile
+  local hub_path
+  hub_path=$(get_hub_source)
+  local stack_dir="$hub_path/hub/stacks/$stack_id"
+  local manifest="$stack_dir/manifest.json"
+
+  [[ -f "$manifest" ]] || die "Stack not found: $stack_id (no manifest at $manifest)"
+
+  local copied=0 skipped=0 errors=0
+
+  # --- File copy flow (AC-3) ---
+  local file_count
+  file_count=$(jq '.files | length' "$manifest")
+  for i in $(seq 0 $((file_count - 1))); do
+    local source target action
+    source=$(jq -r ".files[$i].source" "$manifest")
+    target=$(jq -r ".files[$i].target" "$manifest")
+    action=$(jq -r ".files[$i].action" "$manifest")
+
+    local source_path="$stack_dir/$source"
+    [[ -f "$source_path" ]] || { echo "WARNING: Missing source: $source" >&2; errors=$((errors + 1)); continue; }
+
+    case "$action" in
+      copy)
+        if [[ -f "$target" ]]; then
+          # Patch flow (AC-4): skip if local file was customized
+          local hub_h local_h
+          hub_h=$(file_hash "$source_path")
+          local_h=$(file_hash "$target")
+          local lock_hub_h
+          lock_hub_h=$(jq -r --arg f "$target" '.files[$f].hub_hash // empty' "$LOCKFILE" 2>/dev/null || true)
+          if [[ -n "$lock_hub_h" && "$local_h" != "$lock_hub_h" && "$hub_h" == "$lock_hub_h" ]]; then
+            # Local was customized and hub hasn't changed — skip
+            skipped=$((skipped + 1))
+            continue
+          elif [[ "$hub_h" == "$local_h" ]]; then
+            skipped=$((skipped + 1))
+            continue
+          fi
+        fi
+        mkdir -p "$(dirname "$target")"
+        cp "$source_path" "$target"
+        # Preserve executable bit
+        [[ -x "$source_path" ]] && chmod +x "$target"
+        copied=$((copied + 1))
+        ;;
+      *)
+        echo "WARNING: Unknown action '$action' for $source" >&2
+        errors=$((errors + 1))
+        continue
+        ;;
+    esac
+
+    # Update lockfile entry (AC-7)
+    local hub_h local_h
+    hub_h=$(file_hash "$source_path")
+    local_h=$(file_hash "$target")
+    bash "$0" lock-add "$target" "stack:$stack_id" "$hub_h" "$local_h" "clean"
+  done
+
+  # --- CLAUDE.md section merge (AC-3, AC-4) ---
+  local section_file
+  section_file=$(jq -r '.claudemd_section // empty' "$manifest")
+  if [[ -n "$section_file" && -f "$stack_dir/$section_file" ]]; then
+    local section_content
+    section_content=$(cat "$stack_dir/$section_file")
+    local start_marker="<!-- STACK:${stack_id}-START -->"
+    local end_marker="<!-- STACK:${stack_id}-END -->"
+
+    if [[ -f "CLAUDE.md" ]]; then
+      local section_tmp
+      section_tmp=$(mktemp)
+      echo "$section_content" > "$section_tmp"
+
+      if grep -q "$start_marker" "CLAUDE.md"; then
+        # Update existing section (idempotent)
+        local tmp
+        tmp=$(mktemp)
+        awk -v start="$start_marker" -v end="$end_marker" -v sfile="$section_tmp" '
+          $0 == start { while ((getline line < sfile) > 0) print line; close(sfile); skip=1; next }
+          $0 == end { skip=0; next }
+          !skip { print }
+        ' "CLAUDE.md" > "$tmp"
+        mv "$tmp" "CLAUDE.md"
+      elif grep -q '<!-- HUB-MANAGED-START -->' "CLAUDE.md"; then
+        # Insert above HUB-MANAGED-START
+        local tmp
+        tmp=$(mktemp)
+        awk -v marker="<!-- HUB-MANAGED-START -->" -v sfile="$section_tmp" '
+          $0 == marker { while ((getline line < sfile) > 0) print line; close(sfile); print ""; print $0; next }
+          { print }
+        ' "CLAUDE.md" > "$tmp"
+        mv "$tmp" "CLAUDE.md"
+      else
+        # Append to end
+        printf '\n' >> "CLAUDE.md"
+        cat "$section_tmp" >> "CLAUDE.md"
+      fi
+      rm -f "$section_tmp"
+    fi
+  fi
+
+  # --- settings.json hook merge (AC-3) ---
+  local hooks_file
+  hooks_file=$(jq -r '.settings_hooks // empty' "$manifest")
+  if [[ -n "$hooks_file" && -f "$stack_dir/$hooks_file" ]]; then
+    local settings_path=".claude/settings.json"
+    if [[ -f "$settings_path" ]]; then
+      local new_hook
+      new_hook=$(cat "$stack_dir/$hooks_file")
+      local new_matcher
+      new_matcher=$(echo "$new_hook" | jq -r '.matcher')
+      local new_commands
+      new_commands=$(echo "$new_hook" | jq '[.hooks[].command]')
+
+      # Check if matcher group exists
+      local tmp
+      tmp=$(mktemp)
+      local has_matcher
+      has_matcher=$(jq --arg m "$new_matcher" '[.hooks.PreToolUse[] | select(.matcher == $m)] | length' "$settings_path" 2>/dev/null || echo "0")
+
+      if [[ "$has_matcher" -gt 0 ]]; then
+        # Merge new hooks into existing matcher, dedup by command string
+        jq --arg m "$new_matcher" --argjson cmds "$new_commands" '
+          .hooks.PreToolUse = [.hooks.PreToolUse[] |
+            if .matcher == $m then
+              .hooks = (.hooks + [($cmds[] as $c | {"type":"command","command":$c})] | unique_by(.command))
+            else . end
+          ]
+        ' "$settings_path" > "$tmp"
+      else
+        # Add new matcher group
+        jq --argjson entry "$new_hook" '
+          .hooks.PreToolUse = (.hooks.PreToolUse // []) + [$entry]
+        ' "$settings_path" > "$tmp"
+      fi
+      if [[ -s "$tmp" ]] && jq empty "$tmp" 2>/dev/null; then
+        mv "$tmp" "$settings_path"
+      else
+        rm -f "$tmp"
+        echo "WARNING: settings.json merge produced invalid JSON" >&2
+        errors=$((errors + 1))
+      fi
+    fi
+  fi
+
+  # --- Update ccanvil.json (AC-3) ---
+  local ccanvil_json=".claude/ccanvil.json"
+  if [[ ! -f "$ccanvil_json" ]]; then
+    mkdir -p "$(dirname "$ccanvil_json")"
+    echo '{}' > "$ccanvil_json"
+  fi
+  local tmp
+  tmp=$(mktemp)
+  jq --arg s "$stack_id" '
+    .stacks = ((.stacks // []) | if index($s) then . else . + [$s] end)
+  ' "$ccanvil_json" > "$tmp"
+  if [[ -s "$tmp" ]] && jq empty "$tmp" 2>/dev/null; then
+    mv "$tmp" "$ccanvil_json"
+  else
+    rm -f "$tmp"
+    echo "WARNING: ccanvil.json update failed" >&2
+    errors=$((errors + 1))
+  fi
+
+  jq -n --argjson copied "$copied" --argjson skipped "$skipped" --argjson errors "$errors" \
+    '{"copied": $copied, "skipped": $skipped, "errors": $errors}'
+}
+
+# ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 
@@ -1969,6 +2242,10 @@ case "${1:-}" in
   registry)         cmd_registry ;;
   broadcast)        shift; cmd_broadcast "$@" ;;
 
+  # --- Stack commands ---
+  stack-list)       cmd_stack_list ;;
+  stack-apply)      shift; cmd_stack_apply "$@" ;;
+
   *)
     echo "Usage: ccanvil-sync.sh <command> [args]"
     echo ""
@@ -1990,8 +2267,12 @@ case "${1:-}" in
     echo "  demote <file>                         Full demote workflow"
     echo "  broadcast [--dry-run]                 Push hub updates to all registered nodes"
     echo ""
+    echo "Stack commands (distribute tech stack profiles):"
+    echo "  stack-list                            List available stack profiles as JSON"
+    echo "  stack-apply <stack-id>                Apply a stack profile to the current project"
+    echo ""
     echo "Init commands (use for project initialization):"
-    echo "  init-preflight <hub-path>             Scan for conflicts, output merge plan as JSON"
+    echo "  init-preflight <hub-path> [--stack id] Scan for conflicts, output merge plan as JSON"
     echo "  init-apply <hub-path> <plan-file>     Execute an approved merge plan"
     echo ""
     echo "Atomic commands (building blocks — prefer compound commands):"

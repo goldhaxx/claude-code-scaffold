@@ -1,0 +1,14 @@
+{
+  "id": "fastapi-sqlite",
+  "description": "FastAPI + SQLite stack: API-first data access, database mutation gating, Python linting",
+  "files": [
+    {
+      "source": "hooks/protect-db.sh",
+      "target": ".claude/hooks/protect-db.sh",
+      "action": "copy"
+    }
+  ],
+  "claudemd_section": "claudemd-section.md",
+  "settings_hooks": "settings-hooks.json",
+  "lint_config": "lint.json"
+}
