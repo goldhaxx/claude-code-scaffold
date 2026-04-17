@@ -66,6 +66,16 @@
 |---------|-------------|
 | `operations.sh resolve <operation> [--project-dir DIR]` | Resolve operation to provider/mechanism/invocation JSON based on `.claude/ccanvil.json` routing config. Returns local bash adapter when no config exists. |
 
+## Registry & Node Identity
+
+| Command | What it does |
+|---------|-------------|
+| `ccanvil-sync.sh register` | Register the current project in the hub. Generates a stable UUID at first run (stored in `.claude/ccanvil.local.json`, mirrored in lockfile). Registry is keyed by UUID; path stored in `~`-portable form |
+| `ccanvil-sync.sh registry` | List all registered downstream projects with UUID, name, path, last-synced info |
+| `ccanvil-sync.sh broadcast` | Iterate registered nodes by UUID (auto-migrates legacy path-keyed entries). Reports `STALE` when a UUID's path no longer exists |
+
+Node UUIDs make registration resilient to renames, moves, machine changes, and multi-user setups. The UUID is authoritative; paths self-update on each sync.
+
 ## Multi-Spec Lifecycle Scripts
 
 | Command | What it does |

@@ -121,6 +121,148 @@ timestamp() {
   date +%s
 }
 
+# UUID v4 regex (lowercase)
+UUID_V4_REGEX='^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'
+
+generate_uuid() {
+  if command -v uuidgen >/dev/null 2>&1; then
+    uuidgen | tr '[:upper:]' '[:lower:]'
+  elif command -v python3 >/dev/null 2>&1; then
+    python3 -c 'import uuid; print(uuid.uuid4())'
+  else
+    die "No UUID generator available. Install uuidgen or python3."
+  fi
+}
+
+validate_uuid() {
+  local uuid="$1"
+  [[ "$uuid" =~ $UUID_V4_REGEX ]]
+}
+
+normalize_path() {
+  # Convert absolute path to ~-form if under $HOME
+  local path="$1"
+  echo "${path/#$HOME/~}"
+}
+
+expand_path() {
+  # Expand ~-form path to absolute using current $HOME
+  local path="$1"
+  echo "${path/#\~/$HOME}"
+}
+
+# Get or create node UUID. Canonical source: .claude/ccanvil.local.json.
+# Mirrors to .ccanvil/ccanvil.lock if lockfile exists.
+get_or_create_node_uuid() {
+  local ccanvil_json=".claude/ccanvil.local.json"
+  local existing=""
+
+  # Check canonical source first
+  if [[ -f "$ccanvil_json" ]]; then
+    existing=$(jq -r '.node_uuid // empty' "$ccanvil_json" 2>/dev/null || true)
+    if [[ -n "$existing" ]]; then
+      validate_uuid "$existing" || die "Invalid UUID in $ccanvil_json: $existing"
+      echo "$existing"
+      return 0
+    fi
+  fi
+
+  # Fall back to lockfile
+  if [[ -f "$LOCKFILE" ]]; then
+    existing=$(jq -r '.node_uuid // empty' "$LOCKFILE" 2>/dev/null || true)
+    if [[ -n "$existing" ]]; then
+      validate_uuid "$existing" || die "Invalid UUID in $LOCKFILE: $existing"
+      echo "$existing"
+      return 0
+    fi
+  fi
+
+  # Generate new
+  local new_uuid
+  new_uuid=$(generate_uuid)
+  validate_uuid "$new_uuid" || die "Generated invalid UUID: $new_uuid"
+  echo "$new_uuid"
+}
+
+# Migrate path-keyed registry entries to UUID-keyed. Idempotent.
+# For each legacy path-key, resolve the node's UUID (from its ccanvil.json),
+# rewrite the entry under the UUID key, delete the old path key.
+migrate_registry() {
+  local registry="$1"
+  [[ -f "$registry" ]] || return 0
+
+  local legacy_keys
+  legacy_keys=$(jq -r '.nodes | keys[] | select(test("^[/~]"))' "$registry" 2>/dev/null || true)
+  [[ -z "$legacy_keys" ]] && return 0
+
+  while IFS= read -r legacy_key; do
+    [[ -z "$legacy_key" ]] && continue
+
+    # Resolve path and check node existence
+    local resolved
+    resolved=$(expand_path "$legacy_key")
+    if [[ ! -d "$resolved" ]] || [[ ! -f "$resolved/.claude/ccanvil.local.json" ]]; then
+      # Can't migrate: node is missing or has no ccanvil.json.
+      # Leave entry as-is; will be reported as STALE during iteration.
+      continue
+    fi
+
+    local node_uuid
+    node_uuid=$(jq -r '.node_uuid // empty' "$resolved/.claude/ccanvil.local.json" 2>/dev/null)
+    if [[ -z "$node_uuid" ]]; then
+      # Node exists but has no UUID yet — trigger generation.
+      (cd "$resolved" && get_or_create_node_uuid > /dev/null && persist_node_uuid "$(get_or_create_node_uuid)") 2>/dev/null || continue
+      node_uuid=$(jq -r '.node_uuid // empty' "$resolved/.claude/ccanvil.local.json" 2>/dev/null)
+      [[ -z "$node_uuid" ]] && continue
+    fi
+
+    # Rewrite entry under UUID key with portable path
+    local portable_path
+    portable_path=$(normalize_path "$resolved")
+    local node_name
+    node_name=$(basename "$resolved")
+
+    local tmp
+    tmp=$(mktemp)
+    jq --arg old "$legacy_key" --arg u "$node_uuid" --arg p "$portable_path" --arg n "$node_name" '
+      .nodes[$u] = (.nodes[$u] // {}) + (.nodes[$old] // {}) + {"name": $n, "path": $p}
+      | del(.nodes[$old])
+    ' "$registry" > "$tmp"
+    if [[ -s "$tmp" ]] && jq empty "$tmp" 2>/dev/null; then
+      mv "$tmp" "$registry"
+    else
+      rm -f "$tmp"
+    fi
+  done <<< "$legacy_keys"
+}
+
+# Write UUID to both canonical (.claude/ccanvil.local.json) and mirror (lockfile).
+persist_node_uuid() {
+  local uuid="$1"
+  validate_uuid "$uuid" || die "Cannot persist invalid UUID: $uuid"
+
+  # Canonical: .claude/ccanvil.local.json
+  local ccanvil_json=".claude/ccanvil.local.json"
+  mkdir -p "$(dirname "$ccanvil_json")"
+  if [[ ! -f "$ccanvil_json" ]]; then
+    echo '{}' > "$ccanvil_json"
+  fi
+  local tmp
+  tmp=$(mktemp)
+  jq --arg u "$uuid" '.node_uuid = $u' "$ccanvil_json" > "$tmp" && mv "$tmp" "$ccanvil_json"
+
+  # Mirror: lockfile (if it exists)
+  if [[ -f "$LOCKFILE" ]]; then
+    tmp=$(mktemp)
+    jq --arg u "$uuid" '.node_uuid = $u' "$LOCKFILE" > "$tmp"
+    if [[ -s "$tmp" ]] && jq empty "$tmp" 2>/dev/null; then
+      mv "$tmp" "$LOCKFILE"
+    else
+      rm -f "$tmp"
+    fi
+  fi
+}
+
 
 
 get_sync_field() {
@@ -256,6 +398,11 @@ cmd_init() {
   echo "  Hub: $display_path @ $hub_version"
   echo "  Total files: $total"
   echo "  Clean: $clean | Modified: $modified | Local: $local_only | Hub-only: $hub_only"
+
+  # Ensure node UUID exists and is mirrored in both lockfile and ccanvil.json
+  local node_uuid
+  node_uuid=$(get_or_create_node_uuid)
+  persist_node_uuid "$node_uuid"
 
   # Auto-register with the hub
   cmd_register 2>/dev/null || echo "WARNING: Hub registration failed (non-fatal)"
@@ -1765,16 +1912,26 @@ cmd_register() {
   local ts
   ts=$(timestamp)
 
+  # Ensure node UUID exists
+  local node_uuid
+  node_uuid=$(get_or_create_node_uuid)
+  persist_node_uuid "$node_uuid"
+
+  # Normalize path to ~-form for portability
+  local portable_path
+  portable_path=$(normalize_path "$node_path")
+
   # Create registry file if it doesn't exist
   if [[ ! -f "$registry" ]]; then
     mkdir -p "$(dirname "$registry")"
     echo '{"nodes":{}}' > "$registry"
   fi
 
-  # Add or update this project's entry
+  # Key by UUID. Update existing entry if present (preserve last_synced fields).
   local tmp; tmp=$(mktemp)
-  jq --arg p "$node_path" --arg n "$node_name" --arg t "$ts" \
-    '.nodes[$p] = {"name": $n, "registered_at": $t}' "$registry" > "$tmp" || true
+  jq --arg u "$node_uuid" --arg p "$portable_path" --arg n "$node_name" --arg t "$ts" \
+    '.nodes[$u] = ((.nodes[$u] // {}) + {"name": $n, "path": $p, "registered_at": $t})' \
+    "$registry" > "$tmp" || true
   if [[ -s "$tmp" ]] && jq empty "$tmp" 2>/dev/null; then
     mv "$tmp" "$registry"
   else
@@ -1782,7 +1939,7 @@ cmd_register() {
     die "Failed to update registry"
   fi
 
-  echo "REGISTERED: $node_name ($node_path)"
+  echo "REGISTERED: $node_name ($portable_path) [$node_uuid]"
 }
 
 # registry: List all registered downstream projects.
@@ -1800,7 +1957,7 @@ cmd_registry() {
 
   echo "Registered downstream projects:"
   echo ""
-  jq -r '.nodes | to_entries[] | "  \(.value.name) — \(.key)\n    registered: \(.value.registered_at)  |  last_synced: \(.value.last_synced // "never")  |  version: \(.value.last_synced_version // "never")"' "$registry"
+  jq -r '.nodes | to_entries[] | "  \(.value.name) [\(.key)]\n    path: \(.value.path // .key)\n    registered: \(.value.registered_at)  |  last_synced: \(.value.last_synced // "never")  |  version: \(.value.last_synced_version // "never")"' "$registry"
 }
 
 # broadcast: Push hub updates to all registered downstream nodes.
@@ -1837,22 +1994,44 @@ cmd_broadcast() {
   local synced=0 skipped=0 unreachable=0
   local skip_reasons=""
   local all_conflicts=""
-  local synced_nodes=""
+  local synced_uuids=""
   local hub_version
   hub_version=$(git -C "$hub_root" rev-parse --short HEAD 2>/dev/null || echo "unknown")
 
-  # Iterate over all registered nodes
-  while IFS= read -r node_path; do
-    local node_name
-    node_name=$(jq -r --arg p "$node_path" '.nodes[$p].name' "$registry")
+  # Migrate legacy path-keyed entries to UUID-keyed (AC-7, AC-8).
+  # Idempotent — entries already keyed by UUID are skipped.
+  migrate_registry "$registry"
+
+  # Iterate over all registered nodes (keyed by UUID post-migration)
+  while IFS= read -r entry_key; do
+    local node_uuid node_name portable_path node_path
+
+    if [[ "$entry_key" =~ $UUID_V4_REGEX ]]; then
+      # UUID-keyed entry
+      node_uuid="$entry_key"
+      node_name=$(jq -r --arg u "$node_uuid" '.nodes[$u].name // "unknown"' "$registry")
+      portable_path=$(jq -r --arg u "$node_uuid" '.nodes[$u].path // empty' "$registry")
+    else
+      # Legacy path-keyed entry that migration couldn't handle (node missing)
+      node_uuid=""
+      node_name=$(jq -r --arg p "$entry_key" '.nodes[$p].name // "unknown"' "$registry")
+      portable_path="$entry_key"
+    fi
+    node_path=$(expand_path "$portable_path")
+
     echo ""
     echo "=== $node_name ($node_path) ==="
 
-    # AC-8: check node path exists
-    if [[ ! -d "$node_path" ]]; then
-      echo "  SKIP: path does not exist"
+    # AC-6: Detect stale paths
+    if [[ -z "$portable_path" ]] || [[ ! -d "$node_path" ]]; then
+      if [[ -n "$node_uuid" ]]; then
+        echo "  STALE: $node_name ($node_uuid) at $portable_path"
+        skip_reasons+="  $node_name: STALE ($node_uuid) — path $portable_path no longer exists"$'\n'
+      else
+        echo "  SKIP: path does not exist"
+        skip_reasons+="  $node_name: path does not exist"$'\n'
+      fi
       unreachable=$((unreachable + 1))
-      skip_reasons+="  $node_name: path does not exist"$'\n'
       continue
     fi
 
@@ -1901,7 +2080,7 @@ cmd_broadcast() {
     if [[ "$plan_count" -eq 0 ]]; then
       echo "  Already up to date."
       synced=$((synced + 1))
-      synced_nodes+="$node_path"$'\n'
+      synced_uuids+="$node_uuid"$'\n'
       continue
     fi
 
@@ -1946,28 +2125,28 @@ cmd_broadcast() {
     (cd "$node_path" && bash "$node_path/.ccanvil/scripts/ccanvil-sync.sh" pull-finalize $dry_flag 2>&1) | sed 's/^/  /' || true
 
     synced=$((synced + 1))
-    synced_nodes+="$node_path"$'\n'
+    synced_uuids+="$node_uuid"$'\n'
 
   done < <(jq -r '.nodes | keys[]' "$registry")
 
-  # AC-5: batch-update registry after all nodes are processed.
+  # Batch-update registry after all nodes are processed.
   # Doing this after the loop prevents registry.json modifications from
   # dirtying the hub mid-broadcast (which would fail pre-check for later nodes).
-  if ! $dry_run && [[ -n "$synced_nodes" ]]; then
+  if ! $dry_run && [[ -n "$synced_uuids" ]]; then
     local sync_ts
     sync_ts=$(timestamp)
-    while IFS= read -r sp; do
-      [[ -z "$sp" ]] && continue
+    while IFS= read -r su; do
+      [[ -z "$su" ]] && continue
       local tmp; tmp=$(mktemp)
-      jq --arg p "$sp" --arg t "$sync_ts" --arg v "$hub_version" \
-        '.nodes[$p].last_synced = $t | .nodes[$p].last_synced_version = $v' \
+      jq --arg u "$su" --arg t "$sync_ts" --arg v "$hub_version" \
+        '.nodes[$u].last_synced = $t | .nodes[$u].last_synced_version = $v' \
         "$registry" > "$tmp" || true
       if [[ -s "$tmp" ]] && jq empty "$tmp" 2>/dev/null; then
         mv "$tmp" "$registry"
       else
         rm -f "$tmp"
       fi
-    done <<< "$synced_nodes"
+    done <<< "$synced_uuids"
   fi
 
   # AC-9: Summary

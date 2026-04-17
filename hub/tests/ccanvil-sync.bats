@@ -589,10 +589,10 @@ EOF
   [ "$status" -eq 0 ]
   echo "$output" | grep -q "REGISTERED"
 
-  # Verify project is in registry
-  local node_path
-  node_path=$(cd "$NODE" && pwd)
-  jq -e --arg p "$node_path" '.nodes[$p]' "$HUB/.ccanvil/registry.json"
+  # Verify project is in registry (keyed by UUID now)
+  local node_uuid
+  node_uuid=$(jq -r '.node_uuid' "$NODE/.claude/ccanvil.local.json")
+  jq -e --arg u "$node_uuid" '.nodes[$u]' "$HUB/.ccanvil/registry.json"
 }
 
 @test "init: re-init updates registration timestamp" {
@@ -1413,25 +1413,28 @@ EOF
   # Registry file should exist in hub
   [ -f "$HUB/.ccanvil/registry.json" ]
 
-  # Should contain the node project
-  local node_path
-  node_path=$(pwd)
-  jq -e --arg p "$node_path" '.nodes[$p]' "$HUB/.ccanvil/registry.json"
+  # Should contain the node project (keyed by UUID)
+  local node_uuid
+  node_uuid=$(jq -r '.node_uuid' "$NODE/.claude/ccanvil.local.json")
+  jq -e --arg u "$node_uuid" '.nodes[$u]' "$HUB/.ccanvil/registry.json"
 }
 
 @test "register: updates timestamp on repeated registration" {
   cd "$NODE"
   bash "$NODE/.ccanvil/scripts/ccanvil-sync.sh" register
 
+  local node_uuid
+  node_uuid=$(jq -r '.node_uuid' "$NODE/.claude/ccanvil.local.json")
+
   local ts1
-  ts1=$(jq -r --arg p "$(pwd)" '.nodes[$p].registered_at' "$HUB/.ccanvil/registry.json")
+  ts1=$(jq -r --arg u "$node_uuid" '.nodes[$u].registered_at' "$HUB/.ccanvil/registry.json")
 
   # Register again
   sleep 1
   bash "$NODE/.ccanvil/scripts/ccanvil-sync.sh" register
 
   local ts2
-  ts2=$(jq -r --arg p "$(pwd)" '.nodes[$p].registered_at' "$HUB/.ccanvil/registry.json")
+  ts2=$(jq -r --arg u "$node_uuid" '.nodes[$u].registered_at' "$HUB/.ccanvil/registry.json")
 
   # Timestamp should be updated
   [ "$ts2" != "$ts1" ] || [ "$ts2" = "$ts1" ]  # either updated or same second — both acceptable
@@ -1796,10 +1799,10 @@ EOF
   modified=$(jq '[.files[] | select(.status != "clean")] | length' "$FRESH/.ccanvil/ccanvil.lock")
   [ "$modified" -eq 0 ]
 
-  # Project should be registered
-  local fresh_path
-  fresh_path=$(cd "$FRESH" && pwd)
-  jq -e --arg p "$fresh_path" '.nodes[$p]' "$HUB/.ccanvil/registry.json"
+  # Project should be registered (keyed by UUID)
+  local fresh_uuid
+  fresh_uuid=$(jq -r '.node_uuid' "$FRESH/.claude/ccanvil.local.json")
+  jq -e --arg u "$fresh_uuid" '.nodes[$u]' "$HUB/.ccanvil/registry.json"
 
   rm -rf "$FRESH"
 }
@@ -2035,9 +2038,9 @@ EOF
 
   bash "$NODE/.ccanvil/scripts/ccanvil-sync.sh" broadcast
 
-  # Verify registry has last_synced for this node
-  local node_path
-  node_path=$(cd "$NODE" && pwd)
-  jq -e --arg p "$node_path" '.nodes[$p].last_synced' "$HUB/.ccanvil/registry.json"
-  jq -e --arg p "$node_path" '.nodes[$p].last_synced_version' "$HUB/.ccanvil/registry.json"
+  # Verify registry has last_synced for this node (keyed by UUID)
+  local node_uuid
+  node_uuid=$(jq -r '.node_uuid' "$NODE/.claude/ccanvil.local.json")
+  jq -e --arg u "$node_uuid" '.nodes[$u].last_synced' "$HUB/.ccanvil/registry.json"
+  jq -e --arg u "$node_uuid" '.nodes[$u].last_synced_version' "$HUB/.ccanvil/registry.json"
 }
