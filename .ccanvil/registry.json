@@ -25,6 +25,11 @@
       "name": "taxes",
       "registered_at": "1776382945",
       "path": "~/projects/taxes"
+    },
+    "b2ffaf54-6ade-4181-8aca-5ca4cc04eb3c": {
+      "name": "whoop-toolbox",
+      "path": "~/projects/whoop-toolbox",
+      "registered_at": "1776388454"
     }
   }
 }
