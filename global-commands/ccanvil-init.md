@@ -1,4 +1,4 @@
-Initialize a new project using the ccanvil preset located at ~/projects/ccanvil.
+Initialize a new project using the ccanvil preset located at ~/projects/ccanvil. (Invoked as /ccanvil-init.)
 
 1. Read ~/projects/ccanvil/README.md — it contains the complete file manifest and setup instructions.
 2. Read ~/projects/ccanvil/hub/meta/SYSTEM_PROMPT.md for the full specification of constraints and formatting rules.

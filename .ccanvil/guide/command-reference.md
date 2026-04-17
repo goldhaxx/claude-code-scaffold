@@ -78,6 +78,15 @@ Node UUIDs make registration resilient to renames, moves, machine changes, and m
 
 `register` and `broadcast` auto-commit their registry mutations in the hub (`chore(registry): ...`) so the hub stays clean after every sync event. Bootstrap commits in nodes skip gitignored files (e.g., lockfiles in projects that don't track them).
 
+## Global Commands Sync
+
+| Command | What it does |
+|---------|-------------|
+| `ccanvil-sync.sh pull-globals [--force]` | Copy hub's `global-commands/ccanvil-*.md` to `~/.claude/commands/`. Conflict-safe: differing local files are reported with diffs, not overwritten. `--force` overwrites conflicts |
+| `/ccanvil-pull-globals` | Skill wrapper — runs the script and summarizes results |
+
+Only files matching `ccanvil-*.md` are hub-owned; all other files in `~/.claude/commands/` are user-owned and never touched by ccanvil. This keeps ccanvil as a bolt-on, not a replacement for your Claude Code setup.
+
 ## Multi-Spec Lifecycle Scripts
 
 | Command | What it does |
