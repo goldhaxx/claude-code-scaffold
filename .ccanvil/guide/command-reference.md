@@ -76,6 +76,8 @@
 
 Node UUIDs make registration resilient to renames, moves, machine changes, and multi-user setups. The UUID is authoritative; paths self-update on each sync.
 
+`register` and `broadcast` auto-commit their registry mutations in the hub (`chore(registry): ...`) so the hub stays clean after every sync event. Bootstrap commits in nodes skip gitignored files (e.g., lockfiles in projects that don't track them).
+
 ## Multi-Spec Lifecycle Scripts
 
 | Command | What it does |

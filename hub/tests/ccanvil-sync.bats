@@ -1875,7 +1875,9 @@ EOF
   cd "$NODE2"
   bash "$NODE2/.ccanvil/scripts/ccanvil-sync.sh" init "$HUB"
   git -C "$NODE2" add -A && git -C "$NODE2" commit -q -m "ccanvil init"
-  git -C "$HUB" add -A && git -C "$HUB" commit -q -m "register node2"
+  # Hub registry is auto-committed by register; fall back for test compat
+  git -C "$HUB" add -A 2>/dev/null
+  git -C "$HUB" commit -q -m "register node2" 2>/dev/null || true
 
   # Make node2 dirty
   echo "dirty" > "$NODE2/dirty-file.txt"
