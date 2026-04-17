@@ -201,19 +201,25 @@ migrate_registry() {
     # Resolve path and check node existence
     local resolved
     resolved=$(expand_path "$legacy_key")
-    if [[ ! -d "$resolved" ]] || [[ ! -f "$resolved/.claude/ccanvil.local.json" ]]; then
-      # Can't migrate: node is missing or has no ccanvil.json.
+    if [[ ! -d "$resolved" ]]; then
       # Leave entry as-is; will be reported as STALE during iteration.
       continue
     fi
 
-    local node_uuid
-    node_uuid=$(jq -r '.node_uuid // empty' "$resolved/.claude/ccanvil.local.json" 2>/dev/null)
-    if [[ -z "$node_uuid" ]]; then
-      # Node exists but has no UUID yet — trigger generation.
-      (cd "$resolved" && get_or_create_node_uuid > /dev/null && persist_node_uuid "$(get_or_create_node_uuid)") 2>/dev/null || continue
+    # Read UUID from ccanvil.local.json if present; otherwise generate in the node.
+    local node_uuid=""
+    if [[ -f "$resolved/.claude/ccanvil.local.json" ]]; then
       node_uuid=$(jq -r '.node_uuid // empty' "$resolved/.claude/ccanvil.local.json" 2>/dev/null)
+    fi
+    if [[ -z "$node_uuid" ]]; then
+      # Generate + persist inside the node via subshell (cd doesn't leak).
+      node_uuid=$(cd "$resolved" && {
+        u=$(get_or_create_node_uuid 2>/dev/null) && \
+        persist_node_uuid "$u" 2>/dev/null && \
+        echo "$u"
+      })
       [[ -z "$node_uuid" ]] && continue
+      validate_uuid "$node_uuid" || continue
     fi
 
     # Rewrite entry under UUID key with portable path
