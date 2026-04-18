@@ -3,42 +3,44 @@
     "3037c9dc-6d8b-4150-b176-d7eb1578127a": {
       "name": "fieldnation-toolbox",
       "registered_at": "1775764225",
-      "last_synced": "1776538504",
-      "last_synced_version": "5ec9988",
+      "last_synced": "1776538554",
+      "last_synced_version": "8f5ad8c",
       "path": "~/projects/fieldnation-toolbox"
     },
     "c7bcdbe1-7e32-411a-8422-6d5fcf622c1a": {
       "name": "fucina",
       "registered_at": "1775680942",
-      "last_synced": "1776538504",
-      "last_synced_version": "5ec9988",
+      "last_synced": "1776538554",
+      "last_synced_version": "8f5ad8c",
       "path": "~/projects/fucina"
     },
     "ac646194-3bb9-4d02-82ce-43213c95e4a6": {
       "name": "luxlook",
       "registered_at": "1775793584",
-      "last_synced": "1776538504",
-      "last_synced_version": "5ec9988",
+      "last_synced": "1776538554",
+      "last_synced_version": "8f5ad8c",
       "path": "~/projects/luxlook"
     },
     "24f2fe5a-09b3-4b04-940b-4148b6c60968": {
       "name": "taxes",
       "registered_at": "1776382945",
       "path": "~/projects/taxes",
-      "last_synced": "1776538504",
-      "last_synced_version": "5ec9988"
+      "last_synced": "1776538554",
+      "last_synced_version": "8f5ad8c"
     },
     "b2ffaf54-6ade-4181-8aca-5ca4cc04eb3c": {
       "name": "whoop-toolbox",
       "path": "~/projects/whoop-toolbox",
       "registered_at": "1776388454",
-      "last_synced": "1776538504",
-      "last_synced_version": "5ec9988"
+      "last_synced": "1776538554",
+      "last_synced_version": "8f5ad8c"
     },
     "4ee230a2-6454-4cbd-bbac-666ff0aac054": {
       "name": "caffeine-calculator",
       "path": "~/projects/caffeine-calculator",
-      "registered_at": "1776538476"
+      "registered_at": "1776538476",
+      "last_synced": "1776538554",
+      "last_synced_version": "8f5ad8c"
     }
   }
 }
