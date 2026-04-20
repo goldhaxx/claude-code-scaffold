@@ -2,7 +2,7 @@
 
 > Feature: global-commands-sync
 > Created: 1776388358
-> Status: In Progress
+> Status: Complete
 
 ## Summary
 
