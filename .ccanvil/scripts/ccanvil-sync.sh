@@ -1203,6 +1203,11 @@ cmd_pull_plan() {
       continue
     fi
 
+    # Skip non-hub origins (stack files are owned by stack-apply, not broadcast)
+    if [[ "$origin" != "hub" ]]; then
+      continue
+    fi
+
     local hub_file="$hub_source/$file"
 
     # Check if file was removed from hub
