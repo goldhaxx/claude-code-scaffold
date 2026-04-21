@@ -741,7 +741,8 @@ cmd_activate() {
     local fpath="${line:3}"
     fpath="${fpath%% -> *}"  # strip rename target
     case "$fpath" in
-      "${docs_prefix}specs/"*|"${docs_prefix}spec.md") ;;  # allowed
+      "${docs_prefix}specs/"*|"${docs_prefix}spec.md") ;;                       # allowed: spec files
+      "${docs_prefix}ideas.md"|"${docs_prefix}roadmap.md") ;;                   # allowed: triage artifacts
       *) dirty_non_spec="$fpath"; break ;;
     esac
   done < <(git -C "$repo_root" status --porcelain --untracked-files=all 2>/dev/null)
@@ -884,10 +885,24 @@ cmd_land() {
   local branch
   branch=$(git branch --show-current 2>/dev/null)
 
-  # Must not be on main
+  # Already on main: gh pr merge --delete-branch switches to main and deletes
+  # the local branch itself. In that case, just fast-forward local main to
+  # origin so subsequent work starts from a clean, in-sync state.
   if [[ "$branch" == "main" || "$branch" == "master" ]]; then
-    echo "ERROR: Already on main. Nothing to land." >&2
-    exit 1
+    if git remote get-url origin >/dev/null 2>&1; then
+      git fetch origin 2>/dev/null
+      local main_ref="origin/$branch"
+      if git rev-parse --verify "$main_ref" >/dev/null 2>&1; then
+        git merge --ff-only "$main_ref" 2>/dev/null && \
+          echo "Already on $branch. Fast-forwarded to $main_ref." || \
+          echo "Already on $branch. Local has diverged from $main_ref — resolve manually."
+      else
+        echo "Already on $branch. No remote tracking ref."
+      fi
+    else
+      echo "Already on $branch. No remote configured."
+    fi
+    return 0
   fi
 
   # Check if PR is merged (unless --force)
