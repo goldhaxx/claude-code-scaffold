@@ -1,12 +1,12 @@
 Analyze the preset for opportunities to reduce stochastic surface area and increase deterministic automation.
 
-This is a self-review process. Run it on demand (`/ccanvil-audit`) or as part of checkpoints and reviews.
+This is a self-review process. Run it on demand (`/ccanvil-audit`) or as part of `/stasis` runs and reviews.
 
 ## Step 1: Collect evidence
 
 Review recent work for stochastic interventions — moments where Claude exercised judgment on operations that could be deterministic:
 
-1. Read `docs/checkpoint.md` for recent session activity.
+1. Read `docs/stasis.md` for recent session activity.
 2. Run `git log --oneline -20` to see recent commits.
 3. Run `git diff HEAD~5..HEAD --stat` to see recent changes.
 4. Read `.claude/rules/deterministic-first.md` for the principle and anti-patterns.

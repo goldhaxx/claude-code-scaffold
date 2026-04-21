@@ -45,7 +45,7 @@ Replace these with your project's actual commands:
 - NEVER skip the red phase. If you can't make a test fail first, you don't understand the requirement.
 - NEVER write implementation code without a failing test driving it.
 - NEVER refactor while tests are failing.
-- If stuck after 2 attempts, stop and write alternatives to `docs/checkpoint.md`.
+- If stuck after 2 attempts, stop and write alternatives to `docs/stasis.md`.
 
 <!-- NODE-SPECIFIC-START -->
 <!-- Add project-specific content below this line. -->

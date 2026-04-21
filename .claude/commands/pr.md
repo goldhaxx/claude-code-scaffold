@@ -19,10 +19,10 @@ This command ensures the branch is ready for merge: tests pass, docs are validat
 
 ## Clean up lifecycle docs
 
-7. If `docs/spec.md`, `docs/plan.md`, or `docs/checkpoint.md` exist, remove them and commit:
+7. If `docs/spec.md`, `docs/plan.md`, or `docs/stasis.md` exist, remove them and commit:
    ```bash
-   rm -f docs/spec.md docs/plan.md docs/checkpoint.md
-   git add docs/spec.md docs/plan.md docs/checkpoint.md
+   rm -f docs/spec.md docs/plan.md docs/stasis.md
+   git add docs/spec.md docs/plan.md docs/stasis.md
    git commit -m "docs(lifecycle): clean up lifecycle docs before merge"
    ```
 

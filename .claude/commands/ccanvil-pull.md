@@ -18,7 +18,7 @@ If `status` is `"behind"`, present the assessment:
 3. Run `context-budget.sh check --text` and note the current budget status as a baseline.
 4. Ask the user: "Proceed with pull?" — **wait for confirmation** before continuing to Step 1.
 
-This is a checkpoint. Do NOT proceed to Step 1 until the user confirms.
+This is a pause point. Do NOT proceed to Step 1 until the user confirms.
 
 ## Step 1: Pre-check and plan (deterministic)
 

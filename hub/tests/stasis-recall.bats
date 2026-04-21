@@ -206,3 +206,22 @@ OPERATIONS="$REPO_ROOT/.ccanvil/scripts/operations.sh"
 @test "manifest.lock: no 'docs/templates/checkpoint.md' stale entries" {
   ! grep -q '"docs/templates/checkpoint\.md"' "$REPO_ROOT/.claude/manifest.lock"
 }
+
+# --- Step 5: pr skill + other command-files cleanup ---
+
+@test "pr command: cleanup list references docs/stasis.md (not docs/checkpoint.md)" {
+  local pr="$REPO_ROOT/.claude/commands/pr.md"
+  grep -q 'docs/stasis\.md' "$pr"
+  ! grep -q 'docs/checkpoint\.md' "$pr"
+}
+
+@test "ccanvil-audit command: references docs/stasis.md" {
+  local audit="$REPO_ROOT/.claude/commands/ccanvil-audit.md"
+  grep -q 'docs/stasis\.md' "$audit"
+  ! grep -q 'docs/checkpoint\.md' "$audit"
+}
+
+@test "tdd skill: references docs/stasis.md for stuck-alternatives" {
+  local tdd="$REPO_ROOT/.claude/skills/tdd/SKILL.md"
+  ! grep -q 'docs/checkpoint\.md' "$tdd"
+}
