@@ -152,3 +152,41 @@ EOF
   [ "$result" = "stale-stasis" ]
   teardown_fixture
 }
+
+# --- Step 3: operations.sh op rename ---
+
+OPERATIONS="$REPO_ROOT/.ccanvil/scripts/operations.sh"
+
+@test "operations.sh: no 'checkpoint.read' or 'checkpoint.write' ops" {
+  ! grep -qE 'checkpoint\.(read|write)' "$OPERATIONS"
+}
+
+@test "operations.sh: exposes 'stasis.read' and 'stasis.write' ops" {
+  grep -q 'stasis\.read' "$OPERATIONS"
+  grep -q 'stasis\.write' "$OPERATIONS"
+}
+
+@test "operations.sh resolve stasis.read returns JSON invocation" {
+  run bash "$OPERATIONS" resolve stasis.read
+  [ "$status" -eq 0 ]
+  cmd=$(echo "$output" | jq -r '.invocation.command')
+  [[ "$cmd" == *"docs/stasis.md"* ]]
+}
+
+@test "operations.sh resolve stasis.write returns JSON invocation" {
+  run bash "$OPERATIONS" resolve stasis.write
+  [ "$status" -eq 0 ]
+  cmd=$(echo "$output" | jq -r '.invocation.command')
+  [[ "$cmd" == *"templates/stasis.md"* ]]
+  [[ "$cmd" == *"docs/stasis.md"* ]]
+}
+
+@test "operations.sh resolve checkpoint.read exits non-zero (removed)" {
+  run bash "$OPERATIONS" resolve checkpoint.read
+  [ "$status" -ne 0 ]
+}
+
+@test "operations.sh: status.get output contract includes 'stasis' (not 'checkpoint')" {
+  grep -qE 'output_contract=.*"stasis"' "$OPERATIONS"
+  ! grep -qE 'output_contract=.*"checkpoint"' "$OPERATIONS"
+}

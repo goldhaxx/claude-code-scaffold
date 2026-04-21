@@ -30,7 +30,7 @@ is_valid_operation() {
     backlog.list|backlog.create|backlog.prioritize|backlog.get) return 0 ;;
     spec.read|spec.write|spec.list|spec.activate|spec.complete) return 0 ;;
     plan.read|plan.write) return 0 ;;
-    checkpoint.read|checkpoint.write) return 0 ;;
+    stasis.read|stasis.write) return 0 ;;
     status.get|status.update) return 0 ;;
     pr.create|pr.list) return 0 ;;
     review.run) return 0 ;;
@@ -50,7 +50,7 @@ Operations:
   backlog.{list,create,prioritize,get}
   spec.{read,write,list,activate,complete}
   plan.{read,write}
-  checkpoint.{read,write}
+  stasis.{read,write}
   status.{get,update}
   pr.{create,list}
   review.run
@@ -229,19 +229,19 @@ local_adapter() {
       cmd="cp .ccanvil/templates/plan.md docs/plan.md"
       output_contract='["feature_id"]'
       ;;
-    # --- checkpoint ---
-    checkpoint.read)
-      cmd="cat docs/checkpoint.md"
+    # --- stasis ---
+    stasis.read)
+      cmd="cat docs/stasis.md"
       output_contract='["feature_id","plan_hash","body"]'
       ;;
-    checkpoint.write)
-      cmd="cp .ccanvil/templates/checkpoint.md docs/checkpoint.md"
+    stasis.write)
+      cmd="cp .ccanvil/templates/stasis.md docs/stasis.md"
       output_contract='["feature_id"]'
       ;;
     # --- status ---
     status.get)
       cmd=".ccanvil/scripts/docs-check.sh status"
-      output_contract='["spec","plan","checkpoint"]'
+      output_contract='["spec","plan","stasis"]'
       ;;
     status.update)
       cmd=".ccanvil/scripts/docs-check.sh validate"

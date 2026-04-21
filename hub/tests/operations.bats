@@ -81,7 +81,7 @@ teardown() {
     backlog.list backlog.create backlog.prioritize backlog.get
     spec.read spec.write spec.list spec.activate spec.complete
     plan.read plan.write
-    checkpoint.read checkpoint.write
+    stasis.read stasis.write
     status.get status.update
     pr.create pr.list
     review.run
@@ -111,9 +111,9 @@ teardown() {
   echo "$output" | jq -e '.invocation.command | test("plan.md")'
 }
 
-@test "checkpoint.read local command references docs/checkpoint.md" {
-  run bash "$SCRIPT" resolve checkpoint.read --project-dir "$PROJECT"
-  echo "$output" | jq -e '.invocation.command | test("checkpoint.md")'
+@test "stasis.read local command references docs/stasis.md" {
+  run bash "$SCRIPT" resolve stasis.read --project-dir "$PROJECT"
+  echo "$output" | jq -e '.invocation.command | test("stasis.md")'
 }
 
 @test "status.get local command references docs-check.sh" {
