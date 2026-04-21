@@ -2076,6 +2076,78 @@ cmd_relocate() {
   return $rc
 }
 
+# migrate-stasis-artifact: One-time migration from legacy checkpoint/catchup
+# naming to stasis/recall. Idempotent. Intended to run inside a node's project
+# dir, either standalone or via broadcast's per-node hook.
+#
+# Actions (each conditional, each idempotent):
+#   1. If docs/checkpoint.md exists AND docs/stasis.md does NOT → git mv +
+#      commit the rename so history follows.
+#   2. If both docs/checkpoint.md AND docs/stasis.md exist → abort with
+#      status 1; user must resolve manually (ambiguous state).
+#   3. If .claude/commands/catchup.md exists → git rm + commit (hub-owned
+#      file, now removed).
+#
+# Exit: 0 on success or no-op; 1 on ambiguous both-exist state.
+cmd_migrate_stasis_artifact() {
+  local project_dir
+  project_dir=$(pwd)
+
+  local did_work=false
+
+  local old_artifact="$project_dir/docs/checkpoint.md"
+  local new_artifact="$project_dir/docs/stasis.md"
+  local old_catchup="$project_dir/.claude/commands/catchup.md"
+
+  # Step 1/2: artifact rename (or conflict detection)
+  if [[ -f "$old_artifact" && -f "$new_artifact" ]]; then
+    echo "ERROR: both docs/checkpoint.md and docs/stasis.md exist." >&2
+    echo "       Migration can't choose between them. Resolve manually:" >&2
+    echo "       1. Decide which content to keep." >&2
+    echo "       2. Remove the other file and commit." >&2
+    echo "       3. Re-run migrate-stasis-artifact." >&2
+    return 1
+  fi
+
+  if [[ -f "$old_artifact" && ! -f "$new_artifact" ]]; then
+    # Prefer git mv for history preservation; fall back to plain mv if git fails
+    # (e.g., file not tracked).
+    if git -C "$project_dir" ls-files --error-unmatch "docs/checkpoint.md" >/dev/null 2>&1; then
+      (cd "$project_dir" && git mv "docs/checkpoint.md" "docs/stasis.md") || {
+        mv "$old_artifact" "$new_artifact"
+      }
+    else
+      mv "$old_artifact" "$new_artifact"
+      (cd "$project_dir" && git add "docs/stasis.md" 2>/dev/null || true)
+    fi
+    did_work=true
+    echo "MIGRATED: docs/checkpoint.md → docs/stasis.md"
+  fi
+
+  # Step 3: remove legacy catchup command
+  if [[ -f "$old_catchup" ]]; then
+    if git -C "$project_dir" ls-files --error-unmatch ".claude/commands/catchup.md" >/dev/null 2>&1; then
+      (cd "$project_dir" && git rm -q ".claude/commands/catchup.md") || {
+        rm -f "$old_catchup"
+      }
+    else
+      rm -f "$old_catchup"
+    fi
+    did_work=true
+    echo "REMOVED: .claude/commands/catchup.md (superseded by /recall skill)"
+  fi
+
+  # Single commit captures both actions if either occurred.
+  if $did_work; then
+    (cd "$project_dir" && \
+      ALLOW_MAIN=1 git -c commit.gpgsign=false commit -q \
+        -m "chore(stasis-migration): rename checkpoint/catchup artifacts" \
+        2>/dev/null || true)
+  fi
+
+  return 0
+}
+
 # registry: List all registered downstream projects.
 # Can be run from anywhere with a lockfile.
 cmd_registry() {
@@ -2254,6 +2326,27 @@ cmd_broadcast() {
         skip_reasons+="  $node_name: pre-check failed after bootstrap"$'\n'
         continue
       }
+    fi
+
+    # Stasis-rename migration. Runs once per node; idempotent afterward.
+    # Exit 1 from the migration means ambiguous state (both files exist) —
+    # skip the node so the user can resolve manually.
+    local migration_out
+    migration_out=$(cd "$node_path" && bash "$node_path/.ccanvil/scripts/ccanvil-sync.sh" migrate-stasis-artifact 2>&1) || {
+      echo "  SKIP: stasis-migration refused (both docs/checkpoint.md and docs/stasis.md exist)"
+      echo "  $migration_out" | head -6
+      skipped=$((skipped + 1))
+      skip_reasons+="  $node_name: stasis-migration ambiguous state"$'\n'
+      continue
+    }
+    if echo "$migration_out" | grep -qE "^(MIGRATED|REMOVED):"; then
+      echo "$migration_out" | sed 's/^/  /'
+      if ! $dry_run; then
+        append_event "$hub_root" "$(jq -nc \
+          --arg u "$node_uuid" \
+          --arg n "$node_name" \
+          '{event:"migrate_stasis_rename",node_uuid:$u,node_name:$n}')"
+      fi
     fi
 
     # Run pull-plan to classify changes
@@ -2679,6 +2772,7 @@ case "${1:-}" in
   promote)          shift; cmd_promote "$@" ;;
   demote)           shift; cmd_demote "$@" ;;
   migrate)          shift; cmd_migrate "$@" ;;
+  migrate-stasis-artifact) cmd_migrate_stasis_artifact ;;
   register)         cmd_register ;;
   registry)         cmd_registry ;;
   events)           shift; cmd_events "$@" ;;
