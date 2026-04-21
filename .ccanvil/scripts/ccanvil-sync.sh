@@ -2029,6 +2029,55 @@ cmd_register() {
     "chore(registry): register $node_name [$node_uuid]"
 }
 
+# relocate: Re-associate Claude Code conversation history after `mv`.
+# Renames ~/.claude/projects/<old-encoded> → <new-encoded> (new = $(pwd))
+# and rewrites embedded "cwd":"<old-path>" fields in every .jsonl session file.
+# Usage: ccanvil-sync.sh relocate <old-absolute-path>
+cmd_relocate() {
+  local old_path="${1:-}"
+  if [[ -z "$old_path" || "$old_path" != /* ]]; then
+    echo "ERROR: relocate requires an absolute <old-path>" >&2
+    echo "Usage: ccanvil-sync.sh relocate <old-absolute-path>" >&2
+    return 2
+  fi
+
+  local new_path
+  new_path=$(pwd)
+
+  local old_encoded new_encoded
+  old_encoded="${old_path//\//-}"
+  new_encoded="${new_path//\//-}"
+
+  local projects_dir="$HOME/.claude/projects"
+  local old_dir="$projects_dir/$old_encoded"
+  local new_dir="$projects_dir/$new_encoded"
+
+  if [[ ! -d "$old_dir" ]]; then
+    echo "No history dir found at $old_dir (already relocated?)"
+    return 0
+  fi
+
+  if [[ -d "$new_dir" ]]; then
+    echo "ERROR: destination history dir already exists: $new_dir" >&2
+    echo "       Cowardly refusing to merge. Resolve manually." >&2
+    return 1
+  fi
+
+  mv "$old_dir" "$new_dir" || { echo "ERROR: rename failed" >&2; return 1; }
+
+  local rc=0
+  local old_field="\"cwd\":\"${old_path}\""
+  local new_field="\"cwd\":\"${new_path}\""
+  while IFS= read -r -d '' jsonl; do
+    sed -i '' "s|${old_field}|${new_field}|g" "$jsonl" 2>/dev/null || \
+      sed -i "s|${old_field}|${new_field}|g" "$jsonl" || \
+      { echo "WARNING: cwd rewrite failed for $jsonl" >&2; rc=1; }
+  done < <(find "$new_dir" -name '*.jsonl' -print0)
+
+  echo "RELOCATED: $old_dir -> $new_dir"
+  return $rc
+}
+
 # registry: List all registered downstream projects.
 # Can be run from anywhere with a lockfile.
 cmd_registry() {
@@ -2599,6 +2648,9 @@ case "${1:-}" in
 
   # --- Global commands sync ---
   pull-globals)     shift; cmd_pull_globals "$@" ;;
+
+  # --- Claude Code history relocation ---
+  relocate)         shift; cmd_relocate "$@" ;;
 
   *)
     echo "Usage: ccanvil-sync.sh <command> [args]"
