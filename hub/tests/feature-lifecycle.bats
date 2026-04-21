@@ -990,10 +990,13 @@ EOF
 # land command (AC-5 through AC-10)
 # ---------------------------------------------------------------------------
 
-@test "land: fails when already on main" {
+@test "land: succeeds when already on main (post-gh-merge normalization)" {
+  # gh pr merge --delete-branch leaves us on main with the local feature
+  # branch already gone. Land should not treat this as an error; it should
+  # sync local main with origin so subsequent work starts clean.
   cd "$PROJECT"
   run "$PROJECT/.ccanvil/scripts/docs-check.sh" land
-  [ "$status" -eq 1 ]
+  [ "$status" -eq 0 ]
   echo "$output" | grep -q "Already on main"
 }
 
@@ -1047,4 +1050,87 @@ EOF
   run "$PROJECT/.ccanvil/scripts/docs-check.sh" land --force
   [ "$status" -eq 0 ]
   echo "$output" | grep -q "already deleted"
+}
+
+# ---------------------------------------------------------------------------
+# Git-flow robustness: allow triage artifacts during activate, already-on-main
+# sync during land. See "git-flow" session 2026-04-21 for root-cause analysis.
+# ---------------------------------------------------------------------------
+
+@test "activate: succeeds with uncommitted docs/ideas.md" {
+  cat > "$PROJECT/docs/specs/auth-system.md" <<'EOF'
+# Feature: Auth System
+
+> Feature: auth-system
+> Created: 1774200000
+> Status: Ready
+
+## Summary
+Auth feature.
+EOF
+  git -C "$PROJECT" add -A && git -C "$PROJECT" commit -q -m "add spec"
+
+  # Triage artifact — no reason to force a pre-activate commit on main
+  echo "- [ ] abcd 123: some idea <!-- status:new -->" > "$PROJECT/docs/ideas.md"
+
+  run "$PROJECT/.ccanvil/scripts/docs-check.sh" activate auth-system "$PROJECT/docs"
+  [ "$status" -eq 0 ]
+  echo "$output" | grep -q "Activated spec 'auth-system'"
+}
+
+@test "activate: succeeds with uncommitted docs/roadmap.md" {
+  cat > "$PROJECT/docs/specs/auth-system.md" <<'EOF'
+# Feature: Auth System
+
+> Feature: auth-system
+> Created: 1774200000
+> Status: Ready
+
+## Summary
+Auth feature.
+EOF
+  git -C "$PROJECT" add -A && git -C "$PROJECT" commit -q -m "add spec"
+
+  # Roadmap updates are also lifecycle artifacts
+  echo "# Roadmap" > "$PROJECT/docs/roadmap.md"
+
+  run "$PROJECT/.ccanvil/scripts/docs-check.sh" activate auth-system "$PROJECT/docs"
+  [ "$status" -eq 0 ]
+  echo "$output" | grep -q "Activated spec 'auth-system'"
+}
+
+@test "land: already-on-main fast-forwards to origin when behind" {
+  # Simulate post-gh-pr-merge: we're on main, branch already gone, and origin
+  # has a squash-merge commit that local main doesn't have yet.
+  cd "$PROJECT"
+  cat > "$PROJECT/docs/specs/auth-system.md" <<'EOF'
+# Feature: Auth System
+
+> Feature: auth-system
+> Created: 1774200000
+> Status: Ready
+EOF
+  git -C "$PROJECT" add -A && git -C "$PROJECT" commit -q -m "add spec"
+  git -C "$PROJECT" push -u origin main 2>/dev/null
+
+  # Push a divergent commit to origin via a clone (simulates the squash merge)
+  local other_clone
+  other_clone=$(mktemp -d)
+  git clone -q "$REMOTE" "$other_clone"
+  git -C "$other_clone" config user.email "test@test.com"
+  git -C "$other_clone" config user.name "Test"
+  echo "feature" > "$other_clone/feature.txt"
+  git -C "$other_clone" add -A
+  git -C "$other_clone" commit -q -m "feat: merge feature (#1)"
+  git -C "$other_clone" push -q origin main
+  rm -rf "$other_clone"
+
+  run "$PROJECT/.ccanvil/scripts/docs-check.sh" land --force
+  [ "$status" -eq 0 ]
+
+  # Local main is now at origin's HEAD
+  local local_sha remote_sha
+  local_sha=$(git -C "$PROJECT" rev-parse HEAD)
+  remote_sha=$(git -C "$PROJECT" ls-remote origin main | awk '{print $1}')
+  [ "$local_sha" = "$remote_sha" ]
 }
