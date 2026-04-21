@@ -1067,19 +1067,19 @@ RULES="$BATS_TEST_DIRNAME/../../.claude/rules"
 }
 
 # ===========================================================================
-# Step 9: /catchup integration (AC-10, AC-11)
+# /recall skill integration (was /catchup pre-stasis-recall)
 # ===========================================================================
 
-COMMANDS="$BATS_TEST_DIRNAME/../../.claude/commands"
+SKILLS="$BATS_TEST_DIRNAME/../../.claude/skills"
 
-@test "catchup: surfaces Determinism Review from checkpoint" {
-  run grep -c "Determinism Review" "$COMMANDS/catchup.md"
+@test "recall: surfaces Determinism Review from stasis" {
+  run grep -c "Determinism Review" "$SKILLS/recall/SKILL.md"
   [ "$status" -eq 0 ]
   [ "$output" -ge 1 ]
 }
 
-@test "catchup: runs audit-session" {
-  run grep -c "audit-session" "$COMMANDS/catchup.md"
+@test "recall: runs audit-session" {
+  run grep -c "audit-session" "$SKILLS/recall/SKILL.md"
   [ "$status" -eq 0 ]
   [ "$output" -ge 1 ]
 }

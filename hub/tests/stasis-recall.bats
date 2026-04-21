@@ -229,3 +229,31 @@ OPERATIONS="$REPO_ROOT/.ccanvil/scripts/operations.sh"
   local tdd="$REPO_ROOT/.claude/skills/tdd/SKILL.md"
   ! grep -q 'docs/checkpoint\.md' "$tdd"
 }
+
+# --- Step 9: /recall skill + catchup deletion ---
+
+@test "recall skill: .claude/skills/recall/SKILL.md exists" {
+  [ -f "$REPO_ROOT/.claude/skills/recall/SKILL.md" ]
+}
+
+@test "recall skill: has frontmatter name: recall" {
+  grep -qE '^name:\s*recall' "$REPO_ROOT/.claude/skills/recall/SKILL.md"
+}
+
+@test "recall skill: reads docs/stasis.md (not docs/checkpoint.md)" {
+  local recall="$REPO_ROOT/.claude/skills/recall/SKILL.md"
+  grep -q 'docs/stasis\.md' "$recall"
+  ! grep -q 'docs/checkpoint\.md' "$recall"
+}
+
+@test "recall skill: runs audit-session (ported from catchup)" {
+  grep -q 'audit-session' "$REPO_ROOT/.claude/skills/recall/SKILL.md"
+}
+
+@test "recall skill: runs docs-check.sh validate" {
+  grep -q 'docs-check.sh validate' "$REPO_ROOT/.claude/skills/recall/SKILL.md"
+}
+
+@test "legacy catchup command: .claude/commands/catchup.md is deleted" {
+  [ ! -f "$REPO_ROOT/.claude/commands/catchup.md" ]
+}

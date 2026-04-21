@@ -422,11 +422,11 @@ JSON
 }
 
 # =========================================================================
-# Step 10: Wire /catchup command (AC-7)
+# Wire /recall skill (was /catchup pre-stasis-recall)
 # =========================================================================
 
-@test "catchup.md references operations.sh resolve backlog.list" {
-  grep -q "operations.sh resolve backlog.list" "$BATS_TEST_DIRNAME/../../.claude/commands/catchup.md"
+@test "recall SKILL.md references operations.sh resolve backlog.list" {
+  grep -q "operations.sh resolve backlog.list" "$BATS_TEST_DIRNAME/../../.claude/skills/recall/SKILL.md"
 }
 
 # =========================================================================
