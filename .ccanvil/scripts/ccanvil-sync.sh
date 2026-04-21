@@ -1430,6 +1430,23 @@ cmd_pull_apply() {
         "$LOCKFILE" > "$tmp" || true
       safe_lock_mv "$tmp" "$LOCKFILE" "pull-apply take-hub $file"
       echo "APPLIED: $file (took hub)"
+
+      # After take-hub on settings.json, re-apply each active stack so
+      # stack hook entries wiped by hub's settings.json are restored.
+      if [[ "$file" == ".claude/settings.json" && -f ".claude/ccanvil.json" ]]; then
+        local active_stacks
+        active_stacks=$(jq -r '.stacks[]? // empty' .claude/ccanvil.json 2>/dev/null || true)
+        if [[ -n "$active_stacks" ]]; then
+          while IFS= read -r sid; do
+            [[ -z "$sid" ]] && continue
+            if ( cmd_stack_apply "$sid" ) >/dev/null 2>&1; then
+              echo "REAPPLIED STACK: $sid (settings.json was overwritten)"
+            else
+              echo "WARNING: stack-apply $sid failed during auto-reapply" >&2
+            fi
+          done <<< "$active_stacks"
+        fi
+      fi
       ;;
 
     keep-local)
