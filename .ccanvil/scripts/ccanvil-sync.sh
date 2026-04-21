@@ -105,6 +105,29 @@ commit_hub_file() {
   return 0
 }
 
+# commit_node_file: auto-commit a single file in the current node repo.
+# Mirror of commit_hub_file but operates on $(pwd).
+# No-op if: cwd isn't a git repo, file unchanged, commit fails.
+# Usage: commit_node_file <rel_file> <commit_message>
+commit_node_file() {
+  local rel_file="$1"
+  local message="$2"
+
+  git rev-parse --git-dir >/dev/null 2>&1 || return 0
+
+  if git diff --quiet -- "$rel_file" 2>/dev/null && \
+     git diff --cached --quiet -- "$rel_file" 2>/dev/null; then
+    if ! git ls-files --others --exclude-standard -- "$rel_file" 2>/dev/null | grep -q .; then
+      return 0
+    fi
+  fi
+
+  ALLOW_MAIN=1 git add -- "$rel_file" && \
+    ALLOW_MAIN=1 git commit -m "$message" --quiet --only -- "$rel_file" 2>&1 || \
+    echo "WARNING: auto-commit of $rel_file failed (node left dirty)" >&2
+  return 0
+}
+
 safe_lock_mv() {
   local tmp="$1"
   local target="$2"
@@ -1979,6 +2002,10 @@ cmd_register() {
   fi
 
   echo "REGISTERED: $node_name ($portable_path) [$node_uuid]"
+
+  # Auto-commit the node UUID file so broadcast's dirty-tree pre-check passes
+  commit_node_file ".claude/ccanvil.local.json" \
+    "chore(ccanvil): register node $node_name [$node_uuid]"
 
   # Auto-commit the registry mutation so the hub stays clean (AC-1, AC-6)
   commit_hub_file "$hub_root" ".ccanvil/registry.json" \
