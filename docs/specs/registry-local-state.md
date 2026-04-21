@@ -2,7 +2,7 @@
 
 > Feature: registry-local-state
 > Created: 1776717600
-> Status: In Progress
+> Status: Complete
 
 ## Summary
 
