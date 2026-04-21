@@ -257,3 +257,67 @@ OPERATIONS="$REPO_ROOT/.ccanvil/scripts/operations.sh"
 @test "legacy catchup command: .claude/commands/catchup.md is deleted" {
   [ ! -f "$REPO_ROOT/.claude/commands/catchup.md" ]
 }
+
+# --- Step 10: /stasis skill ---
+
+@test "stasis skill: .claude/skills/stasis/SKILL.md exists" {
+  [ -f "$REPO_ROOT/.claude/skills/stasis/SKILL.md" ]
+}
+
+@test "stasis skill: has frontmatter name: stasis" {
+  grep -qE '^name:\s*stasis' "$REPO_ROOT/.claude/skills/stasis/SKILL.md"
+}
+
+@test "stasis skill: writes to docs/stasis.md (AC-3)" {
+  grep -q 'docs/stasis\.md' "$REPO_ROOT/.claude/skills/stasis/SKILL.md"
+}
+
+@test "stasis skill: uses .ccanvil/templates/stasis.md (AC-3)" {
+  grep -q '\.ccanvil/templates/stasis\.md' "$REPO_ROOT/.claude/skills/stasis/SKILL.md"
+}
+
+@test "stasis skill: invokes docs-check.sh validate (AC-4, AC-11)" {
+  grep -q 'docs-check.sh validate' "$REPO_ROOT/.claude/skills/stasis/SKILL.md"
+}
+
+@test "stasis skill: invokes radar-gather, idea-count, audit-session (AC-2)" {
+  local s="$REPO_ROOT/.claude/skills/stasis/SKILL.md"
+  grep -q 'radar-gather' "$s"
+  grep -q 'idea-count' "$s"
+  grep -q 'audit-session' "$s"
+}
+
+@test "stasis skill: invokes permissions-audit.sh and context-budget.sh (AC-2)" {
+  local s="$REPO_ROOT/.claude/skills/stasis/SKILL.md"
+  grep -q 'permissions-audit.sh' "$s"
+  grep -q 'context-budget.sh' "$s"
+}
+
+@test "stasis skill: invokes legacy-refs-scan for Cross-Session Patterns (AC-37)" {
+  grep -q 'legacy-refs-scan' "$REPO_ROOT/.claude/skills/stasis/SKILL.md"
+}
+
+@test "stasis skill: reads HEAD~1:docs/stasis.md for prior-state diff (AC-5, AC-10)" {
+  grep -q 'HEAD~1:docs/stasis\.md' "$REPO_ROOT/.claude/skills/stasis/SKILL.md"
+}
+
+@test "stasis skill: describes all three new sections" {
+  local s="$REPO_ROOT/.claude/skills/stasis/SKILL.md"
+  grep -q 'Cross-Session Patterns' "$s"
+  grep -q 'Security Review' "$s"
+  grep -q 'Memory Candidates' "$s"
+}
+
+@test "stasis skill: closes with '/compact ... wrap session' directive (AC-9)" {
+  # Skill's final-close line; backticks around /compact are allowed.
+  grep -qE '/compact`? to wrap session' "$REPO_ROOT/.claude/skills/stasis/SKILL.md"
+}
+
+@test "stasis skill: commits with ALLOW_MAIN=1 pattern (AC-8)" {
+  grep -q 'ALLOW_MAIN=1' "$REPO_ROOT/.claude/skills/stasis/SKILL.md"
+}
+
+@test "stasis skill: halts on non-aligned validate state (AC-11)" {
+  # Skill file describes stopping if validate returns stale-plan/mismatched/etc.
+  grep -qE 'stale-plan|mismatched|non-aligned|not aligned' "$REPO_ROOT/.claude/skills/stasis/SKILL.md"
+}
