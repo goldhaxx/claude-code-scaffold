@@ -487,3 +487,37 @@ MD
     ! grep -q '^# ARCHIVE:' "$PROJECT/.ccanvil/ideas.log"
   fi
 }
+
+# =========================================================================
+# AC-14: idea-add refuses direct writes on Linear-configured nodes
+# =========================================================================
+
+@test "AC-14: idea-add on Linear-configured node exits non-zero with routing error" {
+  _init_git
+  # Configure node as Linear-routed.
+  run bash "$DOCS_CHECK" idea-upgrade --provider linear --team "Acme" --project "Alpha" "$PROJECT"
+  [ "$status" -eq 0 ]
+
+  run bash "$DOCS_CHECK" idea-add "attempted direct capture" "$PROJECT"
+  [ "$status" -ne 0 ]
+  [[ "$output" = *"Linear-configured"* ]]
+  [[ "$output" = *"/idea"* ]]
+}
+
+@test "AC-14: idea-add on local-routed node still works (no regression)" {
+  _init_git
+  run bash "$DOCS_CHECK" idea-upgrade --provider local "$PROJECT"
+  [ "$status" -eq 0 ]
+
+  run bash "$DOCS_CHECK" idea-add "normal local capture" "$PROJECT"
+  [ "$status" -eq 0 ]
+  grep -q "normal local capture" "$PROJECT/.ccanvil/ideas.log"
+}
+
+@test "AC-14: idea-add on unconfigured node works (default local)" {
+  _init_git
+  # No idea-upgrade run — no ccanvil.local.json at all.
+  run bash "$DOCS_CHECK" idea-add "unconfigured capture" "$PROJECT"
+  [ "$status" -eq 0 ]
+  grep -q "unconfigured capture" "$PROJECT/.ccanvil/ideas.log"
+}

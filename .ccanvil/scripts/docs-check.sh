@@ -1164,6 +1164,20 @@ cmd_idea_add() {
 
   [[ -n "$body" ]] || { echo "Usage: idea-add <body> [--title TITLE] [project-dir]" >&2; exit 1; }
 
+  # Defense-in-depth: on Linear-configured nodes, captures must route
+  # through the /idea skill (operations.sh -> MCP). Refuse direct script
+  # writes so legacy scripts or accidental invocations don't pollute the
+  # archive-only .ccanvil/ideas.log.
+  local local_cfg="$project_dir/.claude/ccanvil.local.json"
+  if [[ -f "$local_cfg" ]]; then
+    local routing
+    routing=$(jq -r '.integrations.routing.idea // ""' "$local_cfg" 2>/dev/null || echo '')
+    if [[ "$routing" == "linear" ]]; then
+      echo "ERROR: node is Linear-configured — captures must route via /idea skill" >&2
+      return 1
+    fi
+  fi
+
   # Default: title = body (short-text fast path; AC-22)
   [[ -z "$title" ]] && title="$body"
 
