@@ -1570,12 +1570,13 @@ cmd_legacy_refs_scan() {
 #   title-from-body "<body>"
 #   echo "<body>" | title-from-body
 #
-# Behavior (step 1):
-#   - Empty body          → stdout empty, exit 0
-#   - <=80 chars + single-line → stdout is the body verbatim (fast path)
-#   - Longer / multi-line → first 80 chars of first line (deterministic
-#                            fallback; step 2 adds the claude CLI path
-#                            in front of this fallback).
+# Behavior:
+#   - Empty body                → stdout empty, exit 0
+#   - <=80 chars + single-line  → stdout is the body verbatim (fast path)
+#   - Longer / multi-line, with `claude` CLI on PATH → invoke CLI and
+#                                  truncate the reply to 80 chars.
+#   - Longer / multi-line, no CLI → first 80 chars of first line
+#                                    (deterministic fallback).
 cmd_title_from_body() {
   local body
   if [[ $# -gt 0 ]]; then
@@ -1595,6 +1596,17 @@ cmd_title_from_body() {
   if [[ $has_newline -eq 0 && "${#body}" -le 80 ]]; then
     printf '%s' "$body"
     return 0
+  fi
+
+  if command -v claude >/dev/null 2>&1; then
+    local prompt="Summarize the following idea as a concise title, <=80 chars, intent-preserving, no quotes, no trailing punctuation. Return only the title text."
+    local reply
+    reply=$(printf '%s\n\n%s' "$prompt" "$body" | claude -p 2>/dev/null) || reply=''
+    reply="${reply%$'\n'}"
+    if [[ -n "$reply" ]]; then
+      printf '%s' "${reply:0:80}"
+      return 0
+    fi
   fi
 
   local first_line
