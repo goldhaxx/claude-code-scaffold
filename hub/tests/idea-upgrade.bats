@@ -202,3 +202,45 @@ _init_git() {
   run git -C "$PROJECT" log --oneline
   [[ "$output" = *"chore(idea-upgrade): configure linear provider"* ]]
 }
+
+# =========================================================================
+# AC-8: idea-upgrade flag validation
+# =========================================================================
+
+@test "AC-8: --provider linear with no team or project exits non-zero" {
+  _init_git
+  run bash "$DOCS_CHECK" idea-upgrade --provider linear "$PROJECT"
+  [ "$status" -ne 0 ]
+  [[ "$output" = *"ERROR: --provider linear requires --team and --project"* ]]
+  # No commit was created — the baseline "init" commit is still the only one.
+  run git -C "$PROJECT" log --oneline
+  [ "$(echo "$output" | wc -l | tr -d ' ')" -eq 1 ]
+}
+
+@test "AC-8: --provider linear with only --team exits non-zero" {
+  _init_git
+  run bash "$DOCS_CHECK" idea-upgrade --provider linear --team "Acme" "$PROJECT"
+  [ "$status" -ne 0 ]
+  [[ "$output" = *"ERROR: --provider linear requires --team and --project"* ]]
+}
+
+@test "AC-8: --provider linear with only --project exits non-zero" {
+  _init_git
+  run bash "$DOCS_CHECK" idea-upgrade --provider linear --project "Alpha" "$PROJECT"
+  [ "$status" -ne 0 ]
+  [[ "$output" = *"ERROR: --provider linear requires --team and --project"* ]]
+}
+
+@test "AC-8: no --provider exits non-zero" {
+  _init_git
+  run bash "$DOCS_CHECK" idea-upgrade "$PROJECT"
+  [ "$status" -ne 0 ]
+  [[ "$output" = *"--provider is required"* ]]
+}
+
+@test "AC-8: unknown --provider exits non-zero" {
+  _init_git
+  run bash "$DOCS_CHECK" idea-upgrade --provider bogus "$PROJECT"
+  [ "$status" -ne 0 ]
+  [[ "$output" = *"unknown provider"* ]]
+}
