@@ -1579,12 +1579,14 @@ cmd_idea_upgrade() {
   local team=""
   local project=""
   local project_dir="."
+  local dry_run=0
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
       --provider) provider="$2"; shift 2 ;;
       --team)     team="$2";     shift 2 ;;
       --project)  project="$2";  shift 2 ;;
+      --dry-run)  dry_run=1;     shift ;;
       *)          project_dir="$1"; shift ;;
     esac
   done
@@ -1600,6 +1602,19 @@ cmd_idea_upgrade() {
     "")  echo "ERROR: --provider is required (local|linear)" >&2; return 1 ;;
     *)   echo "ERROR: unknown provider '$provider' (must be local|linear)" >&2; return 1 ;;
   esac
+
+  if [[ $dry_run -eq 1 ]]; then
+    echo "DRY-RUN: idea-upgrade plan for $project_dir"
+    echo "  provider: $provider"
+    if [[ "$provider" == "linear" ]]; then
+      echo "  team=$team project=$project"
+    fi
+    echo "  files touched:"
+    echo "    .claude/ccanvil.local.json (deep-merge routing.idea + providers.linear)"
+    echo "    .gitignore (append .ccanvil/ideas.log, .ccanvil/ideas-pending.log, docs/ideas.md)"
+    echo "  commit message: chore(idea-upgrade): configure $provider provider"
+    return 0
+  fi
 
   # Delegate the config + gitignore write to cmd_idea_setup. Suppress its
   # next-step text (idea-upgrade emits its own summary).

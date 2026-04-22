@@ -244,3 +244,34 @@ _init_git() {
   [ "$status" -ne 0 ]
   [[ "$output" = *"unknown provider"* ]]
 }
+
+# =========================================================================
+# AC-6: idea-upgrade --dry-run
+# =========================================================================
+
+@test "AC-6: --dry-run prints plan, makes no config/git changes" {
+  _init_git
+  run bash "$DOCS_CHECK" idea-upgrade --provider local --dry-run "$PROJECT"
+  [ "$status" -eq 0 ]
+
+  # Stdout contains the plan markers.
+  [[ "$output" = *"DRY-RUN"* ]]
+  [[ "$output" = *"ccanvil.local.json"* ]]
+  [[ "$output" = *"chore(idea-upgrade)"* ]]
+
+  # No config file created, no new commit.
+  [ ! -f "$PROJECT/.claude/ccanvil.local.json" ]
+  run git -C "$PROJECT" log --oneline
+  [ "$(echo "$output" | wc -l | tr -d ' ')" -eq 1 ]
+}
+
+@test "AC-6: --dry-run with --provider linear surfaces the linear plan" {
+  _init_git
+  run bash "$DOCS_CHECK" idea-upgrade --provider linear --team T --project P --dry-run "$PROJECT"
+  [ "$status" -eq 0 ]
+  [[ "$output" = *"DRY-RUN"* ]]
+  [[ "$output" = *"linear"* ]]
+  [[ "$output" = *"team=T"* ]]
+  [[ "$output" = *"project=P"* ]]
+  [ ! -f "$PROJECT/.claude/ccanvil.local.json" ]
+}
