@@ -589,20 +589,47 @@ cmd_init_preflight() {
         plan=$(echo "$plan" | jq --arg f "$local_file" \
           '. + [{"file": $f, "source": "both", "recommended_action": "skip", "reason": "Already matches hub"}]')
       else
-        # Different — check for section-merge delimiter
-        local has_delimiter=false
-        if [[ "$local_file" == *.md ]] && \
-           (grep -qx '<!-- NODE-SPECIFIC-START -->' "$hub_file" 2>/dev/null || \
-            grep -qx '<!-- HUB-MANAGED-START -->' "$hub_file" 2>/dev/null); then
-          has_delimiter=true
+        # AC-4: Mode-aware overrides for mature-repo / partial-ccanvil.
+        # These run before the standard delimiter check so retrofit defaults
+        # don't clobber node-specific content by accident.
+        local mature_applied=false
+        if [[ "$project_mode" == "mature-repo" || "$project_mode" == "partial-ccanvil" ]]; then
+          case "$local_file" in
+            CLAUDE.md)
+              # If local CLAUDE.md lacks an exact-line delimiter (AC-25),
+              # flag as section-merge-create-delimiters so init-apply can
+              # wrap existing content as the node section.
+              if ! grep -qx '<!-- HUB-MANAGED-START -->' "$local_file" 2>/dev/null && \
+                 ! grep -qx '<!-- NODE-SPECIFIC-START -->' "$local_file" 2>/dev/null; then
+                plan=$(echo "$plan" | jq --arg f "$local_file" \
+                  '. + [{"file": $f, "source": "both", "recommended_action": "section-merge-create-delimiters", "reason": "Mature-repo CLAUDE.md has no delimiter; will wrap existing content as node section"}]')
+                mature_applied=true
+              fi
+              ;;
+            README.md|CONTRIBUTING.md)
+              plan=$(echo "$plan" | jq --arg f "$local_file" \
+                '. + [{"file": $f, "source": "both", "recommended_action": "skip", "reason": "Mature-repo mode: keep local node-specific content"}]')
+              mature_applied=true
+              ;;
+          esac
         fi
 
-        if [[ "$has_delimiter" == "true" ]]; then
-          plan=$(echo "$plan" | jq --arg f "$local_file" \
-            '. + [{"file": $f, "source": "both", "recommended_action": "section-merge", "reason": "Both versions exist; can merge hub and local sections"}]')
-        else
-          plan=$(echo "$plan" | jq --arg f "$local_file" \
-            '. + [{"file": $f, "source": "both", "recommended_action": "review", "reason": "Local differs from hub; needs user decision"}]')
+        if [[ "$mature_applied" == "false" ]]; then
+          # Different — check for section-merge delimiter (default path)
+          local has_delimiter=false
+          if [[ "$local_file" == *.md ]] && \
+             (grep -qx '<!-- NODE-SPECIFIC-START -->' "$hub_file" 2>/dev/null || \
+              grep -qx '<!-- HUB-MANAGED-START -->' "$hub_file" 2>/dev/null); then
+            has_delimiter=true
+          fi
+
+          if [[ "$has_delimiter" == "true" ]]; then
+            plan=$(echo "$plan" | jq --arg f "$local_file" \
+              '. + [{"file": $f, "source": "both", "recommended_action": "section-merge", "reason": "Both versions exist; can merge hub and local sections"}]')
+          else
+            plan=$(echo "$plan" | jq --arg f "$local_file" \
+              '. + [{"file": $f, "source": "both", "recommended_action": "review", "reason": "Local differs from hub; needs user decision"}]')
+          fi
         fi
       fi
     fi
