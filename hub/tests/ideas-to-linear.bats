@@ -322,6 +322,80 @@ EOF
   echo "$output" | grep -qi "not found"
 }
 
+# =========================================================================
+# AC-3 / AC-30: hub config shape and isolation between shared + local files
+# =========================================================================
+
+@test "AC-3: hub ccanvil.json ships providers.linear defaults (no routing, no project/team)" {
+  local hub_json="$BATS_TEST_DIRNAME/../../.claude/ccanvil.json"
+  [ -f "$hub_json" ]
+  # Provider defaults are present
+  jq -e '.integrations.providers.linear.mechanism == "mcp"' "$hub_json"
+  jq -e '.integrations.providers.linear.idea_label == "idea"' "$hub_json"
+  jq -e '.integrations.providers.linear.idea_status == "Idea"' "$hub_json"
+  jq -e '.integrations.providers.linear.icebox_status == "Icebox"' "$hub_json"
+  # routing is NOT in the shared file
+  jq -e '.integrations.routing // null | not' "$hub_json"
+}
+
+@test "AC-30: hub ccanvil.json contains no node-specific fields (project/team)" {
+  local hub_json="$BATS_TEST_DIRNAME/../../.claude/ccanvil.json"
+  # No top-level mention of ccanvil project identity or team name
+  ! jq -e '.integrations.providers.linear.project // null' "$hub_json" | grep -qv "null"
+  ! jq -e '.integrations.providers.linear.team // null' "$hub_json" | grep -qv "null"
+}
+
+@test "AC-3: hub ccanvil.local.json pins hub's own project + team" {
+  local hub_local="$BATS_TEST_DIRNAME/../../.claude/ccanvil.local.json"
+  [ -f "$hub_local" ]
+  jq -e '.integrations.routing.idea == "linear"' "$hub_local"
+  jq -e '.integrations.providers.linear.project == "ccanvil"' "$hub_local"
+  jq -e '.integrations.providers.linear.team == "Blocktech Solutions"' "$hub_local"
+}
+
+@test "AC-3: merged config combines shared defaults + node overrides" {
+  # Fixture: copy hub configs into a temp PROJECT and merge.
+  mkdir -p "$PROJECT/.claude"
+  cp "$BATS_TEST_DIRNAME/../../.claude/ccanvil.json" "$PROJECT/.claude/ccanvil.json"
+  cp "$BATS_TEST_DIRNAME/../../.claude/ccanvil.local.json" "$PROJECT/.claude/ccanvil.local.json"
+
+  local merged
+  merged=$(bash "$SCRIPT" merge-config --project-dir "$PROJECT")
+  # Provider defaults (from shared) survive
+  echo "$merged" | jq -e '.integrations.providers.linear.mechanism == "mcp"'
+  echo "$merged" | jq -e '.integrations.providers.linear.idea_label == "idea"'
+  # Node overrides (from local) survive
+  echo "$merged" | jq -e '.integrations.routing.idea == "linear"'
+  echo "$merged" | jq -e '.integrations.providers.linear.project == "ccanvil"'
+  echo "$merged" | jq -e '.integrations.providers.linear.team == "Blocktech Solutions"'
+}
+
+@test "AC-3: resolve idea.add on hub config → Linear MCP with full params" {
+  mkdir -p "$PROJECT/.claude"
+  cp "$BATS_TEST_DIRNAME/../../.claude/ccanvil.json" "$PROJECT/.claude/ccanvil.json"
+  cp "$BATS_TEST_DIRNAME/../../.claude/ccanvil.local.json" "$PROJECT/.claude/ccanvil.local.json"
+
+  run bash "$SCRIPT" resolve idea.add --project-dir "$PROJECT"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '.provider == "linear"'
+  echo "$output" | jq -e '.invocation.tool == "mcp__claude_ai_Linear__save_issue"'
+  echo "$output" | jq -e '.invocation.params.project == "ccanvil"'
+  echo "$output" | jq -e '.invocation.params.team == "Blocktech Solutions"'
+  echo "$output" | jq -e '.invocation.params.state == "Idea"'
+  echo "$output" | jq -e '.invocation.params.labels[0] == "idea"'
+}
+
+@test "AC-29: shared ccanvil.json alone (no local override) → local provider" {
+  # A downstream node that has only the shared file and hasn't created
+  # ccanvil.local.json yet. routing.idea is absent → local.
+  mkdir -p "$PROJECT/.claude"
+  cp "$BATS_TEST_DIRNAME/../../.claude/ccanvil.json" "$PROJECT/.claude/ccanvil.json"
+
+  run bash "$SCRIPT" resolve idea.add --project-dir "$PROJECT"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '.provider == "local"'
+}
+
 @test "AC-16: legacy docs/ideas.md is NOT consulted by new code paths" {
   # A stale docs/ideas.md should be ignored — the new store is
   # .ccanvil/ideas.log only.

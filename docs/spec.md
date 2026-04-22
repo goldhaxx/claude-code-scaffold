@@ -20,7 +20,7 @@ Migrate `/idea` capture from tracked markdown (`docs/ideas.md`) to a pluggable p
 
 - [ ] **AC-1:** Custom statuses `Idea` and `Icebox` exist on Blocktech Solutions team, both in the `backlog` category. Verified by `mcp__claude_ai_Linear__list_issue_statuses` returning both names.
 - [ ] **AC-2:** Workspace-level label `idea` exists, color `#F2C94C`, description `"Untriaged idea captured via /idea"`. Verified by `mcp__claude_ai_Linear__list_issue_labels` search.
-- [ ] **AC-3:** Hub's `.claude/ccanvil.json` ships defaults: `integrations.routing.idea = "linear"` and `integrations.providers.linear = {mechanism: "mcp", idea_label: "idea", idea_status: "Idea", icebox_status: "Icebox"}`. Node-specific fields (`project`, `team`) live in each node's `.claude/ccanvil.local.json` (hub ≠ ccanvil node; the hub sets its own via `ccanvil.local.json` just like every other downstream).
+- [ ] **AC-3:** Hub's `.claude/ccanvil.json` ships only the Linear provider's non-node-specific defaults: `integrations.providers.linear = {mechanism: "mcp", idea_label: "idea", idea_status: "Idea", icebox_status: "Icebox"}`. Neither `routing.idea` nor node-specific fields (`project`, `team`) are set in the shared file. Each node (hub included) opts into Linear by setting `integrations.routing.idea = "linear"` and `integrations.providers.linear.{project, team}` in its own `.claude/ccanvil.local.json`. This keeps AC-29 (unconfigured nodes default to local) and AC-21 (error on linear-routing with missing project/team) internally consistent.
 
 ### /idea add (capture)
 

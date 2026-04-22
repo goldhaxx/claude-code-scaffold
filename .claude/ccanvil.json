@@ -2,5 +2,14 @@
   "features": {
     "pr_review": false
   },
-  "integrations": {}
+  "integrations": {
+    "providers": {
+      "linear": {
+        "mechanism": "mcp",
+        "idea_label": "idea",
+        "idea_status": "Idea",
+        "icebox_status": "Icebox"
+      }
+    }
+  }
 }
