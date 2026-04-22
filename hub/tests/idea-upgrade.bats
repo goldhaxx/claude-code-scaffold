@@ -275,3 +275,45 @@ _init_git() {
   [[ "$output" = *"project=P"* ]]
   [ ! -f "$PROJECT/.claude/ccanvil.local.json" ]
 }
+
+# =========================================================================
+# AC-3: --create-project intent emission
+# =========================================================================
+
+@test "AC-3: --create-project with --provider linear emits save_project intent" {
+  _init_git
+  run bash "$DOCS_CHECK" idea-upgrade --provider linear --team "Acme" --project "Alpha" --create-project "$PROJECT"
+  [ "$status" -eq 0 ]
+
+  # Extract the JSON intent line from stdout.
+  intent=$(echo "$output" | grep -E '^\{' | head -1)
+  [ -n "$intent" ]
+
+  # Validate shape: tool = save_project, params.team + params.name set.
+  tool=$(echo "$intent" | jq -r '.tool')
+  [ "$tool" = "mcp__claude_ai_Linear__save_project" ]
+
+  team=$(echo "$intent" | jq -r '.params.team')
+  [ "$team" = "Acme" ]
+
+  name=$(echo "$intent" | jq -r '.params.name')
+  [ "$name" = "Alpha" ]
+}
+
+@test "AC-3: --create-project without --provider linear exits non-zero" {
+  _init_git
+  run bash "$DOCS_CHECK" idea-upgrade --provider local --create-project "$PROJECT"
+  [ "$status" -ne 0 ]
+  [[ "$output" = *"--create-project requires --provider linear"* ]]
+}
+
+@test "AC-3: --create-project with --dry-run emits intent without committing" {
+  _init_git
+  run bash "$DOCS_CHECK" idea-upgrade --provider linear --team T --project P --create-project --dry-run "$PROJECT"
+  [ "$status" -eq 0 ]
+  intent=$(echo "$output" | grep -E '^\{' | head -1)
+  [ -n "$intent" ]
+  # No commit created.
+  run git -C "$PROJECT" log --oneline
+  [ "$(echo "$output" | wc -l | tr -d ' ')" -eq 1 ]
+}

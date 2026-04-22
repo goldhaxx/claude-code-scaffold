@@ -1580,14 +1580,16 @@ cmd_idea_upgrade() {
   local project=""
   local project_dir="."
   local dry_run=0
+  local create_project=0
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
-      --provider) provider="$2"; shift 2 ;;
-      --team)     team="$2";     shift 2 ;;
-      --project)  project="$2";  shift 2 ;;
-      --dry-run)  dry_run=1;     shift ;;
-      *)          project_dir="$1"; shift ;;
+      --provider)       provider="$2"; shift 2 ;;
+      --team)           team="$2";     shift 2 ;;
+      --project)        project="$2";  shift 2 ;;
+      --dry-run)        dry_run=1;     shift ;;
+      --create-project) create_project=1; shift ;;
+      *)                project_dir="$1"; shift ;;
     esac
   done
 
@@ -1602,6 +1604,19 @@ cmd_idea_upgrade() {
     "")  echo "ERROR: --provider is required (local|linear)" >&2; return 1 ;;
     *)   echo "ERROR: unknown provider '$provider' (must be local|linear)" >&2; return 1 ;;
   esac
+
+  if [[ $create_project -eq 1 && "$provider" != "linear" ]]; then
+    echo "ERROR: --create-project requires --provider linear" >&2
+    return 1
+  fi
+
+  # Emit the save_project intent before any file mutation so that a skill
+  # layer dispatching this command can pick it off stdout and call MCP
+  # itself. Script stays MCP-free (operations.sh-style separation).
+  if [[ $create_project -eq 1 ]]; then
+    jq -cn --arg team "$team" --arg name "$project" \
+      '{tool: "mcp__claude_ai_Linear__save_project", params: {team: $team, name: $name}}'
+  fi
 
   if [[ $dry_run -eq 1 ]]; then
     echo "DRY-RUN: idea-upgrade plan for $project_dir"
