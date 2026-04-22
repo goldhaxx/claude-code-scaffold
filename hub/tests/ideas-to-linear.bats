@@ -468,6 +468,135 @@ SKILL_FILE="$BATS_TEST_DIRNAME/../../.claude/skills/idea/SKILL.md"
   grep -q '<!-- NODE-SPECIFIC-START -->' "$SKILL_FILE"
 }
 
+# =========================================================================
+# AC-9/10/11: pending log + idea-sync primitives
+# =========================================================================
+
+@test "AC-10: idea-sync with empty/absent pending log reports zero" {
+  run bash "$DOCS_CHECK" idea-sync "$PROJECT"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '.pending == 0'
+  echo "$output" | jq -e '.entries | length == 0'
+}
+
+@test "AC-10: idea-sync lists pending entries as JSON" {
+  cat > "$PROJECT/.ccanvil/ideas-pending.log" <<'EOF'
+{"op":"add","args":{"title":"first","body":"first idea"},"ts":1776000001}
+{"op":"add","args":{"title":"second","body":"second idea"},"ts":1776000002}
+EOF
+  run bash "$DOCS_CHECK" idea-sync "$PROJECT"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '.pending == 2'
+  echo "$output" | jq -e '.entries | length == 2'
+  echo "$output" | jq -e '.entries[0].args.title == "first"'
+}
+
+@test "AC-10: idea-sync --ack <ts> removes the matching entry" {
+  cat > "$PROJECT/.ccanvil/ideas-pending.log" <<'EOF'
+{"op":"add","args":{"title":"keep"},"ts":1776000001}
+{"op":"add","args":{"title":"drop"},"ts":1776000002}
+{"op":"add","args":{"title":"also-keep"},"ts":1776000003}
+EOF
+  run bash "$DOCS_CHECK" idea-sync --ack 1776000002 "$PROJECT"
+  [ "$status" -eq 0 ]
+  local remaining
+  remaining=$(wc -l < "$PROJECT/.ccanvil/ideas-pending.log")
+  [ "$remaining" -eq 2 ]
+  ! grep -q '"drop"' "$PROJECT/.ccanvil/ideas-pending.log"
+  grep -q '"keep"' "$PROJECT/.ccanvil/ideas-pending.log"
+  grep -q '"also-keep"' "$PROJECT/.ccanvil/ideas-pending.log"
+}
+
+@test "AC-11: idea-sync --ack missing-ts is a no-op (entries unchanged)" {
+  cat > "$PROJECT/.ccanvil/ideas-pending.log" <<'EOF'
+{"op":"add","args":{"title":"only"},"ts":1776000001}
+EOF
+  run bash "$DOCS_CHECK" idea-sync --ack 9999999999 "$PROJECT"
+  [ "$status" -eq 0 ]
+  grep -q '"only"' "$PROJECT/.ccanvil/ideas-pending.log"
+}
+
+# =========================================================================
+# AC-12/13/27: idea-migrate
+# =========================================================================
+
+@test "AC-13: idea-migrate on project with no docs/ideas.md → exit 0, 'Nothing to migrate'" {
+  run bash "$DOCS_CHECK" idea-migrate "$PROJECT"
+  [ "$status" -eq 0 ]
+  echo "$output" | grep -qi "nothing to migrate"
+}
+
+@test "AC-12: idea-migrate (local mode) moves entries to .ccanvil/ideas.log" {
+  mkdir -p "$PROJECT/docs"
+  cat > "$PROJECT/docs/ideas.md" <<'EOF'
+# Ideas
+
+- [ ] a1b2 1776000001: first migrated idea <!-- status:new -->
+- [ ] c3d4 1776000002: second migrated idea <!-- status:new -->
+EOF
+  # Init git repo so 'git rm' works in the finalize step
+  (cd "$PROJECT" && git init -q -b main && git add -A && git -c user.email=t@t -c user.name=t commit -q -m "init")
+
+  run bash "$DOCS_CHECK" idea-migrate "$PROJECT"
+  [ "$status" -eq 0 ]
+  [ -f "$PROJECT/.ccanvil/ideas.log" ]
+  local count
+  count=$(wc -l < "$PROJECT/.ccanvil/ideas.log")
+  [ "$count" -eq 2 ]
+  grep -q "first migrated idea" "$PROJECT/.ccanvil/ideas.log"
+  grep -q "second migrated idea" "$PROJECT/.ccanvil/ideas.log"
+}
+
+@test "AC-12: idea-migrate (local mode) removes docs/ideas.md and updates .gitignore" {
+  mkdir -p "$PROJECT/docs"
+  cat > "$PROJECT/docs/ideas.md" <<'EOF'
+- [ ] a1b2 1776000001: some idea <!-- status:new -->
+EOF
+  (cd "$PROJECT" && git init -q -b main && git add -A && git -c user.email=t@t -c user.name=t commit -q -m "init")
+
+  run bash "$DOCS_CHECK" idea-migrate "$PROJECT"
+  [ "$status" -eq 0 ]
+  [ ! -f "$PROJECT/docs/ideas.md" ]
+  grep -qxF "docs/ideas.md" "$PROJECT/.gitignore"
+  grep -qxF ".ccanvil/ideas.log" "$PROJECT/.gitignore"
+  grep -qxF ".ccanvil/ideas-pending.log" "$PROJECT/.gitignore"
+}
+
+@test "AC-12: idea-migrate --extract emits JSONL intents without removing anything" {
+  mkdir -p "$PROJECT/docs"
+  cat > "$PROJECT/docs/ideas.md" <<'EOF'
+- [ ] a1b2 1776000001: extract me <!-- status:new -->
+- [ ] c3d4 1776000002: and me <!-- status:new -->
+EOF
+
+  run bash "$DOCS_CHECK" idea-migrate --extract "$PROJECT"
+  [ "$status" -eq 0 ]
+  # File still present (no side effects)
+  [ -f "$PROJECT/docs/ideas.md" ]
+  # Output is JSONL of intents
+  local count
+  count=$(echo "$output" | wc -l)
+  [ "$count" -ge 2 ]
+  echo "$output" | head -1 | jq -e '.title == "extract me"'
+  echo "$output" | head -1 | jq -e '.body == "extract me"'
+}
+
+@test "AC-12: idea-migrate --finalize removes docs/ideas.md + updates .gitignore" {
+  mkdir -p "$PROJECT/docs"
+  echo "- [ ] a1b2 1776000001: x <!-- status:new -->" > "$PROJECT/docs/ideas.md"
+  (cd "$PROJECT" && git init -q -b main && git add -A && git -c user.email=t@t -c user.name=t commit -q -m "init")
+
+  run bash "$DOCS_CHECK" idea-migrate --finalize "$PROJECT"
+  [ "$status" -eq 0 ]
+  [ ! -f "$PROJECT/docs/ideas.md" ]
+  grep -qxF "docs/ideas.md" "$PROJECT/.gitignore"
+}
+
+@test "AC-13: idea-migrate --finalize when docs/ideas.md is already absent → idempotent" {
+  run bash "$DOCS_CHECK" idea-migrate --finalize "$PROJECT"
+  [ "$status" -eq 0 ]
+}
+
 @test "AC-16: legacy docs/ideas.md is NOT consulted by new code paths" {
   # A stale docs/ideas.md should be ignored — the new store is
   # .ccanvil/ideas.log only.

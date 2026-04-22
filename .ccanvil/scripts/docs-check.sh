@@ -1252,6 +1252,149 @@ cmd_idea_update() {
 }
 
 # ---------------------------------------------------------------------------
+# cmd_idea_sync — Read/ack primitives for .ccanvil/ideas-pending.log.
+#
+# The pending log holds intents for Linear captures that failed (network,
+# auth, etc.). Replay is orchestrated by the /idea skill — this script
+# exposes the deterministic read + remove operations.
+#
+# Invocations:
+#   idea-sync [project-dir]             → print {pending, entries} JSON
+#   idea-sync --ack <ts> [project-dir]  → remove entry matching ts
+# ---------------------------------------------------------------------------
+cmd_idea_sync() {
+  local project_dir="."
+  local ack_ts=""
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --ack) ack_ts="$2"; shift 2 ;;
+      *) project_dir="$1"; shift ;;
+    esac
+  done
+
+  local pending="$project_dir/.ccanvil/ideas-pending.log"
+
+  if [[ -n "$ack_ts" ]]; then
+    if [[ ! -f "$pending" ]]; then
+      echo "ACKED: $ack_ts (pending log absent — no-op)"
+      return 0
+    fi
+    local tmp
+    tmp=$(mktemp)
+    jq -c --argjson ts "$ack_ts" 'select(.ts != $ts)' "$pending" > "$tmp"
+    mv "$tmp" "$pending"
+    echo "ACKED: $ack_ts"
+    return 0
+  fi
+
+  if [[ ! -f "$pending" || ! -s "$pending" ]]; then
+    jq -n '{pending: 0, entries: []}'
+    return 0
+  fi
+
+  jq -s '{pending: length, entries: .}' "$pending"
+}
+
+# ---------------------------------------------------------------------------
+# cmd_idea_migrate — Move legacy docs/ideas.md entries into .ccanvil/ideas.log
+# and/or emit intents for skill-level Linear dispatch.
+#
+# Invocations:
+#   idea-migrate [project-dir]
+#     Local end-to-end: parse docs/ideas.md → append to .ccanvil/ideas.log,
+#     git rm docs/ideas.md, update .gitignore. Idempotent when file absent.
+#
+#   idea-migrate --extract [project-dir]
+#     Parse docs/ideas.md → emit JSONL intents on stdout. No side effects.
+#     Used by the skill when Linear is configured; skill dispatches each
+#     intent via MCP, then runs --finalize.
+#
+#   idea-migrate --finalize [project-dir]
+#     git rm docs/ideas.md + update .gitignore. No parsing.
+# ---------------------------------------------------------------------------
+cmd_idea_migrate() {
+  local project_dir="."
+  local mode="full"   # full | extract | finalize
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --extract) mode="extract"; shift ;;
+      --finalize) mode="finalize"; shift ;;
+      *) project_dir="$1"; shift ;;
+    esac
+  done
+
+  local ideas_md="$project_dir/docs/ideas.md"
+  local ideas_log="$project_dir/.ccanvil/ideas.log"
+  local gitignore="$project_dir/.gitignore"
+
+  _idea_migrate_finalize() {
+    if [[ -f "$ideas_md" ]]; then
+      if git -C "$project_dir" rev-parse --git-dir >/dev/null 2>&1 && \
+         git -C "$project_dir" ls-files --error-unmatch docs/ideas.md >/dev/null 2>&1; then
+        git -C "$project_dir" rm -q docs/ideas.md
+      else
+        rm -f "$ideas_md"
+      fi
+    fi
+    touch "$gitignore"
+    for entry in "docs/ideas.md" ".ccanvil/ideas-pending.log" ".ccanvil/ideas.log"; do
+      if ! grep -qxF "$entry" "$gitignore" 2>/dev/null; then
+        echo "$entry" >> "$gitignore"
+      fi
+    done
+    echo "FINALIZED: docs/ideas.md removed; .gitignore updated"
+  }
+
+  _idea_migrate_extract() {
+    while IFS= read -r line; do
+      # New format: - [ ] <uid> <epoch>: text <!-- status:xxx -->
+      if [[ "$line" =~ ^-\ \[(.)\]\ ([0-9a-f]{4})\ ([0-9]+):\ (.*)\ \<!--\ status:([a-z:A-Z0-9_-]+)\ --\> ]]; then
+        local uid="${BASH_REMATCH[2]}"
+        local created="${BASH_REMATCH[3]}"
+        local text="${BASH_REMATCH[4]}"
+        local status="${BASH_REMATCH[5]}"
+        jq -cn --arg uid "$uid" --argjson created "$created" \
+               --arg title "$text" --arg body "$text" --arg status "$status" \
+          '{uid:$uid, created:$created, status:$status, title:$title, body:$body}'
+      # Legacy format: - [ ] YYYY-MM-DD: text <!-- status:xxx -->
+      elif [[ "$line" =~ ^-\ \[(.)\]\ ([0-9]{4}-[0-9]{2}-[0-9]{2}):\ (.*)\ \<!--\ status:([a-z:A-Z0-9_-]+)\ --\> ]]; then
+        local created="${BASH_REMATCH[2]}"
+        local text="${BASH_REMATCH[3]}"
+        local status="${BASH_REMATCH[4]}"
+        jq -cn --arg created "$created" \
+               --arg title "$text" --arg body "$text" --arg status "$status" \
+          '{created:$created, status:$status, title:$title, body:$body}'
+      fi
+    done < "$ideas_md"
+  }
+
+  case "$mode" in
+    finalize)
+      _idea_migrate_finalize
+      ;;
+    extract)
+      [[ -f "$ideas_md" ]] || { echo "Nothing to migrate: $ideas_md not found"; return 0; }
+      _idea_migrate_extract
+      ;;
+    full)
+      if [[ ! -f "$ideas_md" ]]; then
+        echo "Nothing to migrate: $ideas_md not found"
+        return 0
+      fi
+      mkdir -p "$(dirname "$ideas_log")"
+      # Write each parsed entry as a local JSONL idea (title=body, status preserved).
+      _idea_migrate_extract >> "$ideas_log"
+      local migrated
+      migrated=$(_idea_migrate_extract | wc -l | tr -d ' ')
+      _idea_migrate_finalize
+      echo "MIGRATED: $migrated entries → $ideas_log"
+      ;;
+  esac
+}
+
+# ---------------------------------------------------------------------------
 # cmd_legacy_refs_scan — Find references to legacy ccanvil verbs/artifacts.
 #
 # Scans a project dir for:
@@ -1361,9 +1504,11 @@ case "$cmd" in
   idea-list)         cmd_idea_list "$@" ;;
   idea-count)        cmd_idea_count "$@" ;;
   idea-update)       cmd_idea_update "$@" ;;
+  idea-sync)         cmd_idea_sync "$@" ;;
+  idea-migrate)      cmd_idea_migrate "$@" ;;
   legacy-refs-scan)  cmd_legacy_refs_scan "$@" ;;
   *)
-    echo "Usage: docs-check.sh {status|validate|recommend|audit-session|config-get|list-specs|activate|complete|land|idea-add|idea-list|idea-count|idea-update|legacy-refs-scan} [args...]" >&2
+    echo "Usage: docs-check.sh {status|validate|recommend|audit-session|config-get|list-specs|activate|complete|land|idea-add|idea-list|idea-count|idea-update|idea-sync|idea-migrate|legacy-refs-scan} [args...]" >&2
     exit 1
     ;;
 esac
