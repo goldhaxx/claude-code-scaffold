@@ -27,6 +27,9 @@
 # ccanvil-sync.bats has a pre-existing fixture using `catchup.md` as an
 # arbitrary hub-owned command filename; the tests aren't catchup-specific.
 ^hub/tests/ccanvil-sync\.bats:
+# ccanvil-init-skill.bats asserts the skill does NOT contain docs/checkpoint.md —
+# that assertion text necessarily mentions the legacy string.
+^hub/tests/ccanvil-init-skill\.bats:
 
 # --- Scanner implementation (docs-check.sh legacy-refs-scan) ---
 # The function's docblock + regex pattern contain the legacy strings by
