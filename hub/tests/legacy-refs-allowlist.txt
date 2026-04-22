@@ -34,8 +34,8 @@
 # --- Scanner implementation (docs-check.sh legacy-refs-scan) ---
 # The function's docblock + regex pattern contain the legacy strings by
 # design — that's what the scanner detects in downstream projects.
-^\.ccanvil/scripts/docs-check\.sh:12[5-9][0-9]:
-^\.ccanvil/scripts/docs-check\.sh:13[0-4][0-9]:
+# Content-based pattern (resilient to line shifts from unrelated edits).
+^\.ccanvil/scripts/docs-check\.sh:[0-9]+:.*(legacy-refs|legacy_refs|- /catchup|- /checkpoint|- docs/checkpoint\.md|- checkpoint\.|- stale-checkpoint|pattern=.*/catchup)
 
 # --- Migration implementation (ccanvil-sync.sh migrate-stasis-artifact) ---
 # The function and its broadcast hook deliberately contain the legacy strings.

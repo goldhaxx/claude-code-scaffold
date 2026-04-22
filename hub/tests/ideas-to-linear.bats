@@ -5,10 +5,12 @@
 # skill grep assertions, migration, and broadcast hints.
 
 SCRIPT="$BATS_TEST_DIRNAME/../../.ccanvil/scripts/operations.sh"
+DOCS_CHECK="$BATS_TEST_DIRNAME/../../.ccanvil/scripts/docs-check.sh"
 
 setup() {
   export TMPDIR="${BATS_TEST_TMPDIR}"
   PROJECT=$(mktemp -d)
+  mkdir -p "$PROJECT/.ccanvil"
 }
 
 teardown() {
@@ -199,4 +201,141 @@ JSON
   run bash "$SCRIPT" resolve idea.add --project-dir "$PROJECT"
   [ "$status" -eq 1 ]
   echo "$output" | grep -q 'ERROR: provider "linear" is configured for idea'
+}
+
+# =========================================================================
+# AC-16 (local implementation): docs-check.sh idea-{add,list,count,update}
+# now backed by .ccanvil/ideas.log (JSONL), not docs/ideas.md
+# =========================================================================
+
+@test "AC-16: idea-add writes JSONL to .ccanvil/ideas.log" {
+  run bash "$DOCS_CHECK" idea-add "a new idea" "$PROJECT"
+  [ "$status" -eq 0 ]
+  [ -f "$PROJECT/.ccanvil/ideas.log" ]
+  # One JSONL line with uid, created, status=new, title, body
+  local line
+  line=$(cat "$PROJECT/.ccanvil/ideas.log")
+  echo "$line" | jq -e '.uid | test("^[0-9a-f]{4}$")'
+  echo "$line" | jq -e '.created | tonumber > 0'
+  echo "$line" | jq -e '.status == "new"'
+  echo "$line" | jq -e '.body == "a new idea"'
+  # No --title → title defaults to body for short text (AC-22 path at CLI level)
+  echo "$line" | jq -e '.title == "a new idea"'
+}
+
+@test "AC-16: idea-add with --title uses provided title, body unchanged" {
+  run bash "$DOCS_CHECK" idea-add "a very long body with lots of context that exceeds eighty characters by a wide margin and keeps going" --title "concise summary" "$PROJECT"
+  [ "$status" -eq 0 ]
+  local line
+  line=$(cat "$PROJECT/.ccanvil/ideas.log")
+  echo "$line" | jq -e '.title == "concise summary"'
+  echo "$line" | jq -e '.body | test("a very long body")'
+}
+
+@test "AC-16: idea-add appends (multi-entry .ccanvil/ideas.log)" {
+  bash "$DOCS_CHECK" idea-add "first" "$PROJECT" >/dev/null
+  bash "$DOCS_CHECK" idea-add "second" "$PROJECT" >/dev/null
+  bash "$DOCS_CHECK" idea-add "third" "$PROJECT" >/dev/null
+  local count
+  count=$(wc -l < "$PROJECT/.ccanvil/ideas.log")
+  [ "$count" -eq 3 ]
+  # Each line is valid JSON
+  while IFS= read -r line; do
+    echo "$line" | jq -e '.uid and .body' >/dev/null
+  done < "$PROJECT/.ccanvil/ideas.log"
+}
+
+@test "AC-16: idea-list reads JSONL and outputs JSON array" {
+  cat > "$PROJECT/.ccanvil/ideas.log" <<'EOF'
+{"uid":"a1b2","created":1776000001,"status":"new","title":"first","body":"first"}
+{"uid":"c3d4","created":1776000002,"status":"promoted","title":"second","body":"second"}
+{"uid":"e5f6","created":1776000003,"status":"dismissed","title":"third","body":"third"}
+EOF
+  run bash "$DOCS_CHECK" idea-list "$PROJECT"
+  [ "$status" -eq 0 ]
+  local count
+  count=$(echo "$output" | jq 'length')
+  [ "$count" -eq 3 ]
+  echo "$output" | jq -e '.[0].id == "a1b2"'
+  echo "$output" | jq -e '.[0].created == 1776000001'
+  echo "$output" | jq -e '.[0].status == "new"'
+}
+
+@test "AC-16: idea-list filters by status" {
+  cat > "$PROJECT/.ccanvil/ideas.log" <<'EOF'
+{"uid":"a1b2","created":1776000001,"status":"new","title":"one","body":"one"}
+{"uid":"c3d4","created":1776000002,"status":"promoted","title":"two","body":"two"}
+{"uid":"e5f6","created":1776000003,"status":"new","title":"three","body":"three"}
+EOF
+  run bash "$DOCS_CHECK" idea-list --status new "$PROJECT"
+  [ "$status" -eq 0 ]
+  local count
+  count=$(echo "$output" | jq 'length')
+  [ "$count" -eq 2 ]
+}
+
+@test "AC-16: idea-count returns totals by status" {
+  cat > "$PROJECT/.ccanvil/ideas.log" <<'EOF'
+{"uid":"a1b2","created":1776000001,"status":"new","title":"a","body":"a"}
+{"uid":"c3d4","created":1776000002,"status":"new","title":"b","body":"b"}
+{"uid":"e5f6","created":1776000003,"status":"promoted","title":"c","body":"c"}
+{"uid":"1a2b","created":1776000004,"status":"dismissed","title":"d","body":"d"}
+{"uid":"3c4d","created":1776000005,"status":"merged","title":"e","body":"e","parent":"BTS-99"}
+EOF
+  run bash "$DOCS_CHECK" idea-count "$PROJECT"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '.total == 5'
+  echo "$output" | jq -e '.new == 2'
+  echo "$output" | jq -e '.promoted == 1'
+  echo "$output" | jq -e '.dismissed == 1'
+  echo "$output" | jq -e '.merged == 1'
+}
+
+@test "AC-16: idea-count on empty log returns all zeros" {
+  run bash "$DOCS_CHECK" idea-count "$PROJECT"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '.total == 0'
+  echo "$output" | jq -e '.new == 0'
+}
+
+@test "AC-16: idea-update mutates status by UID" {
+  cat > "$PROJECT/.ccanvil/ideas.log" <<'EOF'
+{"uid":"a1b2","created":1776000001,"status":"new","title":"first","body":"first"}
+{"uid":"c3d4","created":1776000002,"status":"new","title":"second","body":"second"}
+EOF
+  run bash "$DOCS_CHECK" idea-update c3d4 promoted "$PROJECT"
+  [ "$status" -eq 0 ]
+  # c3d4 should be promoted, a1b2 untouched
+  local c3d4_status a1b2_status
+  c3d4_status=$(grep '"uid":"c3d4"' "$PROJECT/.ccanvil/ideas.log" | jq -r .status)
+  a1b2_status=$(grep '"uid":"a1b2"' "$PROJECT/.ccanvil/ideas.log" | jq -r .status)
+  [ "$c3d4_status" = "promoted" ]
+  [ "$a1b2_status" = "new" ]
+}
+
+@test "AC-16: idea-update with nonexistent UID exits nonzero" {
+  cat > "$PROJECT/.ccanvil/ideas.log" <<'EOF'
+{"uid":"a1b2","created":1776000001,"status":"new","title":"only","body":"only"}
+EOF
+  run bash "$DOCS_CHECK" idea-update zzzz promoted "$PROJECT"
+  [ "$status" -ne 0 ]
+  echo "$output" | grep -qi "not found"
+}
+
+@test "AC-16: legacy docs/ideas.md is NOT consulted by new code paths" {
+  # A stale docs/ideas.md should be ignored — the new store is
+  # .ccanvil/ideas.log only.
+  mkdir -p "$PROJECT/docs"
+  echo "- [ ] dead 1700000000: stale legacy entry <!-- status:new -->" \
+    > "$PROJECT/docs/ideas.md"
+
+  run bash "$DOCS_CHECK" idea-list "$PROJECT"
+  [ "$status" -eq 0 ]
+  local count
+  count=$(echo "$output" | jq 'length')
+  [ "$count" -eq 0 ]
+
+  run bash "$DOCS_CHECK" idea-count "$PROJECT"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '.total == 0'
 }

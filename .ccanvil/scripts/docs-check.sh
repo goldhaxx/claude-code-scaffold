@@ -1040,10 +1040,12 @@ cmd_radar_gather() {
   fi
   result=$(echo "$result" | jq --argjson c "$completed" '. + {"completed_recent": $c}')
 
-  # Idea count
+  # Idea count — ideas.log lives at <project>/.ccanvil/ideas.log (one level above docs_dir).
   local idea_counts='{"total":0,"new":0}'
-  if [[ -f "$docs_dir/ideas.md" ]]; then
-    idea_counts=$(cmd_idea_count "$docs_dir")
+  local project_dir
+  project_dir=$(dirname "$docs_dir")
+  if [[ -f "$project_dir/.ccanvil/ideas.log" ]]; then
+    idea_counts=$(cmd_idea_count "$project_dir")
   fi
   result=$(echo "$result" | jq --argjson i "$idea_counts" '. + {"ideas": $i}')
 
@@ -1099,156 +1101,114 @@ cmd_radar_gather() {
 # ---------------------------------------------------------------------------
 
 cmd_idea_add() {
-  local text="${1:?Usage: idea-add <text> [docs-dir]}"
-  local docs_dir="${2:-$DEFAULT_DOCS_DIR}"
-  local ideas_file="$docs_dir/ideas.md"
-  local uid epoch
+  local body=""
+  local title=""
+  local project_dir="."
 
+  # Parse args: first positional is body, then optional --title flag,
+  # final positional (if any) is the project dir (defaults to cwd).
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --title)
+        title="$2"; shift 2 ;;
+      *)
+        if [[ -z "$body" ]]; then
+          body="$1"
+        else
+          project_dir="$1"
+        fi
+        shift
+        ;;
+    esac
+  done
+
+  [[ -n "$body" ]] || { echo "Usage: idea-add <body> [--title TITLE] [project-dir]" >&2; exit 1; }
+
+  # Default: title = body (short-text fast path; AC-22)
+  [[ -z "$title" ]] && title="$body"
+
+  local ideas_log="$project_dir/.ccanvil/ideas.log"
+  mkdir -p "$(dirname "$ideas_log")"
+
+  local uid epoch
   uid=$(head -c 2 /dev/urandom | xxd -p)
   epoch=$(date +%s)
 
-  # Create file with header if it doesn't exist
-  if [[ ! -f "$ideas_file" ]]; then
-    mkdir -p "$docs_dir"
-    echo "# Ideas" > "$ideas_file"
-    echo "" >> "$ideas_file"
-  fi
+  jq -cn --arg uid "$uid" --argjson created "$epoch" \
+         --arg title "$title" --arg body "$body" \
+    '{uid:$uid, created:$created, status:"new", title:$title, body:$body}' \
+    >> "$ideas_log"
 
-  echo "- [ ] ${uid} ${epoch}: ${text} <!-- status:new -->" >> "$ideas_file"
-  echo "Captured: $text"
+  echo "Captured: $title"
 }
 
 cmd_idea_list() {
   local filter_status=""
-  local docs_dir="$DEFAULT_DOCS_DIR"
+  local project_dir="."
 
-  # Parse args
   while [[ $# -gt 0 ]]; do
     case "$1" in
       --status) filter_status="$2"; shift 2 ;;
-      *) docs_dir="$1"; shift ;;
+      *) project_dir="$1"; shift ;;
     esac
   done
 
-  local ideas_file="$docs_dir/ideas.md"
-  local result="[]"
-
-  if [[ ! -f "$ideas_file" ]]; then
-    echo "$result"
+  local ideas_log="$project_dir/.ccanvil/ideas.log"
+  if [[ ! -f "$ideas_log" ]]; then
+    echo "[]"
     return 0
   fi
 
-  local idea_num=0
-  while IFS= read -r line; do
-    local id="" created="" text="" status=""
-
-    # New format: - [ ] <uid> <epoch>: text <!-- status:xxx -->
-    if [[ "$line" =~ ^-\ \[(.)\]\ ([0-9a-f]{4})\ ([0-9]+):\ (.*)\ \<!--\ status:([a-z:A-Z0-9_-]+)\ --\> ]]; then
-      id="${BASH_REMATCH[2]}"
-      created="${BASH_REMATCH[3]}"
-      text="${BASH_REMATCH[4]}"
-      status="${BASH_REMATCH[5]}"
-    # Legacy format: - [ ] YYYY-MM-DD: text <!-- status:xxx -->
-    elif [[ "$line" =~ ^-\ \[(.)\]\ ([0-9]{4}-[0-9]{2}-[0-9]{2}):\ (.*)\ \<!--\ status:([a-z:A-Z0-9_-]+)\ --\> ]]; then
-      idea_num=$((idea_num + 1))
-      id="$idea_num"
-      created="${BASH_REMATCH[2]}"
-      text="${BASH_REMATCH[3]}"
-      status="${BASH_REMATCH[4]}"
-    else
-      continue
-    fi
-
-    # Apply filter
-    if [[ -n "$filter_status" && "$status" != "$filter_status" ]]; then
-      continue
-    fi
-
-    result=$(echo "$result" | jq --arg i "$id" --arg c "$created" --arg t "$text" --arg s "$status" \
-      '. + [{"id": $i, "created": $c, "text": $t, "status": $s}]')
-  done < "$ideas_file"
-
-  echo "$result" | jq '.'
+  local jq_shape='{id: .uid, created: .created, title: .title, body: .body, status: .status}'
+  if [[ -n "$filter_status" ]]; then
+    jq -s --arg s "$filter_status" \
+      "[.[] | select(.status == \$s) | $jq_shape]" "$ideas_log"
+  else
+    jq -s "[.[] | $jq_shape]" "$ideas_log"
+  fi
 }
 
 cmd_idea_count() {
-  local docs_dir="${1:-$DEFAULT_DOCS_DIR}"
-  local ideas_file="$docs_dir/ideas.md"
+  local project_dir="${1:-.}"
+  local ideas_log="$project_dir/.ccanvil/ideas.log"
 
-  if [[ ! -f "$ideas_file" ]]; then
-    jq -n '{"total":0,"new":0,"promoted":0,"dismissed":0,"merged":0}'
+  if [[ ! -f "$ideas_log" ]]; then
+    jq -n '{total:0, new:0, promoted:0, parked:0, dismissed:0, merged:0}'
     return 0
   fi
 
-  local total=0 new=0 promoted=0 dismissed=0 merged=0
-  while IFS= read -r line; do
-    if [[ "$line" =~ \<!--\ status:([a-z:A-Z0-9_-]+)\ --\> ]]; then
-      local status="${BASH_REMATCH[1]}"
-      total=$((total + 1))
-      case "$status" in
-        new) new=$((new + 1)) ;;
-        promoted) promoted=$((promoted + 1)) ;;
-        dismissed) dismissed=$((dismissed + 1)) ;;
-        merged*) merged=$((merged + 1)) ;;
-      esac
-    fi
-  done < "$ideas_file"
-
-  jq -n --argjson t "$total" --argjson n "$new" --argjson p "$promoted" --argjson d "$dismissed" --argjson m "$merged" \
-    '{"total":$t,"new":$n,"promoted":$p,"dismissed":$d,"merged":$m}'
+  jq -s '{
+    total:     length,
+    new:       [.[] | select(.status == "new")]       | length,
+    promoted:  [.[] | select(.status == "promoted")]  | length,
+    parked:    [.[] | select(.status == "parked")]    | length,
+    dismissed: [.[] | select(.status == "dismissed")] | length,
+    merged:    [.[] | select(.status == "merged")]    | length
+  }' "$ideas_log"
 }
 
 cmd_idea_update() {
-  local idea_ref="${1:?Usage: idea-update <uid-or-number> <status> [docs-dir]}"
-  local new_status="${2:?Usage: idea-update <uid-or-number> <status> [docs-dir]}"
-  local docs_dir="${3:-$DEFAULT_DOCS_DIR}"
-  local ideas_file="$docs_dir/ideas.md"
+  local uid="${1:?Usage: idea-update <uid> <status> [project-dir]}"
+  local new_status="${2:?Usage: idea-update <uid> <status> [project-dir]}"
+  local project_dir="${3:-.}"
+  local ideas_log="$project_dir/.ccanvil/ideas.log"
 
-  [[ -f "$ideas_file" ]] || { echo "ERROR: $ideas_file not found" >&2; exit 1; }
+  [[ -f "$ideas_log" ]] || { echo "ERROR: $ideas_log not found" >&2; exit 1; }
 
-  local target_line=0
-  local line_num=0
-
-  # Try UID match first (4-char hex), then fall back to numeric index
-  if [[ "$idea_ref" =~ ^[0-9a-f]{4}$ ]]; then
-    # UID lookup
-    while IFS= read -r line; do
-      line_num=$((line_num + 1))
-      if [[ "$line" =~ ^-\ \[.\]\ ${idea_ref}\  ]]; then
-        target_line=$line_num
-        break
-      fi
-    done < "$ideas_file"
-  fi
-
-  # Fall back to numeric index if UID not found or ref is numeric
-  if [[ "$target_line" -eq 0 && "$idea_ref" =~ ^[0-9]+$ ]]; then
-    local current_num=0
-    line_num=0
-    while IFS= read -r line; do
-      line_num=$((line_num + 1))
-      if [[ "$line" =~ ^-\ \[.\].*\<!--\ status: ]]; then
-        current_num=$((current_num + 1))
-        if [[ "$current_num" -eq "$idea_ref" ]]; then
-          target_line=$line_num
-          break
-        fi
-      fi
-    done < "$ideas_file"
-  fi
-
-  if [[ "$target_line" -eq 0 ]]; then
-    echo "ERROR: idea '$idea_ref' not found" >&2
+  # Confirm the uid exists before rewriting.
+  if ! grep -q "\"uid\":\"$uid\"" "$ideas_log"; then
+    echo "ERROR: idea with uid '$uid' not found" >&2
     exit 1
   fi
 
-  # Update the status and check the box
-  sed -i '' "${target_line}s/\[ \]/[x]/" "$ideas_file" 2>/dev/null || \
-    sed -i "${target_line}s/\[ \]/[x]/" "$ideas_file"
-  sed -i '' "${target_line}s/status:[a-zA-Z0-9:_-]*/status:${new_status}/" "$ideas_file" 2>/dev/null || \
-    sed -i "${target_line}s/status:[a-zA-Z0-9:_-]*/status:${new_status}/" "$ideas_file"
+  local tmp
+  tmp=$(mktemp)
+  jq -c --arg uid "$uid" --arg s "$new_status" \
+    'if .uid == $uid then .status = $s else . end' \
+    "$ideas_log" > "$tmp"
+  mv "$tmp" "$ideas_log"
 
-  echo "Updated idea $idea_ref to $new_status"
+  echo "Updated idea $uid to $new_status"
 }
 
 # ---------------------------------------------------------------------------
