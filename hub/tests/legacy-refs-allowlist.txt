@@ -47,8 +47,10 @@
 ^\.ccanvil/scripts/ccanvil-sync\.sh:[0-9]+:.*(docs/checkpoint\.md|commands/catchup\.md|old_catchup|stasis-migration|migrate-stasis|legacy catchup|checkpoint/catchup)
 
 # --- Documentation OF the migration / scanner features ---
-# command-reference describes what legacy-refs-scan detects.
-^\.ccanvil/guide/command-reference\.md:14[0-9]:
+# command-reference describes what legacy-refs-scan detects. Content-based
+# pattern: the only line that should contain legacy strings is the row
+# documenting the scanner command itself.
+^\.ccanvil/guide/command-reference\.md:[0-9]+:.*legacy-refs-scan
 # session-management describes the one-time migration.
 ^\.ccanvil/guide/session-management\.md:(83|84|85|86):
 

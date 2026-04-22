@@ -1395,6 +1395,88 @@ cmd_idea_migrate() {
 }
 
 # ---------------------------------------------------------------------------
+# cmd_idea_setup — One-shot per-node setup for the /idea system.
+#
+# Writes (or deep-merges into) .claude/ccanvil.local.json and appends the
+# three gitignore entries for the new local stores. Idempotent.
+#
+# Usage:
+#   idea-setup --provider local                                  [project-dir]
+#   idea-setup --provider linear --team TEAM --project PROJECT   [project-dir]
+# ---------------------------------------------------------------------------
+cmd_idea_setup() {
+  local provider=""
+  local team=""
+  local project=""
+  local project_dir="."
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --provider) provider="$2"; shift 2 ;;
+      --team)     team="$2";     shift 2 ;;
+      --project)  project="$2";  shift 2 ;;
+      *)          project_dir="$1"; shift ;;
+    esac
+  done
+
+  case "$provider" in
+    local) ;;
+    linear)
+      [[ -n "$team" ]]    || { echo "ERROR: --provider linear requires --team TEAM" >&2; exit 1; }
+      [[ -n "$project" ]] || { echo "ERROR: --provider linear requires --project PROJECT" >&2; exit 1; }
+      ;;
+    "")  echo "ERROR: --provider is required (local|linear)" >&2; exit 1 ;;
+    *)   echo "ERROR: unknown provider '$provider' (must be local|linear)" >&2; exit 1 ;;
+  esac
+
+  mkdir -p "$project_dir/.claude" "$project_dir/.ccanvil"
+
+  # Compose the new integrations slice.
+  local slice
+  if [[ "$provider" == "linear" ]]; then
+    slice=$(jq -n --arg team "$team" --arg project "$project" \
+      '{integrations: {routing: {idea: "linear"}, providers: {linear: {team: $team, project: $project}}}}')
+  else
+    slice='{"integrations": {"routing": {"idea": "local"}}}'
+  fi
+
+  # Deep-merge into existing ccanvil.local.json (preserve node_uuid, other keys).
+  local cfg="$project_dir/.claude/ccanvil.local.json"
+  local existing='{}'
+  [[ -f "$cfg" ]] && existing=$(cat "$cfg")
+
+  echo "$existing" | jq --argjson slice "$slice" '. * $slice' > "$cfg.tmp"
+  mv "$cfg.tmp" "$cfg"
+
+  # .gitignore hygiene — both stores live under the repo and must never be
+  # committed; the legacy docs/ideas.md path is ignored so a stale file
+  # (until migrated) doesn't leak.
+  local gitignore="$project_dir/.gitignore"
+  touch "$gitignore"
+  for entry in ".ccanvil/ideas.log" ".ccanvil/ideas-pending.log" "docs/ideas.md"; do
+    if ! grep -qxF "$entry" "$gitignore" 2>/dev/null; then
+      echo "$entry" >> "$gitignore"
+    fi
+  done
+
+  echo "SETUP: $cfg configured with provider=$provider"
+  if [[ "$provider" == "linear" ]]; then
+    echo ""
+    echo "Next steps:"
+    echo "  1. Verify the 'Idea' and 'Icebox' custom statuses exist on team '$team'"
+    echo "     in Linear (Team Settings → Issue statuses & automations). If not,"
+    echo "     create them in the Backlog category. MCP can't create them for you."
+    echo "  2. Run 'docs-check.sh idea-migrate' to move any legacy docs/ideas.md"
+    echo "     entries into the local store. The skill's Linear sync flow will"
+    echo "     promote them from there."
+  else
+    echo ""
+    echo "Next step: run 'docs-check.sh idea-migrate' if you have a legacy"
+    echo "docs/ideas.md to move into .ccanvil/ideas.log."
+  fi
+}
+
+# ---------------------------------------------------------------------------
 # cmd_legacy_refs_scan — Find references to legacy ccanvil verbs/artifacts.
 #
 # Scans a project dir for:
@@ -1506,9 +1588,10 @@ case "$cmd" in
   idea-update)       cmd_idea_update "$@" ;;
   idea-sync)         cmd_idea_sync "$@" ;;
   idea-migrate)      cmd_idea_migrate "$@" ;;
+  idea-setup)        cmd_idea_setup "$@" ;;
   legacy-refs-scan)  cmd_legacy_refs_scan "$@" ;;
   *)
-    echo "Usage: docs-check.sh {status|validate|recommend|audit-session|config-get|list-specs|activate|complete|land|idea-add|idea-list|idea-count|idea-update|idea-sync|idea-migrate|legacy-refs-scan} [args...]" >&2
+    echo "Usage: docs-check.sh {status|validate|recommend|audit-session|config-get|list-specs|activate|complete|land|idea-add|idea-list|idea-count|idea-update|idea-sync|idea-migrate|idea-setup|legacy-refs-scan} [args...]" >&2
     exit 1
     ;;
 esac

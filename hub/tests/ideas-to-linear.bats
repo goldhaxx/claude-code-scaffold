@@ -601,6 +601,104 @@ EOF
 # AC-25: cmd_activate dirty-worktree allowlist no longer tolerates ideas.md
 # =========================================================================
 
+# =========================================================================
+# idea-setup: scaffold the per-node Linear / local config
+# =========================================================================
+
+@test "idea-setup --provider local writes routing.idea=local + gitignore" {
+  run bash "$DOCS_CHECK" idea-setup --provider local "$PROJECT"
+  [ "$status" -eq 0 ]
+  [ -f "$PROJECT/.claude/ccanvil.local.json" ]
+  jq -e '.integrations.routing.idea == "local"' "$PROJECT/.claude/ccanvil.local.json"
+  # Gitignore entries
+  grep -qxF ".ccanvil/ideas.log" "$PROJECT/.gitignore"
+  grep -qxF ".ccanvil/ideas-pending.log" "$PROJECT/.gitignore"
+  grep -qxF "docs/ideas.md" "$PROJECT/.gitignore"
+}
+
+@test "idea-setup --provider linear requires --team and --project" {
+  run bash "$DOCS_CHECK" idea-setup --provider linear "$PROJECT"
+  [ "$status" -ne 0 ]
+  echo "$output" | grep -qi "team"
+
+  run bash "$DOCS_CHECK" idea-setup --provider linear --team X "$PROJECT"
+  [ "$status" -ne 0 ]
+  echo "$output" | grep -qi "project"
+}
+
+@test "idea-setup --provider linear writes routing.idea=linear + provider config" {
+  run bash "$DOCS_CHECK" idea-setup --provider linear --team "BTS Team" --project "my-project" "$PROJECT"
+  [ "$status" -eq 0 ]
+  jq -e '.integrations.routing.idea == "linear"' "$PROJECT/.claude/ccanvil.local.json"
+  jq -e '.integrations.providers.linear.team == "BTS Team"' "$PROJECT/.claude/ccanvil.local.json"
+  jq -e '.integrations.providers.linear.project == "my-project"' "$PROJECT/.claude/ccanvil.local.json"
+}
+
+@test "idea-setup preserves pre-existing ccanvil.local.json fields (deep merge)" {
+  mkdir -p "$PROJECT/.claude"
+  cat > "$PROJECT/.claude/ccanvil.local.json" <<'JSON'
+{
+  "node_uuid": "c0ffee00-0000-4000-8000-000000000001",
+  "other_thing": {"keep_me": true}
+}
+JSON
+  run bash "$DOCS_CHECK" idea-setup --provider local "$PROJECT"
+  [ "$status" -eq 0 ]
+  # Existing fields survive
+  jq -e '.node_uuid == "c0ffee00-0000-4000-8000-000000000001"' "$PROJECT/.claude/ccanvil.local.json"
+  jq -e '.other_thing.keep_me == true' "$PROJECT/.claude/ccanvil.local.json"
+  # New routing is present
+  jq -e '.integrations.routing.idea == "local"' "$PROJECT/.claude/ccanvil.local.json"
+}
+
+@test "idea-setup is idempotent (no duplicate gitignore lines)" {
+  bash "$DOCS_CHECK" idea-setup --provider local "$PROJECT" >/dev/null
+  bash "$DOCS_CHECK" idea-setup --provider local "$PROJECT" >/dev/null
+
+  local log_count pending_count md_count
+  log_count=$(grep -cxF ".ccanvil/ideas.log" "$PROJECT/.gitignore")
+  pending_count=$(grep -cxF ".ccanvil/ideas-pending.log" "$PROJECT/.gitignore")
+  md_count=$(grep -cxF "docs/ideas.md" "$PROJECT/.gitignore")
+  [ "$log_count" -eq 1 ]
+  [ "$pending_count" -eq 1 ]
+  [ "$md_count" -eq 1 ]
+}
+
+@test "idea-setup output names the manual next steps (Linear statuses + migrate)" {
+  run bash "$DOCS_CHECK" idea-setup --provider linear --team T --project P "$PROJECT"
+  [ "$status" -eq 0 ]
+  echo "$output" | grep -qiE "Idea.*status|create.*status"
+  echo "$output" | grep -qi "idea-migrate"
+}
+
+@test "migration guide exists and names the setup/migrate commands" {
+  local guide="$BATS_TEST_DIRNAME/../../.ccanvil/guide/ideas-migration.md"
+  [ -f "$guide" ]
+  grep -q 'idea-setup' "$guide"
+  grep -q 'idea-migrate' "$guide"
+  grep -q 'routing.idea' "$guide"
+  # Has the hub-managed delimiter so it distributes cleanly
+  grep -q '<!-- NODE-SPECIFIC-START -->' "$guide"
+}
+
+@test "command-reference.md documents idea-setup and points to the migration guide" {
+  local ref="$BATS_TEST_DIRNAME/../../.ccanvil/guide/command-reference.md"
+  grep -q 'idea-setup' "$ref"
+  grep -q 'ideas-migration.md' "$ref"
+}
+
+@test "idea-setup --provider linear resolves cleanly via operations.sh" {
+  bash "$DOCS_CHECK" idea-setup --provider linear --team "BTS Team" --project "my-project" "$PROJECT" >/dev/null
+  # Also copy shared ccanvil.json so merge has the provider defaults
+  cp "$BATS_TEST_DIRNAME/../../.claude/ccanvil.json" "$PROJECT/.claude/ccanvil.json"
+
+  run bash "$SCRIPT" resolve idea.add --project-dir "$PROJECT"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '.provider == "linear"'
+  echo "$output" | jq -e '.invocation.params.team == "BTS Team"'
+  echo "$output" | jq -e '.invocation.params.project == "my-project"'
+}
+
 @test "AC-25: activate halts when docs/ideas.md is uncommitted (no longer allowlisted)" {
   # Build a minimal repo fixture with a valid spec so activate progresses
   # past the spec-lookup step and reaches the dirty-worktree check.
