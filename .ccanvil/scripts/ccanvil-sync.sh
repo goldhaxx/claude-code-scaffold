@@ -2530,6 +2530,14 @@ cmd_broadcast() {
       fi
     fi
 
+    # ideas-to-linear migration hint (AC-28). Broadcast detects legacy
+    # docs/ideas.md per node and prints a one-line nudge — never auto-
+    # migrates (each node's Linear auth + project scope is different;
+    # migration stays per-node by design).
+    if (cd "$node_path" && git ls-files --error-unmatch docs/ideas.md >/dev/null 2>&1); then
+      echo "  HINT: $node_name: docs/ideas.md still tracked — run 'docs-check.sh idea-migrate' on that node"
+    fi
+
     # Run pull-plan to classify changes
     local plan
     plan=$(cd "$node_path" && bash "$node_path/.ccanvil/scripts/ccanvil-sync.sh" pull-plan 2>/dev/null) || {

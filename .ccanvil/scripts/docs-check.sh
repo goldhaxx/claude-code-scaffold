@@ -688,13 +688,53 @@ cmd_list_specs() {
 # Fails if: feature-id not found, another spec is In Progress, worktree dirty.
 # ---------------------------------------------------------------------------
 cmd_activate() {
-  local feature_id="${1:?Usage: activate <feature-id> [docs-dir]}"
-  local docs_dir="${2:-$DEFAULT_DOCS_DIR}"
+  # Parse args: <feature-id> [--force-local-ahead] [docs-dir]
+  # Flag can appear in any position among the positionals.
+  local feature_id=""
+  local docs_dir=""
+  local force_local_ahead=false
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --force-local-ahead) force_local_ahead=true; shift ;;
+      *)
+        if [[ -z "$feature_id" ]]; then feature_id="$1"
+        elif [[ -z "$docs_dir" ]]; then docs_dir="$1"
+        fi
+        shift
+        ;;
+    esac
+  done
+  [[ -n "$feature_id" ]] || { echo "Usage: activate <feature-id> [--force-local-ahead] [docs-dir]" >&2; exit 1; }
+  [[ -n "$docs_dir" ]] || docs_dir="$DEFAULT_DOCS_DIR"
   local specs_dir="$docs_dir/specs"
   local repo_root
   repo_root=$(cd "$docs_dir" 2>/dev/null && git rev-parse --show-toplevel 2>/dev/null) || {
     repo_root=$(cd "$docs_dir/.." 2>/dev/null && pwd)
   }
+
+  # Pre-activate push-guard (AC-17/18/19): halt if local main is ahead of
+  # origin/main. Unpushed commits on main become part of the feature branch's
+  # history on push and cause divergence at squash-merge time. If origin/main
+  # doesn't exist (no remote, or unpushed remote), this check is a no-op.
+  if ! $force_local_ahead; then
+    if git -C "$repo_root" rev-parse --verify origin/main >/dev/null 2>&1; then
+      local ahead_hashes
+      ahead_hashes=$(git -C "$repo_root" rev-list --reverse --format="%h %s" --no-commit-header origin/main..main 2>/dev/null || true)
+      if [[ -n "$ahead_hashes" ]]; then
+        echo "ERROR: local main is ahead of origin/main — unpushed commits would leak into the feature branch." >&2
+        echo "" >&2
+        echo "Unpushed commits:" >&2
+        echo "$ahead_hashes" | sed 's/^/  /' >&2
+        echo "" >&2
+        echo "Resolve by pushing main first:" >&2
+        echo "  git push origin main" >&2
+        echo "" >&2
+        echo "Or, if these commits are session-boundary artifacts that you know you want on the branch:" >&2
+        echo "  bash .ccanvil/scripts/docs-check.sh activate $feature_id --force-local-ahead" >&2
+        exit 1
+      fi
+    fi
+  fi
 
   # Find the spec file
   local spec_file=""
@@ -742,7 +782,7 @@ cmd_activate() {
     fpath="${fpath%% -> *}"  # strip rename target
     case "$fpath" in
       "${docs_prefix}specs/"*|"${docs_prefix}spec.md") ;;                       # allowed: spec files
-      "${docs_prefix}ideas.md"|"${docs_prefix}roadmap.md") ;;                   # allowed: triage artifacts
+      "${docs_prefix}roadmap.md") ;;                                            # allowed: triage artifact
       *) dirty_non_spec="$fpath"; break ;;
     esac
   done < <(git -C "$repo_root" status --porcelain --untracked-files=all 2>/dev/null)
@@ -1040,10 +1080,12 @@ cmd_radar_gather() {
   fi
   result=$(echo "$result" | jq --argjson c "$completed" '. + {"completed_recent": $c}')
 
-  # Idea count
+  # Idea count — ideas.log lives at <project>/.ccanvil/ideas.log (one level above docs_dir).
   local idea_counts='{"total":0,"new":0}'
-  if [[ -f "$docs_dir/ideas.md" ]]; then
-    idea_counts=$(cmd_idea_count "$docs_dir")
+  local project_dir
+  project_dir=$(dirname "$docs_dir")
+  if [[ -f "$project_dir/.ccanvil/ideas.log" ]]; then
+    idea_counts=$(cmd_idea_count "$project_dir")
   fi
   result=$(echo "$result" | jq --argjson i "$idea_counts" '. + {"ideas": $i}')
 
@@ -1099,156 +1141,339 @@ cmd_radar_gather() {
 # ---------------------------------------------------------------------------
 
 cmd_idea_add() {
-  local text="${1:?Usage: idea-add <text> [docs-dir]}"
-  local docs_dir="${2:-$DEFAULT_DOCS_DIR}"
-  local ideas_file="$docs_dir/ideas.md"
-  local uid epoch
+  local body=""
+  local title=""
+  local project_dir="."
 
+  # Parse args: first positional is body, then optional --title flag,
+  # final positional (if any) is the project dir (defaults to cwd).
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --title)
+        title="$2"; shift 2 ;;
+      *)
+        if [[ -z "$body" ]]; then
+          body="$1"
+        else
+          project_dir="$1"
+        fi
+        shift
+        ;;
+    esac
+  done
+
+  [[ -n "$body" ]] || { echo "Usage: idea-add <body> [--title TITLE] [project-dir]" >&2; exit 1; }
+
+  # Default: title = body (short-text fast path; AC-22)
+  [[ -z "$title" ]] && title="$body"
+
+  local ideas_log="$project_dir/.ccanvil/ideas.log"
+  mkdir -p "$(dirname "$ideas_log")"
+
+  local uid epoch
   uid=$(head -c 2 /dev/urandom | xxd -p)
   epoch=$(date +%s)
 
-  # Create file with header if it doesn't exist
-  if [[ ! -f "$ideas_file" ]]; then
-    mkdir -p "$docs_dir"
-    echo "# Ideas" > "$ideas_file"
-    echo "" >> "$ideas_file"
-  fi
+  jq -cn --arg uid "$uid" --argjson created "$epoch" \
+         --arg title "$title" --arg body "$body" \
+    '{uid:$uid, created:$created, status:"new", title:$title, body:$body}' \
+    >> "$ideas_log"
 
-  echo "- [ ] ${uid} ${epoch}: ${text} <!-- status:new -->" >> "$ideas_file"
-  echo "Captured: $text"
+  echo "Captured: $title"
 }
 
 cmd_idea_list() {
   local filter_status=""
-  local docs_dir="$DEFAULT_DOCS_DIR"
+  local project_dir="."
 
-  # Parse args
   while [[ $# -gt 0 ]]; do
     case "$1" in
       --status) filter_status="$2"; shift 2 ;;
-      *) docs_dir="$1"; shift ;;
+      *) project_dir="$1"; shift ;;
     esac
   done
 
-  local ideas_file="$docs_dir/ideas.md"
-  local result="[]"
-
-  if [[ ! -f "$ideas_file" ]]; then
-    echo "$result"
+  local ideas_log="$project_dir/.ccanvil/ideas.log"
+  if [[ ! -f "$ideas_log" ]]; then
+    echo "[]"
     return 0
   fi
 
-  local idea_num=0
-  while IFS= read -r line; do
-    local id="" created="" text="" status=""
-
-    # New format: - [ ] <uid> <epoch>: text <!-- status:xxx -->
-    if [[ "$line" =~ ^-\ \[(.)\]\ ([0-9a-f]{4})\ ([0-9]+):\ (.*)\ \<!--\ status:([a-z:A-Z0-9_-]+)\ --\> ]]; then
-      id="${BASH_REMATCH[2]}"
-      created="${BASH_REMATCH[3]}"
-      text="${BASH_REMATCH[4]}"
-      status="${BASH_REMATCH[5]}"
-    # Legacy format: - [ ] YYYY-MM-DD: text <!-- status:xxx -->
-    elif [[ "$line" =~ ^-\ \[(.)\]\ ([0-9]{4}-[0-9]{2}-[0-9]{2}):\ (.*)\ \<!--\ status:([a-z:A-Z0-9_-]+)\ --\> ]]; then
-      idea_num=$((idea_num + 1))
-      id="$idea_num"
-      created="${BASH_REMATCH[2]}"
-      text="${BASH_REMATCH[3]}"
-      status="${BASH_REMATCH[4]}"
-    else
-      continue
-    fi
-
-    # Apply filter
-    if [[ -n "$filter_status" && "$status" != "$filter_status" ]]; then
-      continue
-    fi
-
-    result=$(echo "$result" | jq --arg i "$id" --arg c "$created" --arg t "$text" --arg s "$status" \
-      '. + [{"id": $i, "created": $c, "text": $t, "status": $s}]')
-  done < "$ideas_file"
-
-  echo "$result" | jq '.'
+  local jq_shape='{id: .uid, created: .created, title: .title, body: .body, status: .status}'
+  if [[ -n "$filter_status" ]]; then
+    jq -s --arg s "$filter_status" \
+      "[.[] | select(.status == \$s) | $jq_shape]" "$ideas_log"
+  else
+    jq -s "[.[] | $jq_shape]" "$ideas_log"
+  fi
 }
 
 cmd_idea_count() {
-  local docs_dir="${1:-$DEFAULT_DOCS_DIR}"
-  local ideas_file="$docs_dir/ideas.md"
+  local project_dir="${1:-.}"
+  local ideas_log="$project_dir/.ccanvil/ideas.log"
 
-  if [[ ! -f "$ideas_file" ]]; then
-    jq -n '{"total":0,"new":0,"promoted":0,"dismissed":0,"merged":0}'
+  if [[ ! -f "$ideas_log" ]]; then
+    jq -n '{total:0, new:0, promoted:0, parked:0, dismissed:0, merged:0}'
     return 0
   fi
 
-  local total=0 new=0 promoted=0 dismissed=0 merged=0
-  while IFS= read -r line; do
-    if [[ "$line" =~ \<!--\ status:([a-z:A-Z0-9_-]+)\ --\> ]]; then
-      local status="${BASH_REMATCH[1]}"
-      total=$((total + 1))
-      case "$status" in
-        new) new=$((new + 1)) ;;
-        promoted) promoted=$((promoted + 1)) ;;
-        dismissed) dismissed=$((dismissed + 1)) ;;
-        merged*) merged=$((merged + 1)) ;;
-      esac
-    fi
-  done < "$ideas_file"
-
-  jq -n --argjson t "$total" --argjson n "$new" --argjson p "$promoted" --argjson d "$dismissed" --argjson m "$merged" \
-    '{"total":$t,"new":$n,"promoted":$p,"dismissed":$d,"merged":$m}'
+  jq -s '{
+    total:     length,
+    new:       [.[] | select(.status == "new")]       | length,
+    promoted:  [.[] | select(.status == "promoted")]  | length,
+    parked:    [.[] | select(.status == "parked")]    | length,
+    dismissed: [.[] | select(.status == "dismissed")] | length,
+    merged:    [.[] | select(.status == "merged")]    | length
+  }' "$ideas_log"
 }
 
 cmd_idea_update() {
-  local idea_ref="${1:?Usage: idea-update <uid-or-number> <status> [docs-dir]}"
-  local new_status="${2:?Usage: idea-update <uid-or-number> <status> [docs-dir]}"
-  local docs_dir="${3:-$DEFAULT_DOCS_DIR}"
-  local ideas_file="$docs_dir/ideas.md"
+  local uid="${1:?Usage: idea-update <uid> <status> [project-dir]}"
+  local new_status="${2:?Usage: idea-update <uid> <status> [project-dir]}"
+  local project_dir="${3:-.}"
+  local ideas_log="$project_dir/.ccanvil/ideas.log"
 
-  [[ -f "$ideas_file" ]] || { echo "ERROR: $ideas_file not found" >&2; exit 1; }
+  [[ -f "$ideas_log" ]] || { echo "ERROR: $ideas_log not found" >&2; exit 1; }
 
-  local target_line=0
-  local line_num=0
-
-  # Try UID match first (4-char hex), then fall back to numeric index
-  if [[ "$idea_ref" =~ ^[0-9a-f]{4}$ ]]; then
-    # UID lookup
-    while IFS= read -r line; do
-      line_num=$((line_num + 1))
-      if [[ "$line" =~ ^-\ \[.\]\ ${idea_ref}\  ]]; then
-        target_line=$line_num
-        break
-      fi
-    done < "$ideas_file"
-  fi
-
-  # Fall back to numeric index if UID not found or ref is numeric
-  if [[ "$target_line" -eq 0 && "$idea_ref" =~ ^[0-9]+$ ]]; then
-    local current_num=0
-    line_num=0
-    while IFS= read -r line; do
-      line_num=$((line_num + 1))
-      if [[ "$line" =~ ^-\ \[.\].*\<!--\ status: ]]; then
-        current_num=$((current_num + 1))
-        if [[ "$current_num" -eq "$idea_ref" ]]; then
-          target_line=$line_num
-          break
-        fi
-      fi
-    done < "$ideas_file"
-  fi
-
-  if [[ "$target_line" -eq 0 ]]; then
-    echo "ERROR: idea '$idea_ref' not found" >&2
+  # Confirm the uid exists before rewriting.
+  if ! grep -q "\"uid\":\"$uid\"" "$ideas_log"; then
+    echo "ERROR: idea with uid '$uid' not found" >&2
     exit 1
   fi
 
-  # Update the status and check the box
-  sed -i '' "${target_line}s/\[ \]/[x]/" "$ideas_file" 2>/dev/null || \
-    sed -i "${target_line}s/\[ \]/[x]/" "$ideas_file"
-  sed -i '' "${target_line}s/status:[a-zA-Z0-9:_-]*/status:${new_status}/" "$ideas_file" 2>/dev/null || \
-    sed -i "${target_line}s/status:[a-zA-Z0-9:_-]*/status:${new_status}/" "$ideas_file"
+  local tmp
+  tmp=$(mktemp)
+  jq -c --arg uid "$uid" --arg s "$new_status" \
+    'if .uid == $uid then .status = $s else . end' \
+    "$ideas_log" > "$tmp"
+  mv "$tmp" "$ideas_log"
 
-  echo "Updated idea $idea_ref to $new_status"
+  echo "Updated idea $uid to $new_status"
+}
+
+# ---------------------------------------------------------------------------
+# cmd_idea_sync — Read/ack primitives for .ccanvil/ideas-pending.log.
+#
+# The pending log holds intents for Linear captures that failed (network,
+# auth, etc.). Replay is orchestrated by the /idea skill — this script
+# exposes the deterministic read + remove operations.
+#
+# Invocations:
+#   idea-sync [project-dir]             → print {pending, entries} JSON
+#   idea-sync --ack <ts> [project-dir]  → remove entry matching ts
+# ---------------------------------------------------------------------------
+cmd_idea_sync() {
+  local project_dir="."
+  local ack_ts=""
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --ack) ack_ts="$2"; shift 2 ;;
+      *) project_dir="$1"; shift ;;
+    esac
+  done
+
+  local pending="$project_dir/.ccanvil/ideas-pending.log"
+
+  if [[ -n "$ack_ts" ]]; then
+    if [[ ! -f "$pending" ]]; then
+      echo "ACKED: $ack_ts (pending log absent — no-op)"
+      return 0
+    fi
+    local tmp
+    tmp=$(mktemp)
+    jq -c --argjson ts "$ack_ts" 'select(.ts != $ts)' "$pending" > "$tmp"
+    mv "$tmp" "$pending"
+    echo "ACKED: $ack_ts"
+    return 0
+  fi
+
+  if [[ ! -f "$pending" || ! -s "$pending" ]]; then
+    jq -n '{pending: 0, entries: []}'
+    return 0
+  fi
+
+  jq -s '{pending: length, entries: .}' "$pending"
+}
+
+# ---------------------------------------------------------------------------
+# cmd_idea_migrate — Move legacy docs/ideas.md entries into .ccanvil/ideas.log
+# and/or emit intents for skill-level Linear dispatch.
+#
+# Invocations:
+#   idea-migrate [project-dir]
+#     Local end-to-end: parse docs/ideas.md → append to .ccanvil/ideas.log,
+#     git rm docs/ideas.md, update .gitignore. Idempotent when file absent.
+#
+#   idea-migrate --extract [project-dir]
+#     Parse docs/ideas.md → emit JSONL intents on stdout. No side effects.
+#     Used by the skill when Linear is configured; skill dispatches each
+#     intent via MCP, then runs --finalize.
+#
+#   idea-migrate --finalize [project-dir]
+#     git rm docs/ideas.md + update .gitignore. No parsing.
+# ---------------------------------------------------------------------------
+cmd_idea_migrate() {
+  local project_dir="."
+  local mode="full"   # full | extract | finalize
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --extract) mode="extract"; shift ;;
+      --finalize) mode="finalize"; shift ;;
+      *) project_dir="$1"; shift ;;
+    esac
+  done
+
+  local ideas_md="$project_dir/docs/ideas.md"
+  local ideas_log="$project_dir/.ccanvil/ideas.log"
+  local gitignore="$project_dir/.gitignore"
+
+  _idea_migrate_finalize() {
+    if [[ -f "$ideas_md" ]]; then
+      if git -C "$project_dir" rev-parse --git-dir >/dev/null 2>&1 && \
+         git -C "$project_dir" ls-files --error-unmatch docs/ideas.md >/dev/null 2>&1; then
+        git -C "$project_dir" rm -q docs/ideas.md
+      else
+        rm -f "$ideas_md"
+      fi
+    fi
+    touch "$gitignore"
+    for entry in "docs/ideas.md" ".ccanvil/ideas-pending.log" ".ccanvil/ideas.log"; do
+      if ! grep -qxF "$entry" "$gitignore" 2>/dev/null; then
+        echo "$entry" >> "$gitignore"
+      fi
+    done
+    echo "FINALIZED: docs/ideas.md removed; .gitignore updated"
+  }
+
+  _idea_migrate_extract() {
+    while IFS= read -r line; do
+      # New format: - [ ] <uid> <epoch>: text <!-- status:xxx -->
+      if [[ "$line" =~ ^-\ \[(.)\]\ ([0-9a-f]{4})\ ([0-9]+):\ (.*)\ \<!--\ status:([a-z:A-Z0-9_-]+)\ --\> ]]; then
+        local uid="${BASH_REMATCH[2]}"
+        local created="${BASH_REMATCH[3]}"
+        local text="${BASH_REMATCH[4]}"
+        local status="${BASH_REMATCH[5]}"
+        jq -cn --arg uid "$uid" --argjson created "$created" \
+               --arg title "$text" --arg body "$text" --arg status "$status" \
+          '{uid:$uid, created:$created, status:$status, title:$title, body:$body}'
+      # Legacy format: - [ ] YYYY-MM-DD: text <!-- status:xxx -->
+      elif [[ "$line" =~ ^-\ \[(.)\]\ ([0-9]{4}-[0-9]{2}-[0-9]{2}):\ (.*)\ \<!--\ status:([a-z:A-Z0-9_-]+)\ --\> ]]; then
+        local created="${BASH_REMATCH[2]}"
+        local text="${BASH_REMATCH[3]}"
+        local status="${BASH_REMATCH[4]}"
+        jq -cn --arg created "$created" \
+               --arg title "$text" --arg body "$text" --arg status "$status" \
+          '{created:$created, status:$status, title:$title, body:$body}'
+      fi
+    done < "$ideas_md"
+  }
+
+  case "$mode" in
+    finalize)
+      _idea_migrate_finalize
+      ;;
+    extract)
+      [[ -f "$ideas_md" ]] || { echo "Nothing to migrate: $ideas_md not found"; return 0; }
+      _idea_migrate_extract
+      ;;
+    full)
+      if [[ ! -f "$ideas_md" ]]; then
+        echo "Nothing to migrate: $ideas_md not found"
+        return 0
+      fi
+      mkdir -p "$(dirname "$ideas_log")"
+      # Write each parsed entry as a local JSONL idea (title=body, status preserved).
+      _idea_migrate_extract >> "$ideas_log"
+      local migrated
+      migrated=$(_idea_migrate_extract | wc -l | tr -d ' ')
+      _idea_migrate_finalize
+      echo "MIGRATED: $migrated entries → $ideas_log"
+      ;;
+  esac
+}
+
+# ---------------------------------------------------------------------------
+# cmd_idea_setup — One-shot per-node setup for the /idea system.
+#
+# Writes (or deep-merges into) .claude/ccanvil.local.json and appends the
+# three gitignore entries for the new local stores. Idempotent.
+#
+# Usage:
+#   idea-setup --provider local                                  [project-dir]
+#   idea-setup --provider linear --team TEAM --project PROJECT   [project-dir]
+# ---------------------------------------------------------------------------
+cmd_idea_setup() {
+  local provider=""
+  local team=""
+  local project=""
+  local project_dir="."
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --provider) provider="$2"; shift 2 ;;
+      --team)     team="$2";     shift 2 ;;
+      --project)  project="$2";  shift 2 ;;
+      *)          project_dir="$1"; shift ;;
+    esac
+  done
+
+  case "$provider" in
+    local) ;;
+    linear)
+      [[ -n "$team" ]]    || { echo "ERROR: --provider linear requires --team TEAM" >&2; exit 1; }
+      [[ -n "$project" ]] || { echo "ERROR: --provider linear requires --project PROJECT" >&2; exit 1; }
+      ;;
+    "")  echo "ERROR: --provider is required (local|linear)" >&2; exit 1 ;;
+    *)   echo "ERROR: unknown provider '$provider' (must be local|linear)" >&2; exit 1 ;;
+  esac
+
+  mkdir -p "$project_dir/.claude" "$project_dir/.ccanvil"
+
+  # Compose the new integrations slice.
+  local slice
+  if [[ "$provider" == "linear" ]]; then
+    slice=$(jq -n --arg team "$team" --arg project "$project" \
+      '{integrations: {routing: {idea: "linear"}, providers: {linear: {team: $team, project: $project}}}}')
+  else
+    slice='{"integrations": {"routing": {"idea": "local"}}}'
+  fi
+
+  # Deep-merge into existing ccanvil.local.json (preserve node_uuid, other keys).
+  local cfg="$project_dir/.claude/ccanvil.local.json"
+  local existing='{}'
+  [[ -f "$cfg" ]] && existing=$(cat "$cfg")
+
+  echo "$existing" | jq --argjson slice "$slice" '. * $slice' > "$cfg.tmp"
+  mv "$cfg.tmp" "$cfg"
+
+  # .gitignore hygiene — both stores live under the repo and must never be
+  # committed; the legacy docs/ideas.md path is ignored so a stale file
+  # (until migrated) doesn't leak.
+  local gitignore="$project_dir/.gitignore"
+  touch "$gitignore"
+  for entry in ".ccanvil/ideas.log" ".ccanvil/ideas-pending.log" "docs/ideas.md"; do
+    if ! grep -qxF "$entry" "$gitignore" 2>/dev/null; then
+      echo "$entry" >> "$gitignore"
+    fi
+  done
+
+  echo "SETUP: $cfg configured with provider=$provider"
+  if [[ "$provider" == "linear" ]]; then
+    echo ""
+    echo "Next steps:"
+    echo "  1. Verify the 'Idea' and 'Icebox' custom statuses exist on team '$team'"
+    echo "     in Linear (Team Settings → Issue statuses & automations). If not,"
+    echo "     create them in the Backlog category. MCP can't create them for you."
+    echo "  2. Run 'docs-check.sh idea-migrate' to move any legacy docs/ideas.md"
+    echo "     entries into the local store. The skill's Linear sync flow will"
+    echo "     promote them from there."
+  else
+    echo ""
+    echo "Next step: run 'docs-check.sh idea-migrate' if you have a legacy"
+    echo "docs/ideas.md to move into .ccanvil/ideas.log."
+  fi
 }
 
 # ---------------------------------------------------------------------------
@@ -1361,9 +1586,12 @@ case "$cmd" in
   idea-list)         cmd_idea_list "$@" ;;
   idea-count)        cmd_idea_count "$@" ;;
   idea-update)       cmd_idea_update "$@" ;;
+  idea-sync)         cmd_idea_sync "$@" ;;
+  idea-migrate)      cmd_idea_migrate "$@" ;;
+  idea-setup)        cmd_idea_setup "$@" ;;
   legacy-refs-scan)  cmd_legacy_refs_scan "$@" ;;
   *)
-    echo "Usage: docs-check.sh {status|validate|recommend|audit-session|config-get|list-specs|activate|complete|land|idea-add|idea-list|idea-count|idea-update|legacy-refs-scan} [args...]" >&2
+    echo "Usage: docs-check.sh {status|validate|recommend|audit-session|config-get|list-specs|activate|complete|land|idea-add|idea-list|idea-count|idea-update|idea-sync|idea-migrate|idea-setup|legacy-refs-scan} [args...]" >&2
     exit 1
     ;;
 esac

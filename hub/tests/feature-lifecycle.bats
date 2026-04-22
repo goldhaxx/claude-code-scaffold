@@ -1057,7 +1057,11 @@ EOF
 # sync during land. See "git-flow" session 2026-04-21 for root-cause analysis.
 # ---------------------------------------------------------------------------
 
-@test "activate: succeeds with uncommitted docs/ideas.md" {
+@test "activate: refuses uncommitted docs/ideas.md (ideas-to-linear AC-25)" {
+  # Post ideas-to-linear, docs/ideas.md is no longer a lifecycle artifact —
+  # ideas live in .ccanvil/ideas.log (gitignored) or Linear. An uncommitted
+  # docs/ideas.md now indicates leftover legacy state that should be
+  # migrated before activating a feature branch.
   cat > "$PROJECT/docs/specs/auth-system.md" <<'EOF'
 # Feature: Auth System
 
@@ -1070,12 +1074,11 @@ Auth feature.
 EOF
   git -C "$PROJECT" add -A && git -C "$PROJECT" commit -q -m "add spec"
 
-  # Triage artifact — no reason to force a pre-activate commit on main
-  echo "- [ ] abcd 123: some idea <!-- status:new -->" > "$PROJECT/docs/ideas.md"
+  echo "- [ ] abcd 123: legacy idea <!-- status:new -->" > "$PROJECT/docs/ideas.md"
 
   run "$PROJECT/.ccanvil/scripts/docs-check.sh" activate auth-system "$PROJECT/docs"
-  [ "$status" -eq 0 ]
-  echo "$output" | grep -q "Activated spec 'auth-system'"
+  [ "$status" -ne 0 ]
+  echo "$output" | grep -qiE "dirty|uncommitted|worktree|clean"
 }
 
 @test "activate: succeeds with uncommitted docs/roadmap.md" {

@@ -35,3 +35,6 @@ generated/
 #  events.log is the append-only audit trail for register/broadcast)
 .ccanvil/registry.json
 .ccanvil/events.log
+docs/ideas.md
+.ccanvil/ideas-pending.log
+.ccanvil/ideas.log

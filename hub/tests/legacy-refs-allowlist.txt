@@ -17,6 +17,10 @@
 # --- Node-local, per-user settings (not shipped) ---
 ^\.claude/settings\.local\.json:
 ^\.claude/ccanvil\.local\.json:
+# Gitignored local ideas store — content is user-authored and may reference
+# historical checkpoint/catchup concepts verbatim; not part of shipping code.
+^\.ccanvil/ideas\.log:
+^\.ccanvil/ideas-pending\.log:
 
 # --- Tests that exercise the legacy vocabulary ---
 # The scanner, migration, and allowlist tests contain the strings by design.
@@ -34,8 +38,8 @@
 # --- Scanner implementation (docs-check.sh legacy-refs-scan) ---
 # The function's docblock + regex pattern contain the legacy strings by
 # design — that's what the scanner detects in downstream projects.
-^\.ccanvil/scripts/docs-check\.sh:12[5-9][0-9]:
-^\.ccanvil/scripts/docs-check\.sh:13[0-4][0-9]:
+# Content-based pattern (resilient to line shifts from unrelated edits).
+^\.ccanvil/scripts/docs-check\.sh:[0-9]+:.*(legacy-refs|legacy_refs|- /catchup|- /checkpoint|- docs/checkpoint\.md|- checkpoint\.|- stale-checkpoint|pattern=.*/catchup)
 
 # --- Migration implementation (ccanvil-sync.sh migrate-stasis-artifact) ---
 # The function and its broadcast hook deliberately contain the legacy strings.
@@ -43,8 +47,10 @@
 ^\.ccanvil/scripts/ccanvil-sync\.sh:[0-9]+:.*(docs/checkpoint\.md|commands/catchup\.md|old_catchup|stasis-migration|migrate-stasis|legacy catchup|checkpoint/catchup)
 
 # --- Documentation OF the migration / scanner features ---
-# command-reference describes what legacy-refs-scan detects.
-^\.ccanvil/guide/command-reference\.md:14[0-9]:
+# command-reference describes what legacy-refs-scan detects. Content-based
+# pattern: the only line that should contain legacy strings is the row
+# documenting the scanner command itself.
+^\.ccanvil/guide/command-reference\.md:[0-9]+:.*legacy-refs-scan
 # session-management describes the one-time migration.
 ^\.ccanvil/guide/session-management\.md:(83|84|85|86):
 

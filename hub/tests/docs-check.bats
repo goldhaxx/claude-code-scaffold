@@ -1122,160 +1122,10 @@ GUIDE="$BATS_TEST_DIRNAME/../../.ccanvil/guide/command-reference.md"
 
 
 # =========================================================================
-# idea management tests
+# idea management tests — moved to hub/tests/ideas-to-linear.bats as part
+# of the ideas-to-linear feature. Storage is now .ccanvil/ideas.log (JSONL),
+# not docs/ideas.md.
 # =========================================================================
-
-@test "idea-add: creates ideas.md with UID and epoch timestamp" {
-  [ ! -f "$DOCS/ideas.md" ]
-  run bash "$SCRIPT" idea-add "test idea one" "$DOCS"
-  [ "$status" -eq 0 ]
-  [ -f "$DOCS/ideas.md" ]
-  grep -q "test idea one" "$DOCS/ideas.md"
-  grep -q "status:new" "$DOCS/ideas.md"
-  # New format: - [ ] <4-hex-uid> <epoch>: text <!-- status:new -->
-  grep -qE '^\- \[ \] [0-9a-f]{4} [0-9]+: test idea one <!-- status:new -->' "$DOCS/ideas.md"
-}
-
-@test "idea-add: appends to existing file" {
-  echo "- [ ] a1b2 1776000000: first idea <!-- status:new -->" > "$DOCS/ideas.md"
-  run bash "$SCRIPT" idea-add "second idea" "$DOCS"
-  [ "$status" -eq 0 ]
-  local count
-  count=$(grep -c "status:" "$DOCS/ideas.md")
-  [ "$count" -eq 2 ]
-}
-
-@test "idea-list: outputs JSON array with id and created fields" {
-  cat > "$DOCS/ideas.md" <<'EOF'
-# Ideas
-
-- [ ] a1b2 1776000001: first idea <!-- status:new -->
-- [x] c3d4 1776000002: second idea <!-- status:promoted -->
-- [x] e5f6 1776000003: third idea <!-- status:dismissed -->
-EOF
-  run bash "$SCRIPT" idea-list "$DOCS"
-  [ "$status" -eq 0 ]
-  local count
-  count=$(echo "$output" | jq 'length')
-  [ "$count" -eq 3 ]
-  # Check new fields: id and created
-  local first_id first_created first_status
-  first_id=$(echo "$output" | jq -r '.[0].id')
-  first_created=$(echo "$output" | jq -r '.[0].created')
-  first_status=$(echo "$output" | jq -r '.[0].status')
-  [ "$first_id" = "a1b2" ]
-  [ "$first_created" = "1776000001" ]
-  [ "$first_status" = "new" ]
-}
-
-@test "idea-list: parses legacy date format (backwards compatible)" {
-  cat > "$DOCS/ideas.md" <<'EOF'
-# Ideas
-
-- [ ] 2026-04-01: legacy idea <!-- status:new -->
-- [x] c3d4 1776000002: new format idea <!-- status:promoted -->
-EOF
-  run bash "$SCRIPT" idea-list "$DOCS"
-  [ "$status" -eq 0 ]
-  local count
-  count=$(echo "$output" | jq 'length')
-  [ "$count" -eq 2 ]
-  # Legacy entry gets num-based id and date as created
-  local legacy_id legacy_created
-  legacy_id=$(echo "$output" | jq -r '.[0].id')
-  legacy_created=$(echo "$output" | jq -r '.[0].created')
-  [ "$legacy_id" = "1" ]
-  [ "$legacy_created" = "2026-04-01" ]
-  # New format entry has proper uid and epoch
-  local new_id new_created
-  new_id=$(echo "$output" | jq -r '.[1].id')
-  new_created=$(echo "$output" | jq -r '.[1].created')
-  [ "$new_id" = "c3d4" ]
-  [ "$new_created" = "1776000002" ]
-}
-
-@test "idea-list: filters by status" {
-  cat > "$DOCS/ideas.md" <<'EOF'
-# Ideas
-
-- [ ] a1b2 1776000001: first idea <!-- status:new -->
-- [x] c3d4 1776000002: second idea <!-- status:promoted -->
-- [ ] e5f6 1776000003: third idea <!-- status:new -->
-EOF
-  run bash "$SCRIPT" idea-list --status new "$DOCS"
-  [ "$status" -eq 0 ]
-  local count
-  count=$(echo "$output" | jq 'length')
-  [ "$count" -eq 2 ]
-}
-
-@test "idea-count: returns correct totals" {
-  cat > "$DOCS/ideas.md" <<'EOF'
-# Ideas
-
-- [ ] a1b2 1776000001: alpha <!-- status:new -->
-- [ ] c3d4 1776000002: beta <!-- status:new -->
-- [x] e5f6 1776000003: gamma <!-- status:promoted -->
-- [x] 1a2b 1776000004: delta <!-- status:dismissed -->
-- [x] 3c4d 1776000005: epsilon <!-- status:merged:BTS-99 -->
-EOF
-  run bash "$SCRIPT" idea-count "$DOCS"
-  [ "$status" -eq 0 ]
-  local total new promoted dismissed
-  total=$(echo "$output" | jq '.total')
-  new=$(echo "$output" | jq '.new')
-  promoted=$(echo "$output" | jq '.promoted')
-  dismissed=$(echo "$output" | jq '.dismissed')
-  [ "$total" -eq 5 ]
-  [ "$new" -eq 2 ]
-  [ "$promoted" -eq 1 ]
-  [ "$dismissed" -eq 1 ]
-}
-
-@test "idea-update: updates by UID" {
-  cat > "$DOCS/ideas.md" <<'EOF'
-# Ideas
-
-- [ ] a1b2 1776000001: first idea <!-- status:new -->
-- [ ] c3d4 1776000002: second idea <!-- status:new -->
-EOF
-  run bash "$SCRIPT" idea-update c3d4 promoted "$DOCS"
-  [ "$status" -eq 0 ]
-  grep -q "\[x\].*c3d4.*second idea.*status:promoted" "$DOCS/ideas.md"
-  grep -q "\[ \].*a1b2.*first idea.*status:new" "$DOCS/ideas.md"
-}
-
-@test "idea-update: falls back to numeric index" {
-  cat > "$DOCS/ideas.md" <<'EOF'
-# Ideas
-
-- [ ] a1b2 1776000001: first idea <!-- status:new -->
-- [ ] c3d4 1776000002: second idea <!-- status:new -->
-EOF
-  run bash "$SCRIPT" idea-update 2 promoted "$DOCS"
-  [ "$status" -eq 0 ]
-  grep -q "\[x\].*second idea.*status:promoted" "$DOCS/ideas.md"
-  grep -q "\[ \].*first idea.*status:new" "$DOCS/ideas.md"
-}
-
-@test "idea-update: nonexistent UID exits with error" {
-  cat > "$DOCS/ideas.md" <<'EOF'
-# Ideas
-
-- [ ] a1b2 1776000001: first idea <!-- status:new -->
-EOF
-  run bash "$SCRIPT" idea-update zzzz promoted "$DOCS"
-  [ "$status" -ne 0 ]
-  echo "$output" | grep -qi "not found"
-}
-
-@test "idea-count: empty file returns all zeros" {
-  run bash "$SCRIPT" idea-count "$DOCS"
-  [ "$status" -eq 0 ]
-  local total
-  total=$(echo "$output" | jq '.total')
-  [ "$total" -eq 0 ]
-}
 
 
 # =========================================================================
@@ -1331,12 +1181,14 @@ EOF
 }
 
 @test "radar-gather: includes idea counts" {
-  mkdir -p "$DOCS"
-  cat > "$DOCS/ideas.md" <<'EOF'
-# Ideas
-
-- [ ] 2026-04-01: idea one <!-- status:new -->
-- [ ] 2026-04-02: idea two <!-- status:new -->
+  # DOCS is a `docs/` dir; the real ideas store is .ccanvil/ideas.log at the
+  # project root (DOCS's parent).
+  local project_dir
+  project_dir=$(dirname "$DOCS")
+  mkdir -p "$project_dir/.ccanvil"
+  cat > "$project_dir/.ccanvil/ideas.log" <<'EOF'
+{"uid":"a1b2","created":1776000001,"status":"new","title":"one","body":"one"}
+{"uid":"c3d4","created":1776000002,"status":"new","title":"two","body":"two"}
 EOF
   run bash "$SCRIPT" radar-gather "$DOCS"
   [ "$status" -eq 0 ]

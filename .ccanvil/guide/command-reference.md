@@ -101,12 +101,21 @@ Only files matching `ccanvil-*.md` are hub-owned; all other files in `~/.claude/
 
 ## Idea Management Scripts
 
+The `/idea` skill routes captures through `operations.sh` based on the node's provider config (`integrations.routing.idea` in `.claude/ccanvil.local.json`). Default: gitignored `.ccanvil/ideas.log` (JSONL). Opt-in: Linear Triage via MCP. The scripts below back the local provider and expose the primitives the skill orchestrates for the Linear path. `/idea` never commits to git and never creates a branch.
+
 | Command | What it does |
 |---------|-------------|
-| `docs-check.sh idea-add "<text>" [docs-dir]` | Append an idea to `docs/ideas.md` with timestamp and `new` status |
-| `docs-check.sh idea-list [--status <status>] [docs-dir]` | List ideas as JSON array. Filter: `new`, `promoted`, `dismissed`, `merged` |
-| `docs-check.sh idea-count [docs-dir]` | Count ideas by status → JSON `{total, new, promoted, dismissed, merged}` |
-| `docs-check.sh idea-update <num> <status> [docs-dir]` | Update idea #N's status and check its checkbox |
+| `docs-check.sh idea-add "<body>" [--title TITLE] [project-dir]` | Append a JSONL entry to `.ccanvil/ideas.log` (local provider). `--title` defaults to body when omitted (short-text fast path). |
+| `docs-check.sh idea-list [--status <status>] [project-dir]` | List ideas as JSON array. Filter: `new`, `promoted`, `parked`, `dismissed`, `merged` |
+| `docs-check.sh idea-count [project-dir]` | Count ideas by status → JSON `{total, new, promoted, parked, dismissed, merged}` |
+| `docs-check.sh idea-update <uid> <status> [project-dir]` | Update an entry's status by UID |
+| `docs-check.sh idea-sync [--ack <ts>] [project-dir]` | Without args → emit `{pending, entries}` from `.ccanvil/ideas-pending.log`. With `--ack <ts>` → remove the matching pending entry. Replay is driven by `/idea sync` (Linear MCP orchestration in the skill). |
+| `docs-check.sh idea-migrate [--extract\|--finalize] [project-dir]` | Move legacy `docs/ideas.md` entries to `.ccanvil/ideas.log`, `git rm` the source, update `.gitignore`. `--extract` emits JSONL intents for skill-level Linear dispatch; `--finalize` does the filesystem cleanup alone. Idempotent. |
+| `docs-check.sh idea-setup --provider local\|linear [--team TEAM --project PROJECT] [project-dir]` | One-shot per-node scaffolder. Deep-merges `integrations.routing.idea` + `integrations.providers.linear` into `.claude/ccanvil.local.json` and adds the `.gitignore` entries. Idempotent; safe to re-run to change providers. |
+
+**Provider config:** `.claude/ccanvil.json` ships Linear provider defaults (mechanism, label, statuses). Each node opts in by setting `integrations.routing.idea = "linear"` and `integrations.providers.linear.{project, team}` in its own `.claude/ccanvil.local.json` — usually via `docs-check.sh idea-setup`. Unconfigured nodes use the local provider.
+
+**Migration guide:** `.ccanvil/guide/ideas-migration.md` walks a downstream node through the full migration (pull → setup → Linear statuses → `idea-migrate` → smoke test).
 
 ## Radar Scripts
 

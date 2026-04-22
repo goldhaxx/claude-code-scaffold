@@ -2046,3 +2046,27 @@ EOF
   jq -e --arg u "$node_uuid" '.nodes[$u].last_synced' "$HUB/.ccanvil/registry.json"
   jq -e --arg u "$node_uuid" '.nodes[$u].last_synced_version' "$HUB/.ccanvil/registry.json"
 }
+
+@test "broadcast: prints ideas-to-linear migration hint when node has tracked docs/ideas.md (AC-28)" {
+  cd "$NODE"
+
+  # Seed a legacy docs/ideas.md in the node and commit it.
+  mkdir -p "$NODE/docs"
+  echo "- [ ] a1b2 1776000001: stale idea <!-- status:new -->" > "$NODE/docs/ideas.md"
+  git -C "$NODE" add -A
+  git -C "$NODE" -c user.email=t@t -c user.name=t commit -q -m "add legacy ideas.md"
+
+  run bash "$NODE/.ccanvil/scripts/ccanvil-sync.sh" broadcast
+  [ "$status" -eq 0 ]
+  echo "$output" | grep -q "HINT:"
+  echo "$output" | grep -q "docs/ideas.md still tracked"
+  echo "$output" | grep -q "idea-migrate"
+}
+
+@test "broadcast: no ideas-to-linear hint when node has no docs/ideas.md (AC-28)" {
+  cd "$NODE"
+  # Node has no docs/ideas.md (default in setup).
+  run bash "$NODE/.ccanvil/scripts/ccanvil-sync.sh" broadcast
+  [ "$status" -eq 0 ]
+  ! echo "$output" | grep -q "docs/ideas.md still tracked"
+}

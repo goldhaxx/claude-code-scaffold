@@ -34,6 +34,7 @@ is_valid_operation() {
     status.get|status.update) return 0 ;;
     pr.create|pr.list) return 0 ;;
     review.run) return 0 ;;
+    idea.add|idea.list|idea.triage|idea.sync) return 0 ;;
     *) return 1 ;;
   esac
 }
@@ -261,6 +262,26 @@ local_adapter() {
       cmd="echo '{\"status\":\"not_implemented\",\"concerns\":[]}'"
       output_contract='["status","concerns"]'
       ;;
+    # --- idea ---
+    # Title + body are passed as trailing positional args by the skill
+    # when invoking idea.add (out-of-band from operations.sh args).
+    idea.add)
+      cmd=".ccanvil/scripts/docs-check.sh idea-add"
+      output_contract='["uid","title"]'
+      ;;
+    idea.list)
+      cmd=".ccanvil/scripts/docs-check.sh idea-list"
+      output_contract='["uid","created","title","status"]'
+      ;;
+    idea.triage)
+      cmd=".ccanvil/scripts/docs-check.sh idea-list --status new"
+      output_contract='["uid","created","title","status"]'
+      ;;
+    idea.sync)
+      # Local sync is a no-op; the command exists for contract uniformity.
+      cmd=".ccanvil/scripts/docs-check.sh idea-sync"
+      output_contract='["synced","pending"]'
+      ;;
   esac
 
   jq -n --arg cmd "$cmd" --argjson output "$output_contract" \
@@ -274,9 +295,12 @@ local_adapter() {
 linear_mcp_adapter() {
   local op="$1" provider_config="$2" op_args="$3"
   local tool="" output_contract="" field_map=""
-  local project team
+  local project team idea_label idea_status icebox_status
   project=$(echo "$provider_config" | jq -r '.project // ""')
   team=$(echo "$provider_config" | jq -r '.team // ""')
+  idea_label=$(echo "$provider_config" | jq -r '.idea_label // "idea"')
+  idea_status=$(echo "$provider_config" | jq -r '.idea_status // "Idea"')
+  icebox_status=$(echo "$provider_config" | jq -r '.icebox_status // "Icebox"')
 
   case "$op" in
     backlog.list)
@@ -294,6 +318,40 @@ linear_mcp_adapter() {
       jq -n --arg tool "$tool" --arg id "$op_args" \
         --argjson output "$output_contract" --argjson fmap "$field_map" \
         '{"provider":"linear","mechanism":"mcp","invocation":{"tool":$tool,"params":{"id":$id}},"contract":{"output":$output,"field_map":$fmap}}'
+      ;;
+    # --- idea operations ---
+    # The skill passes title + description out-of-band; this resolve only
+    # communicates the tool + the invariant params (team, project, state,
+    # label) that the skill stitches into a final MCP call.
+    idea.add)
+      tool="mcp__claude_ai_Linear__save_issue"
+      output_contract='["id","title","status"]'
+      jq -n --arg tool "$tool" --arg project "$project" --arg team "$team" \
+        --arg state "$idea_status" --arg label "$idea_label" \
+        --argjson output "$output_contract" \
+        '{"provider":"linear","mechanism":"mcp","invocation":{"tool":$tool,"params":{"project":$project,"team":$team,"state":$state,"labels":[$label]}},"contract":{"output":$output}}'
+      ;;
+    idea.list)
+      tool="mcp__claude_ai_Linear__list_issues"
+      output_contract='["id","title","status","createdAt"]'
+      jq -n --arg tool "$tool" --arg project "$project" --arg team "$team" \
+        --arg label "$idea_label" \
+        --argjson output "$output_contract" \
+        '{"provider":"linear","mechanism":"mcp","invocation":{"tool":$tool,"params":{"project":$project,"team":$team,"label":$label}},"contract":{"output":$output}}'
+      ;;
+    idea.triage)
+      tool="mcp__claude_ai_Linear__list_issues"
+      output_contract='["id","title","status","createdAt"]'
+      jq -n --arg tool "$tool" --arg project "$project" --arg team "$team" \
+        --arg label "$idea_label" --arg state "$idea_status" \
+        --argjson output "$output_contract" \
+        '{"provider":"linear","mechanism":"mcp","invocation":{"tool":$tool,"params":{"project":$project,"team":$team,"label":$label,"state":$state}},"contract":{"output":$output}}'
+      ;;
+    idea.sync)
+      # Sync is orchestration (drain the pending log, retry via MCP per entry).
+      # Resolve to the local adapter even when Linear is configured — the local
+      # command (`docs-check.sh idea-sync`) is responsible for the replay loop.
+      local_adapter "$op"
       ;;
     *)
       # Unsupported operation for this provider — fall back to local
