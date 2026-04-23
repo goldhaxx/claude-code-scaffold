@@ -96,7 +96,8 @@ Only files matching `ccanvil-*.md` are hub-owned; all other files in `~/.claude/
 | `docs-check.sh list-specs [docs-dir]` | List all specs in `docs/specs/` with feature_id, status, created → JSON array |
 | `docs-check.sh activate <feature-id> [docs-dir]` | Create branch `claude/<type>/<id>`, copy spec to `docs/spec.md`, set status to In Progress, push branch, create draft PR. Tolerates dirty `docs/specs/*`, `docs/spec.md`, `docs/ideas.md`, `docs/roadmap.md` |
 | `docs-check.sh complete <feature-id> [docs-dir]` | Set spec status to Complete, remove lifecycle docs (spec/plan/stasis), commit cleanup, mark PR ready |
-| `docs-check.sh land [--force]` | On feature branch: switch to main, fetch, reset to origin, delete local and remote branch. On main (post-`gh pr merge --delete-branch`): fetch and fast-forward to `origin/main`. `--force` skips PR-merged check |
+| `docs-check.sh pr-cleanup [docs-dir]` | Pre-merge lifecycle cleanup invoked by the `/pr` skill. When `docs/spec.md` exists, delegates to `cmd_complete` (flips archive to Complete + removes lifecycle docs + commits). Otherwise, removes any lingering lifecycle docs and commits a "clean up lifecycle docs before merge" commit. Halts non-zero on metadata parse failure or missing archive — `/pr` surfaces the error instead of proceeding. |
+| `docs-check.sh land [--force]` | On feature branch: switch to main, fetch, reset to origin, delete local and remote branch. Safety net: if the landed branch matches `claude/<type>/<id>` and `docs/specs/<id>.md` is still `In Progress`, transitions it to `Complete` + commits on main (`ALLOW_MAIN=1`) + pushes — covers the case where `/pr` was skipped. On main (post-`gh pr merge --delete-branch`): fetch and fast-forward to `origin/main`. `--force` skips PR-merged check. |
 | `docs-check.sh config-get <key> [project-dir]` | Read feature toggle from `.claude/ccanvil.json` (returns `true`/`false`) |
 
 ## Idea Management Scripts

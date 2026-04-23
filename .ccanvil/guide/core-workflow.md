@@ -99,6 +99,14 @@ flowchart TD
 
 **Why TDD matters here:** Without tests, Claude's only verification is its own judgment — which degrades as context fills. At 80% accuracy per decision, 20 sequential decisions yield 1.2% overall success. Tests provide ground truth that survives context compaction and session resets.
 
+## Closing the feature (merge → auto-complete)
+
+`/pr → merge → docs-check.sh land` transitions the spec archive to `Complete` automatically. No manual `docs-check.sh complete <id>` is needed in the normal flow.
+
+- **Primary path** — `/pr` runs `docs-check.sh pr-cleanup`, which delegates to `cmd_complete` when a live `docs/spec.md` exists. The archive flips to `Complete` and the lifecycle docs are removed in one commit on the feature branch, riding the squash-merge into main.
+- **Safety net** — `docs-check.sh land` inspects the landed branch. If the branch matches `claude/<type>/<id>` and `docs/specs/<id>.md` is still `In Progress` on main, `land` transitions it to `Complete`, commits on main (`ALLOW_MAIN=1`), and pushes. Covers cases where `/pr` was skipped (e.g., a PR merged from the GitHub UI).
+- **No-op path** — when the archive is already `Complete` (primary path ran) or the branch doesn't follow `claude/<type>/<id>`, `land` makes no commit.
+
 <!-- NODE-SPECIFIC-START -->
 <!-- Add project-specific content below this line. -->
 <!-- Hub content above is updated via /ccanvil-pull. -->
