@@ -335,10 +335,14 @@ linear_mcp_adapter() {
     idea.add)
       tool="mcp__claude_ai_Linear__save_issue"
       output_contract='["id","title","status"]'
+      # No `state` param: Linear routes API-created issues to the team's
+      # native Triage intake surface automatically when Triage is enabled.
+      # Specifying a state here would bypass Triage and drop the item
+      # straight into the target state.
       jq -n --arg tool "$tool" --arg project "$project" --arg team "$team" \
-        --arg state "$idea_status" --arg label "$idea_label" \
+        --arg label "$idea_label" \
         --argjson output "$output_contract" \
-        '{"provider":"linear","mechanism":"mcp","invocation":{"tool":$tool,"params":{"project":$project,"team":$team,"state":$state,"labels":[$label]}},"contract":{"output":$output}}'
+        '{"provider":"linear","mechanism":"mcp","invocation":{"tool":$tool,"params":{"project":$project,"team":$team,"labels":[$label]}},"contract":{"output":$output}}'
       ;;
     idea.list)
       tool="mcp__claude_ai_Linear__list_issues"

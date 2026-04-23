@@ -106,6 +106,23 @@ EOF
   echo "$output" | jq -e '.invocation.params.stateId == "aaaaaaaa-0000-0000-0000-000000000001"'
 }
 
+# =========================================================================
+# Step 3 — Capture routes to Linear-native Triage via API auto-routing.
+# Covers AC-1 (Linear half): idea.add does NOT pass a state, letting the
+# Linear workspace's Triage feature route the API-created issue itself.
+# =========================================================================
+
+@test "Step 3: idea.add Linear resolver does NOT pass .invocation.params.state" {
+  _linear_config_with_state_ids
+  run bash "$OPS" resolve idea.add --project-dir "$PROJECT"
+  [ "$status" -eq 0 ]
+  # state must be absent (Linear auto-routes API-created issues to Triage).
+  echo "$output" | jq -e '.invocation.params | has("state") | not'
+  # Project + team + labels still present.
+  echo "$output" | jq -e '.invocation.params.project == "Test Project"'
+  echo "$output" | jq -e '.invocation.params.labels == ["idea"]'
+}
+
 @test "Step 2: idea.triage resolve stateId is null when config lacks state_ids" {
   _linear_config_no_state_ids
   run bash "$OPS" resolve idea.triage --project-dir "$PROJECT"
