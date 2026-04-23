@@ -1249,7 +1249,7 @@ cmd_idea_add() {
 
   jq -cn --arg uid "$uid" --argjson created "$epoch" \
          --arg title "$title" --arg body "$body" \
-    '{uid:$uid, created:$created, status:"new", title:$title, body:$body}' \
+    '{uid:$uid, created:$created, status:"triage", title:$title, body:$body}' \
     >> "$ideas_log"
 
   echo "Captured: $title"
@@ -1300,8 +1300,19 @@ cmd_idea_list() {
 
   local jq_shape='{id: .uid, created: .created, title: .title, body: .body, status: .status}'
   if [[ -n "$filter_status" ]]; then
-    grep -v '^# ' "$ideas_log" | jq -s --arg s "$filter_status" \
-      "[.[] | select(.status == \$s) | $jq_shape]"
+    # Translation table: five-state vocab → matching set including legacy alias.
+    # Legacy names remain valid filter inputs (resolve to their new-vocab set).
+    local equivalents
+    case "$filter_status" in
+      triage|new)              equivalents='["triage","new"]' ;;
+      backlog|promoted)        equivalents='["backlog","promoted"]' ;;
+      icebox|parked)           equivalents='["icebox","parked"]' ;;
+      canceled|dismissed)      equivalents='["canceled","dismissed"]' ;;
+      duplicate|merged)        equivalents='["duplicate","merged"]' ;;
+      *)                       equivalents=$(printf '%s' "$filter_status" | jq -Rs '[.]') ;;
+    esac
+    grep -v '^# ' "$ideas_log" | jq -s --argjson set "$equivalents" \
+      "[.[] | select(.status as \$s | \$set | index(\$s)) | $jq_shape]"
   else
     grep -v '^# ' "$ideas_log" | jq -s "[.[] | $jq_shape]"
   fi
@@ -1311,19 +1322,36 @@ cmd_idea_count() {
   local project_dir="${1:-.}"
   local ideas_log="$project_dir/.ccanvil/ideas.log"
 
+  # Five-state vocab: triage/backlog/icebox/canceled/duplicate.
+  # Legacy vocab folds in: new→triage, promoted→backlog, parked→icebox,
+  # dismissed→canceled, merged→duplicate. `new` stays as a back-compat alias
+  # for the triage counter so existing callers (radar-gather et al.) don't
+  # regress.
   if [[ ! -f "$ideas_log" ]]; then
-    jq -n '{total:0, new:0, promoted:0, parked:0, dismissed:0, merged:0}'
+    jq -n '{total:0, triage:0, backlog:0, icebox:0, canceled:0, duplicate:0, new:0, promoted:0, parked:0, dismissed:0, merged:0}'
     return 0
   fi
 
-  grep -v '^# ' "$ideas_log" | jq -s '{
-    total:     length,
-    new:       [.[] | select(.status == "new")]       | length,
-    promoted:  [.[] | select(.status == "promoted")]  | length,
-    parked:    [.[] | select(.status == "parked")]    | length,
-    dismissed: [.[] | select(.status == "dismissed")] | length,
-    merged:    [.[] | select(.status == "merged")]    | length
-  }'
+  grep -v '^# ' "$ideas_log" | jq -s '
+    def triage_set: ["triage", "new"];
+    def backlog_set: ["backlog", "promoted"];
+    def icebox_set: ["icebox", "parked"];
+    def canceled_set: ["canceled", "dismissed"];
+    def duplicate_set: ["duplicate", "merged"];
+    {
+      total:     length,
+      triage:    [.[] | select(.status as $s | triage_set    | index($s))] | length,
+      backlog:   [.[] | select(.status as $s | backlog_set   | index($s))] | length,
+      icebox:    [.[] | select(.status as $s | icebox_set    | index($s))] | length,
+      canceled:  [.[] | select(.status as $s | canceled_set  | index($s))] | length,
+      duplicate: [.[] | select(.status as $s | duplicate_set | index($s))] | length,
+      # Legacy aliases — retained for radar-gather + existing callers.
+      new:       [.[] | select(.status as $s | triage_set    | index($s))] | length,
+      promoted:  [.[] | select(.status as $s | backlog_set   | index($s))] | length,
+      parked:    [.[] | select(.status as $s | icebox_set    | index($s))] | length,
+      dismissed: [.[] | select(.status as $s | canceled_set  | index($s))] | length,
+      merged:    [.[] | select(.status as $s | duplicate_set | index($s))] | length
+    }'
 }
 
 cmd_idea_update() {
