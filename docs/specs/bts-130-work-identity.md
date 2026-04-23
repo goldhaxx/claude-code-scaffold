@@ -3,7 +3,7 @@
 > Feature: bts-130-work-identity
 > Work: linear:BTS-130
 > Created: 1776973070
-> Status: In Progress
+> Status: Complete
 
 ## Summary
 
