@@ -182,6 +182,37 @@ EOF
 }
 
 # =========================================================================
+# Step 11 — Pending log carries op-agnostic intents (AC-8).
+# =========================================================================
+
+@test "Step 11: idea-sync surfaces mixed-op entries (add + promote + defer)" {
+  local pending="$PROJECT/.ccanvil/ideas-pending.log"
+  cat > "$pending" <<'EOF'
+{"op":"add","args":{"title":"t1","body":"b1"},"ts":1776000001}
+{"op":"promote","args":{"id":"BTS-1","priority":3},"ts":1776000002}
+{"op":"defer","args":{"id":"BTS-2"},"ts":1776000003}
+EOF
+  run bash "$DOCS_CHECK" idea-sync "$PROJECT"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '.pending == 3'
+  echo "$output" | jq -e '[.entries[].op] == ["add","promote","defer"]'
+}
+
+@test "Step 11: idea-sync --ack removes a specific entry by ts (regardless of op)" {
+  local pending="$PROJECT/.ccanvil/ideas-pending.log"
+  cat > "$pending" <<'EOF'
+{"op":"promote","args":{"id":"BTS-1","priority":3},"ts":1776000002}
+{"op":"defer","args":{"id":"BTS-2"},"ts":1776000003}
+EOF
+  run bash "$DOCS_CHECK" idea-sync --ack 1776000002 "$PROJECT"
+  [ "$status" -eq 0 ]
+  run bash "$DOCS_CHECK" idea-sync "$PROJECT"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '.pending == 1'
+  echo "$output" | jq -e '.entries[0].op == "defer"'
+}
+
+# =========================================================================
 # Step 10 — Legacy migration (AC-7).
 # =========================================================================
 

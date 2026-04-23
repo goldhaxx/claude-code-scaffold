@@ -1474,9 +1474,20 @@ cmd_idea_update() {
 # ---------------------------------------------------------------------------
 # cmd_idea_sync — Read/ack primitives for .ccanvil/ideas-pending.log.
 #
-# The pending log holds intents for Linear captures that failed (network,
-# auth, etc.). Replay is orchestrated by the /idea skill — this script
-# exposes the deterministic read + remove operations.
+# The pending log holds intents for Linear operations that failed (network,
+# auth, server error). Replay is orchestrated by the /idea skill — this
+# script exposes op-agnostic read + remove primitives; the skill dispatches
+# each entry's `op` to the matching MCP tool.
+#
+# Supported ops (written by /idea skill when the corresponding MCP call
+# fails; replayed by /idea sync):
+#   add       — failed capture: args = {title, body}
+#   promote   — failed triage-promote: args = {id, priority}
+#   defer     — failed triage-defer: args = {id}
+#   dismiss   — failed triage-dismiss: args = {id}
+#   merge     — failed triage-merge: args = {id, duplicateOf}
+#
+# Each entry has shape: {op, args, ts}
 #
 # Invocations:
 #   idea-sync [project-dir]             → print {pending, entries} JSON
