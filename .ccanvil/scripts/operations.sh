@@ -306,8 +306,9 @@ local_adapter() {
       output_contract='["uid","status"]'
       ;;
     idea.merge)
-      # OP_ARGS is the merge target (duplicateOf); the source uid is added
-      # by the skill at dispatch time since the local log rewrite needs both.
+      # OP_ARGS is the SOURCE item uid being marked duplicate (uniform with
+      # promote/defer/dismiss). Merge target (duplicateOf) is only
+      # meaningful for Linear; the local log has no cross-entry link.
       cmd=".ccanvil/scripts/docs-check.sh idea-update ${OP_ARGS} duplicate"
       output_contract='["uid","status"]'
       ;;
@@ -382,6 +383,9 @@ linear_mcp_adapter() {
         '{"provider":"linear","mechanism":"mcp","invocation":{"tool":$tool,"params":{"project":$project,"team":$team,"label":$label}},"contract":{"output":$output}}'
       ;;
     idea.triage)
+      # stateId takes precedence over name-based state dispatch — when
+      # configured, omit `state` to avoid the name/type collision trap
+      # documented in the /idea skill's Rules section.
       tool="mcp__claude_ai_Linear__list_issues"
       output_contract='["id","title","status","createdAt"]'
       local triage_state_id
@@ -396,8 +400,11 @@ linear_mcp_adapter() {
           "invocation":{
             "tool":$tool,
             "params":(
-              {"project":$project,"team":$team,"label":$label,"state":$state}
-              + (if $state_id != "" then {"stateId":$state_id} else {} end)
+              {"project":$project,"team":$team,"label":$label}
+              + (if $state_id != ""
+                  then {"stateId":$state_id}
+                  else {"state":$state}
+                 end)
             )
           },
           "contract":{"output":$output}
@@ -413,6 +420,11 @@ linear_mcp_adapter() {
     # Each verb emits save_issue with a target stateId (+ duplicateOf for
     # merge). The skill fills in `id` (the source item being transitioned)
     # and priority (promote only) at dispatch time.
+    # Each mutation resolver emits params.stateId only when state_ids is
+    # configured; omitting it falls through to the skill's name-based
+    # fallback (or surfaces the config gap as a visible error at dispatch).
+    # Passing `stateId: ""` to Linear is silently no-op / API error — always
+    # gate with the conditional merge pattern.
     idea.promote)
       tool="mcp__claude_ai_Linear__save_issue"
       output_contract='["id","status","priority"]'
@@ -422,7 +434,10 @@ linear_mcp_adapter() {
         --argjson output "$output_contract" \
         '{
           "provider":"linear","mechanism":"mcp",
-          "invocation":{"tool":$tool,"params":{"stateId":$state_id}},
+          "invocation":{
+            "tool":$tool,
+            "params":(if $state_id != "" then {"stateId":$state_id} else {} end)
+          },
           "contract":{"output":$output}
         }'
       ;;
@@ -435,7 +450,10 @@ linear_mcp_adapter() {
         --argjson output "$output_contract" \
         '{
           "provider":"linear","mechanism":"mcp",
-          "invocation":{"tool":$tool,"params":{"stateId":$state_id}},
+          "invocation":{
+            "tool":$tool,
+            "params":(if $state_id != "" then {"stateId":$state_id} else {} end)
+          },
           "contract":{"output":$output}
         }'
       ;;
@@ -448,21 +466,30 @@ linear_mcp_adapter() {
         --argjson output "$output_contract" \
         '{
           "provider":"linear","mechanism":"mcp",
-          "invocation":{"tool":$tool,"params":{"stateId":$state_id}},
+          "invocation":{
+            "tool":$tool,
+            "params":(if $state_id != "" then {"stateId":$state_id} else {} end)
+          },
           "contract":{"output":$output}
         }'
       ;;
     idea.merge)
+      # OP_ARGS is the source item uid (uniform with promote/defer/dismiss).
+      # The merge target (duplicateOf) is NOT resolver-known — the skill
+      # pairs it in at dispatch time from user input. The resolver only
+      # tells the skill which tool + stateId to use.
       tool="mcp__claude_ai_Linear__save_issue"
       output_contract='["id","status","duplicateOf"]'
       local dup_state_id
       dup_state_id=$(linear_state_id "$provider_config" "duplicate")
       jq -n --arg tool "$tool" --arg state_id "$dup_state_id" \
-        --arg dup_of "$op_args" \
         --argjson output "$output_contract" \
         '{
           "provider":"linear","mechanism":"mcp",
-          "invocation":{"tool":$tool,"params":{"stateId":$state_id,"duplicateOf":$dup_of}},
+          "invocation":{
+            "tool":$tool,
+            "params":(if $state_id != "" then {"stateId":$state_id} else {} end)
+          },
           "contract":{"output":$output}
         }'
       ;;

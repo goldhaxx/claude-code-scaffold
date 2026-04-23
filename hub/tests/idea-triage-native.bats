@@ -413,12 +413,52 @@ EOF
   echo "$output" | grep -q 'ERROR'
 }
 
-@test "Step 5: Linear idea.merge returns save_issue with stateId=duplicate + duplicateOf" {
+@test "Step 5: Linear idea.merge returns save_issue with stateId=duplicate (no duplicateOf in resolver)" {
+  # OP_ARGS is the source uid (uniform with promote/defer/dismiss); the
+  # skill pairs duplicateOf in at dispatch time from user input. The
+  # resolver returns only the invariant dispatch shape.
   _linear_config_with_state_ids
-  run bash "$OPS" resolve idea.merge BTS-99 --project-dir "$PROJECT"
+  run bash "$OPS" resolve idea.merge src-uid --project-dir "$PROJECT"
   [ "$status" -eq 0 ]
   echo "$output" | jq -e '.invocation.params.stateId == "eeeeeeee-0000-0000-0000-000000000005"'
-  echo "$output" | jq -e '.invocation.params.duplicateOf == "BTS-99"'
+  echo "$output" | jq -e '.invocation.params | has("duplicateOf") | not'
+}
+
+@test "Step 5: Linear idea.promote omits stateId when state_ids absent" {
+  _linear_config_no_state_ids
+  run bash "$OPS" resolve idea.promote --project-dir "$PROJECT"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '.invocation.params | has("stateId") | not'
+}
+
+@test "Step 5: Linear idea.defer omits stateId when state_ids absent" {
+  _linear_config_no_state_ids
+  run bash "$OPS" resolve idea.defer --project-dir "$PROJECT"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '.invocation.params | has("stateId") | not'
+}
+
+@test "Step 5: Linear idea.dismiss omits stateId when state_ids absent" {
+  _linear_config_no_state_ids
+  run bash "$OPS" resolve idea.dismiss --project-dir "$PROJECT"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '.invocation.params | has("stateId") | not'
+}
+
+@test "Step 5: Linear idea.merge omits stateId when state_ids absent" {
+  _linear_config_no_state_ids
+  run bash "$OPS" resolve idea.merge src-uid --project-dir "$PROJECT"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '.invocation.params | has("stateId") | not'
+}
+
+@test "Step 5: local idea.merge resolves to idea-update <source-uid> duplicate" {
+  # Verifies the resolver emits the right command shape (source = OP_ARGS).
+  # The end-to-end rewrite is already covered by Step 6's update vocab tests.
+  run bash "$OPS" resolve idea.merge src1 --project-dir "$PROJECT"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '.provider == "local"'
+  echo "$output" | jq -e '.invocation.command | test("idea-update src1 duplicate")'
 }
 
 # =========================================================================
