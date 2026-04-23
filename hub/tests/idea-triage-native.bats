@@ -107,6 +107,18 @@ EOF
 }
 
 # =========================================================================
+# Step 4 — Local idea.triage adapter uses --status triage (not legacy "new").
+# Covers AC-2 (local half).
+# =========================================================================
+
+@test "Step 4: local idea.triage adapter invokes idea-list --status triage" {
+  run bash "$OPS" resolve idea.triage --project-dir "$PROJECT"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '.invocation.command | test("idea-list --status triage")'
+  echo "$output" | jq -e '.invocation.command | test("--status new") | not'
+}
+
+# =========================================================================
 # Step 3 — Capture routes to Linear-native Triage via API auto-routing.
 # Covers AC-1 (Linear half): idea.add does NOT pass a state, letting the
 # Linear workspace's Triage feature route the API-created issue itself.

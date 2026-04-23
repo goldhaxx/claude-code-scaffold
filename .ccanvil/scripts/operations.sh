@@ -274,7 +274,9 @@ local_adapter() {
       output_contract='["uid","created","title","status"]'
       ;;
     idea.triage)
-      cmd=".ccanvil/scripts/docs-check.sh idea-list --status new"
+      # Uses new-vocab "triage" filter; cmd_idea_list translation table
+      # folds legacy status="new" entries in transparently.
+      cmd=".ccanvil/scripts/docs-check.sh idea-list --status triage"
       output_contract='["uid","created","title","status"]'
       ;;
     idea.sync)
