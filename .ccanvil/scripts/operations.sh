@@ -35,6 +35,7 @@ is_valid_operation() {
     pr.create|pr.list) return 0 ;;
     review.run) return 0 ;;
     idea.add|idea.list|idea.triage|idea.sync) return 0 ;;
+    idea.promote|idea.defer|idea.dismiss|idea.merge) return 0 ;;
     *) return 1 ;;
   esac
 }
@@ -284,6 +285,27 @@ local_adapter() {
       cmd=".ccanvil/scripts/docs-check.sh idea-sync"
       output_contract='["synced","pending"]'
       ;;
+    # --- triage-outcome mutations ---
+    # Each verb maps to idea-update <uid> <target-status>. OP_ARGS is the
+    # source idea uid; the skill substitutes it at dispatch time.
+    idea.promote)
+      cmd=".ccanvil/scripts/docs-check.sh idea-update ${OP_ARGS} backlog"
+      output_contract='["uid","status"]'
+      ;;
+    idea.defer)
+      cmd=".ccanvil/scripts/docs-check.sh idea-update ${OP_ARGS} icebox"
+      output_contract='["uid","status"]'
+      ;;
+    idea.dismiss)
+      cmd=".ccanvil/scripts/docs-check.sh idea-update ${OP_ARGS} canceled"
+      output_contract='["uid","status"]'
+      ;;
+    idea.merge)
+      # OP_ARGS is the merge target (duplicateOf); the source uid is added
+      # by the skill at dispatch time since the local log rewrite needs both.
+      cmd=".ccanvil/scripts/docs-check.sh idea-update ${OP_ARGS} duplicate"
+      output_contract='["uid","status"]'
+      ;;
   esac
 
   jq -n --arg cmd "$cmd" --argjson output "$output_contract" \
@@ -381,6 +403,63 @@ linear_mcp_adapter() {
       # Resolve to the local adapter even when Linear is configured — the local
       # command (`docs-check.sh idea-sync`) is responsible for the replay loop.
       local_adapter "$op"
+      ;;
+    # --- triage-outcome mutations ---
+    # Each verb emits save_issue with a target stateId (+ duplicateOf for
+    # merge). The skill fills in `id` (the source item being transitioned)
+    # and priority (promote only) at dispatch time.
+    idea.promote)
+      tool="mcp__claude_ai_Linear__save_issue"
+      output_contract='["id","status","priority"]'
+      local backlog_state_id
+      backlog_state_id=$(linear_state_id "$provider_config" "backlog")
+      jq -n --arg tool "$tool" --arg state_id "$backlog_state_id" \
+        --argjson output "$output_contract" \
+        '{
+          "provider":"linear","mechanism":"mcp",
+          "invocation":{"tool":$tool,"params":{"stateId":$state_id}},
+          "contract":{"output":$output}
+        }'
+      ;;
+    idea.defer)
+      tool="mcp__claude_ai_Linear__save_issue"
+      output_contract='["id","status"]'
+      local icebox_state_id
+      icebox_state_id=$(linear_state_id "$provider_config" "icebox")
+      jq -n --arg tool "$tool" --arg state_id "$icebox_state_id" \
+        --argjson output "$output_contract" \
+        '{
+          "provider":"linear","mechanism":"mcp",
+          "invocation":{"tool":$tool,"params":{"stateId":$state_id}},
+          "contract":{"output":$output}
+        }'
+      ;;
+    idea.dismiss)
+      tool="mcp__claude_ai_Linear__save_issue"
+      output_contract='["id","status"]'
+      local canceled_state_id
+      canceled_state_id=$(linear_state_id "$provider_config" "canceled")
+      jq -n --arg tool "$tool" --arg state_id "$canceled_state_id" \
+        --argjson output "$output_contract" \
+        '{
+          "provider":"linear","mechanism":"mcp",
+          "invocation":{"tool":$tool,"params":{"stateId":$state_id}},
+          "contract":{"output":$output}
+        }'
+      ;;
+    idea.merge)
+      tool="mcp__claude_ai_Linear__save_issue"
+      output_contract='["id","status","duplicateOf"]'
+      local dup_state_id
+      dup_state_id=$(linear_state_id "$provider_config" "duplicate")
+      jq -n --arg tool "$tool" --arg state_id "$dup_state_id" \
+        --arg dup_of "$op_args" \
+        --argjson output "$output_contract" \
+        '{
+          "provider":"linear","mechanism":"mcp",
+          "invocation":{"tool":$tool,"params":{"stateId":$state_id,"duplicateOf":$dup_of}},
+          "contract":{"output":$output}
+        }'
       ;;
     *)
       # Unsupported operation for this provider — fall back to local

@@ -107,6 +107,89 @@ EOF
 }
 
 # =========================================================================
+# Step 5 — Four mutation resolvers: idea.{promote,defer,dismiss,merge}.
+# Covers AC-3 + AC-4: each verb targets the correct state by ID (Linear)
+# or status string (local). Merge carries duplicateOf.
+# =========================================================================
+
+@test "Step 5: is_valid_operation recognizes idea.promote" {
+  run bash "$OPS" resolve idea.promote --project-dir "$PROJECT"
+  [ "$status" -eq 0 ]
+}
+
+@test "Step 5: is_valid_operation recognizes idea.defer" {
+  run bash "$OPS" resolve idea.defer --project-dir "$PROJECT"
+  [ "$status" -eq 0 ]
+}
+
+@test "Step 5: is_valid_operation recognizes idea.dismiss" {
+  run bash "$OPS" resolve idea.dismiss --project-dir "$PROJECT"
+  [ "$status" -eq 0 ]
+}
+
+@test "Step 5: is_valid_operation recognizes idea.merge" {
+  run bash "$OPS" resolve idea.merge --project-dir "$PROJECT"
+  [ "$status" -eq 0 ]
+}
+
+@test "Step 5: local idea.promote maps to idea-update <uid> backlog" {
+  run bash "$OPS" resolve idea.promote --project-dir "$PROJECT"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '.provider == "local"'
+  echo "$output" | jq -e '.invocation.command | test("idea-update.*backlog")'
+}
+
+@test "Step 5: local idea.defer maps to idea-update <uid> icebox" {
+  run bash "$OPS" resolve idea.defer --project-dir "$PROJECT"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '.invocation.command | test("idea-update.*icebox")'
+}
+
+@test "Step 5: local idea.dismiss maps to idea-update <uid> canceled" {
+  run bash "$OPS" resolve idea.dismiss --project-dir "$PROJECT"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '.invocation.command | test("idea-update.*canceled")'
+}
+
+@test "Step 5: local idea.merge maps to idea-update <uid> duplicate" {
+  run bash "$OPS" resolve idea.merge --project-dir "$PROJECT"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '.invocation.command | test("idea-update.*duplicate")'
+}
+
+@test "Step 5: Linear idea.promote returns save_issue with stateId=backlog" {
+  _linear_config_with_state_ids
+  run bash "$OPS" resolve idea.promote --project-dir "$PROJECT"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '.provider == "linear"'
+  echo "$output" | jq -e '.invocation.tool == "mcp__claude_ai_Linear__save_issue"'
+  echo "$output" | jq -e '.invocation.params.stateId == "bbbbbbbb-0000-0000-0000-000000000002"'
+}
+
+@test "Step 5: Linear idea.defer returns save_issue with stateId=icebox" {
+  _linear_config_with_state_ids
+  run bash "$OPS" resolve idea.defer --project-dir "$PROJECT"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '.invocation.tool == "mcp__claude_ai_Linear__save_issue"'
+  echo "$output" | jq -e '.invocation.params.stateId == "cccccccc-0000-0000-0000-000000000003"'
+}
+
+@test "Step 5: Linear idea.dismiss returns save_issue with stateId=canceled" {
+  _linear_config_with_state_ids
+  run bash "$OPS" resolve idea.dismiss --project-dir "$PROJECT"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '.invocation.params.stateId == "dddddddd-0000-0000-0000-000000000004"'
+}
+
+@test "Step 5: Linear idea.merge returns save_issue with stateId=duplicate + duplicateOf" {
+  _linear_config_with_state_ids
+  run bash "$OPS" resolve idea.merge BTS-99 --project-dir "$PROJECT"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '.invocation.params.stateId == "eeeeeeee-0000-0000-0000-000000000005"'
+  echo "$output" | jq -e '.invocation.params.duplicateOf == "BTS-99"'
+}
+
+# =========================================================================
 # Step 4 — Local idea.triage adapter uses --status triage (not legacy "new").
 # Covers AC-2 (local half).
 # =========================================================================
