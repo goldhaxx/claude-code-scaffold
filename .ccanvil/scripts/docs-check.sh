@@ -909,6 +909,35 @@ cmd_complete() {
 }
 
 # ---------------------------------------------------------------------------
+# cmd_pr_cleanup — Pre-merge lifecycle cleanup invoked by the /pr skill.
+#
+# Usage:
+#   docs-check.sh pr-cleanup [docs-dir]
+#
+# Behavior (primary path): when docs/spec.md exists, parse its feature_id and
+# delegate to cmd_complete, which flips the archive to Complete, removes
+# lifecycle docs, and commits on the feature branch. That commit rides the
+# squash-merge into main — no manual `complete` follow-up needed.
+#
+# Fallback and error-halt behavior added in later steps.
+# ---------------------------------------------------------------------------
+
+cmd_pr_cleanup() {
+  local docs_dir="${1:-$DEFAULT_DOCS_DIR}"
+  local spec_file="$docs_dir/spec.md"
+
+  if [[ -f "$spec_file" ]]; then
+    local feature_id
+    feature_id=$(parse_metadata "$spec_file" | jq -r '.feature_id // empty')
+    if [[ -z "$feature_id" ]]; then
+      echo "ERROR: could not parse feature_id from $spec_file" >&2
+      exit 1
+    fi
+    cmd_complete "$feature_id" "$docs_dir"
+  fi
+}
+
+# ---------------------------------------------------------------------------
 # cmd_land — Switch to main, sync with remote, delete feature branch.
 #
 # Usage:
@@ -1877,6 +1906,7 @@ case "$cmd" in
   list-specs)        cmd_list_specs "$@" ;;
   activate)          cmd_activate "$@" ;;
   complete)          cmd_complete "$@" ;;
+  pr-cleanup)        cmd_pr_cleanup "$@" ;;
   land)              cmd_land "$@" ;;
   radar-gather)      cmd_radar_gather "$@" ;;
   idea-add)          cmd_idea_add "$@" ;;
@@ -1890,7 +1920,7 @@ case "$cmd" in
   title-from-body)   cmd_title_from_body "$@" ;;
   legacy-refs-scan)  cmd_legacy_refs_scan "$@" ;;
   *)
-    echo "Usage: docs-check.sh {status|validate|recommend|audit-session|config-get|list-specs|activate|complete|land|idea-add|idea-list|idea-count|idea-update|idea-sync|idea-migrate|idea-setup|idea-upgrade|title-from-body|legacy-refs-scan} [args...]" >&2
+    echo "Usage: docs-check.sh {status|validate|recommend|audit-session|config-get|list-specs|activate|complete|pr-cleanup|land|idea-add|idea-list|idea-count|idea-update|idea-sync|idea-migrate|idea-setup|idea-upgrade|title-from-body|legacy-refs-scan} [args...]" >&2
     exit 1
     ;;
 esac

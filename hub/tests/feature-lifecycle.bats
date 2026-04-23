@@ -572,6 +572,40 @@ EOF
 }
 
 # ---------------------------------------------------------------------------
+# pr-cleanup (auto-complete-spec-on-merge: AC-1, AC-2, AC-7)
+# ---------------------------------------------------------------------------
+
+@test "pr-cleanup: flips archive to Complete when docs/spec.md exists (AC-1)" {
+  cat > "$PROJECT/docs/specs/auth-system.md" <<'EOF'
+# Feature: Auth System
+
+> Feature: auth-system
+> Created: 1774200000
+> Status: Ready
+
+## Summary
+Auth feature.
+EOF
+
+  # activate marks In Progress, creates branch, copies to docs/spec.md
+  "$PROJECT/.ccanvil/scripts/docs-check.sh" activate auth-system "$PROJECT/docs" >/dev/null 2>&1
+
+  run "$PROJECT/.ccanvil/scripts/docs-check.sh" pr-cleanup "$PROJECT/docs"
+  [ "$status" -eq 0 ]
+
+  # Archive transitioned to Complete
+  grep -q "Status: Complete" "$PROJECT/docs/specs/auth-system.md"
+
+  # Lifecycle docs removed
+  [ ! -f "$PROJECT/docs/spec.md" ]
+
+  # Commit on branch with cmd_complete's message shape
+  local last_msg
+  last_msg=$(git -C "$PROJECT" log -1 --pretty=%s)
+  [[ "$last_msg" == "docs(lifecycle): complete auth-system"* ]]
+}
+
+# ---------------------------------------------------------------------------
 # Step 5: validate/recommend multi-spec (AC-17, AC-23, AC-24)
 # ---------------------------------------------------------------------------
 
