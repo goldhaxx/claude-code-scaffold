@@ -36,6 +36,7 @@ is_valid_operation() {
     review.run) return 0 ;;
     idea.add|idea.list|idea.triage|idea.sync) return 0 ;;
     idea.promote|idea.defer|idea.dismiss|idea.merge) return 0 ;;
+    idea.review-icebox) return 0 ;;
     *) return 1 ;;
   esac
 }
@@ -285,6 +286,10 @@ local_adapter() {
       cmd=".ccanvil/scripts/docs-check.sh idea-sync"
       output_contract='["synced","pending"]'
       ;;
+    idea.review-icebox)
+      cmd=".ccanvil/scripts/docs-check.sh idea-review-icebox"
+      output_contract='["uid","created","title","status"]'
+      ;;
     # --- triage-outcome mutations ---
     # Each verb maps to idea-update <uid> <target-status>. OP_ARGS is the
     # source idea uid; the skill substitutes it at dispatch time.
@@ -458,6 +463,26 @@ linear_mcp_adapter() {
         '{
           "provider":"linear","mechanism":"mcp",
           "invocation":{"tool":$tool,"params":{"stateId":$state_id,"duplicateOf":$dup_of}},
+          "contract":{"output":$output}
+        }'
+      ;;
+    idea.review-icebox)
+      tool="mcp__claude_ai_Linear__list_issues"
+      output_contract='["id","title","status","createdAt"]'
+      local icebox_state_id
+      icebox_state_id=$(linear_state_id "$provider_config" "icebox")
+      jq -n --arg tool "$tool" --arg project "$project" --arg team "$team" \
+        --arg state_id "$icebox_state_id" --arg label "$idea_label" \
+        --argjson output "$output_contract" \
+        '{
+          "provider":"linear","mechanism":"mcp",
+          "invocation":{
+            "tool":$tool,
+            "params":(
+              {"project":$project,"team":$team,"label":$label}
+              + (if $state_id != "" then {"stateId":$state_id} else {} end)
+            )
+          },
           "contract":{"output":$output}
         }'
       ;;

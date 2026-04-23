@@ -182,6 +182,42 @@ EOF
 }
 
 # =========================================================================
+# Step 8 — Icebox review command (AC-5).
+# =========================================================================
+
+@test "Step 8: cmd_idea_review_icebox returns only icebox items older than 60d" {
+  local ideas_log="$PROJECT/.ccanvil/ideas.log"
+  local now stale fresh
+  now=$(date +%s)
+  stale=$((now - 5184001))   # >60d
+  fresh=$((now - 86400))     # 1d
+  cat > "$ideas_log" <<EOF
+{"uid":"old1","created":$stale,"status":"icebox","title":"a","body":"a"}
+{"uid":"old2","created":$stale,"status":"icebox","title":"b","body":"b"}
+{"uid":"new1","created":$fresh,"status":"icebox","title":"c","body":"c"}
+{"uid":"back","created":$stale,"status":"backlog","title":"d","body":"d"}
+EOF
+  run bash "$DOCS_CHECK" idea-review-icebox "$PROJECT"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e 'length == 2'
+  echo "$output" | jq -e '[.[].id] | contains(["old1","old2"])'
+}
+
+@test "Step 8: idea.review-icebox resolves to local bash with no config" {
+  run bash "$OPS" resolve idea.review-icebox --project-dir "$PROJECT"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '.invocation.command | test("idea-review-icebox")'
+}
+
+@test "Step 8: idea.review-icebox Linear resolver includes icebox stateId + type filter" {
+  _linear_config_with_state_ids
+  run bash "$OPS" resolve idea.review-icebox --project-dir "$PROJECT"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '.invocation.tool == "mcp__claude_ai_Linear__list_issues"'
+  echo "$output" | jq -e '.invocation.params.stateId == "cccccccc-0000-0000-0000-000000000003"'
+}
+
+# =========================================================================
 # Step 7 — Default idea-list excludes terminal + deferred states (AC-9).
 # =========================================================================
 

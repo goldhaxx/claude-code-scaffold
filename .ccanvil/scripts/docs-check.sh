@@ -1358,6 +1358,32 @@ cmd_idea_count() {
     }'
 }
 
+# cmd_idea_review_icebox — list icebox entries older than 60 days.
+#
+# Outputs a JSON array (same shape as idea-list) for entries whose status
+# is icebox (or legacy alias "parked") and whose `created` epoch is at
+# least 60 days (5184000s) in the past. Used by /idea review-icebox and
+# surfaced as a count via radar-gather.
+cmd_idea_review_icebox() {
+  local project_dir="${1:-.}"
+  local ideas_log="$project_dir/.ccanvil/ideas.log"
+  local now threshold
+  now=$(date +%s)
+  threshold=$((now - 5184000))
+
+  if [[ ! -f "$ideas_log" ]]; then
+    echo "[]"
+    return 0
+  fi
+
+  grep -v '^# ' "$ideas_log" | jq -s --argjson t "$threshold" '
+    [ .[]
+      | select((.status == "icebox" or .status == "parked") and .created <= $t)
+      | {id: .uid, created: .created, title: .title, body: .body, status: .status}
+    ]
+  '
+}
+
 cmd_idea_update() {
   local uid="${1:?Usage: idea-update <uid> <status> [project-dir]}"
   local new_status="${2:?Usage: idea-update <uid> <status> [project-dir]}"
@@ -1988,6 +2014,7 @@ case "$cmd" in
   idea-count)        cmd_idea_count "$@" ;;
   idea-update)       cmd_idea_update "$@" ;;
   idea-sync)         cmd_idea_sync "$@" ;;
+  idea-review-icebox) cmd_idea_review_icebox "$@" ;;
   idea-migrate)      cmd_idea_migrate "$@" ;;
   idea-setup)        cmd_idea_setup "$@" ;;
   idea-upgrade)      cmd_idea_upgrade "$@" ;;
