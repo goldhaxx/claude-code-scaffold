@@ -17,14 +17,15 @@ This command ensures the branch is ready for merge: tests pass, docs are validat
    - If the reviewer finds WARN-level issues, collect them for the PR body "Review Notes" section.
 6. If `--skip-review` was passed, skip the review step.
 
-## Clean up lifecycle docs
+## Clean up lifecycle docs + transition archive
 
-7. If `docs/spec.md`, `docs/plan.md`, or `docs/stasis.md` exist, remove them and commit:
+7. Run the deterministic cleanup wrapper:
    ```bash
-   rm -f docs/spec.md docs/plan.md docs/stasis.md
-   git add docs/spec.md docs/plan.md docs/stasis.md
-   git commit -m "docs(lifecycle): clean up lifecycle docs before merge"
+   bash .ccanvil/scripts/docs-check.sh pr-cleanup
    ```
+   When `docs/spec.md` is present, this invokes `cmd_complete` — flipping the spec archive (`docs/specs/<id>.md`) from `In Progress` to `Complete`, removing the active lifecycle docs, and committing on the feature branch. The archive transition rides the squash-merge into main — no manual `complete` follow-up needed.
+   When no `docs/spec.md` exists (e.g., PR doesn't correspond to a ccanvil spec), it falls back to removing any lingering lifecycle docs + commit.
+   If the call exits non-zero, STOP and surface the error — do not proceed to push.
 
 ## Push and finalize PR
 
