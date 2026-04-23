@@ -2,7 +2,7 @@
 
 > Feature: idea-upgrade
 > Created: 1776896787
-> Status: In Progress
+> Status: Complete
 
 ## Summary
 
