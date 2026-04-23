@@ -91,6 +91,7 @@ parse_metadata() {
   local status_field=""
   local spec_hash=""
   local plan_hash=""
+  local work=""
 
   # Detect YAML frontmatter: first non-empty line is ---
   local first_line
@@ -113,6 +114,7 @@ parse_metadata() {
           [Ff]eature)        feature_id="$val" ;;
           [Cc]reated)        created="$val" ;;
           [Ss]tatus)         status_field="$val" ;;
+          [Ww]ork)           work="$val" ;;
           "Last updated"|"last_updated") last_updated="$val" ;;
           "Spec hash"|"spec_hash")       spec_hash="$val" ;;
           "Plan hash"|"plan_hash")       plan_hash="$val" ;;
@@ -144,6 +146,7 @@ parse_metadata() {
           Created:*)    created="${value#Created: }" ;;
           "Last updated:"*) last_updated="${value#Last updated: }" ;;
           Status:*)     status_field="${value#Status: }" ;;
+          Work:*)       work="${value#Work: }" ;;
           "Spec hash:"*) spec_hash="${value#Spec hash: }" ;;
           "Plan hash:"*) plan_hash="${value#Plan hash: }" ;;
         esac
@@ -173,6 +176,7 @@ parse_metadata() {
   add_field "created" "$created"
   add_field "last_updated" "$last_updated"
   add_field "status" "$status_field"
+  add_field "work" "$work"
   add_field "spec_hash" "$spec_hash"
   add_field "plan_hash" "$plan_hash"
 
