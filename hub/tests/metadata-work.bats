@@ -54,3 +54,60 @@ EOF
   work_val=$(echo "$output" | jq -r '.spec.work // ""')
   [ "$work_val" = "" ]
 }
+
+# ---------------------------------------------------------------------------
+# Step 2 — parse_metadata extracts `kind` from `> Kind:` on stasis
+# ---------------------------------------------------------------------------
+
+@test "BTS-130 step 2: status emits stasis.kind=session when > Kind: session" {
+  cat > "$DOCS/stasis.md" <<EOF
+# Stasis
+
+> Feature: session-2026-04-23-example-ship
+> Kind: session
+> Last updated: 1776971680
+
+## Accomplished
+
+Body.
+EOF
+  run bash "$SCRIPT" status "$DOCS"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '.stasis.kind == "session"'
+}
+
+@test "BTS-130 step 2: status emits stasis.kind=feature when > Kind: feature" {
+  cat > "$DOCS/stasis.md" <<EOF
+# Stasis
+
+> Feature: bts-130-work-identity
+> Work: linear:BTS-130
+> Kind: feature
+> Last updated: 1776971680
+
+## Accomplished
+
+Body.
+EOF
+  run bash "$SCRIPT" status "$DOCS"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '.stasis.kind == "feature"'
+}
+
+@test "BTS-130 step 2: status emits empty stasis.kind when > Kind: absent" {
+  cat > "$DOCS/stasis.md" <<EOF
+# Stasis
+
+> Feature: legacy-stasis-no-kind
+> Last updated: 1776971680
+
+## Accomplished
+
+Body.
+EOF
+  run bash "$SCRIPT" status "$DOCS"
+  [ "$status" -eq 0 ]
+  local kind_val
+  kind_val=$(echo "$output" | jq -r '.stasis.kind // ""')
+  [ "$kind_val" = "" ]
+}
