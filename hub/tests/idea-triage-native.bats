@@ -181,6 +181,38 @@ EOF
   echo "$output" | jq -e '.invocation.params.stateId == "dddddddd-0000-0000-0000-000000000004"'
 }
 
+# =========================================================================
+# Step 6 — cmd_idea_update accepts new vocab; rejects unknowns.
+# =========================================================================
+
+@test "Step 6: idea-update accepts each of {triage, backlog, icebox, canceled, duplicate}" {
+  local ideas_log="$PROJECT/.ccanvil/ideas.log"
+  # Seed with five entries, one per uid.
+  cat > "$ideas_log" <<'EOF'
+{"uid":"u1","created":1,"status":"triage","title":"a","body":"a"}
+{"uid":"u2","created":2,"status":"triage","title":"b","body":"b"}
+{"uid":"u3","created":3,"status":"triage","title":"c","body":"c"}
+{"uid":"u4","created":4,"status":"triage","title":"d","body":"d"}
+{"uid":"u5","created":5,"status":"triage","title":"e","body":"e"}
+EOF
+  run bash "$DOCS_CHECK" idea-update u1 triage    "$PROJECT"; [ "$status" -eq 0 ]
+  run bash "$DOCS_CHECK" idea-update u2 backlog   "$PROJECT"; [ "$status" -eq 0 ]
+  run bash "$DOCS_CHECK" idea-update u3 icebox    "$PROJECT"; [ "$status" -eq 0 ]
+  run bash "$DOCS_CHECK" idea-update u4 canceled  "$PROJECT"; [ "$status" -eq 0 ]
+  run bash "$DOCS_CHECK" idea-update u5 duplicate "$PROJECT"; [ "$status" -eq 0 ]
+  # Confirm each entry actually updated.
+  run jq -r 'select(.uid=="u5").status' "$ideas_log"
+  [ "$output" = "duplicate" ]
+}
+
+@test "Step 6: idea-update rejects unknown status values" {
+  local ideas_log="$PROJECT/.ccanvil/ideas.log"
+  echo '{"uid":"u1","created":1,"status":"triage","title":"a","body":"a"}' > "$ideas_log"
+  run bash "$DOCS_CHECK" idea-update u1 bogus-status "$PROJECT"
+  [ "$status" -ne 0 ]
+  echo "$output" | grep -q 'ERROR'
+}
+
 @test "Step 5: Linear idea.merge returns save_issue with stateId=duplicate + duplicateOf" {
   _linear_config_with_state_ids
   run bash "$OPS" resolve idea.merge BTS-99 --project-dir "$PROJECT"

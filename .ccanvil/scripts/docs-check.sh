@@ -1360,6 +1360,18 @@ cmd_idea_update() {
   local project_dir="${3:-.}"
   local ideas_log="$project_dir/.ccanvil/ideas.log"
 
+  # Accept new vocab (triage/backlog/icebox/canceled/duplicate) and legacy
+  # aliases (new/promoted/parked/dismissed/merged). Reject anything else
+  # so typos fail loudly instead of silently corrupting the log.
+  case "$new_status" in
+    triage|backlog|icebox|canceled|duplicate) ;;
+    new|promoted|parked|dismissed|merged) ;;
+    *)
+      echo "ERROR: unknown status '$new_status' (expected one of: triage, backlog, icebox, canceled, duplicate)" >&2
+      exit 1
+      ;;
+  esac
+
   [[ -f "$ideas_log" ]] || { echo "ERROR: $ideas_log not found" >&2; exit 1; }
 
   # Confirm the uid exists before rewriting.
