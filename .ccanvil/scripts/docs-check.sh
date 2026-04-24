@@ -660,12 +660,14 @@ cmd_audit_session() {
   local patterns_json="[]"
   local categories="{}"
   local current_file=""
+  local current_line=0
 
   # Process diff line by line
   while IFS= read -r line || [[ -n "$line" ]]; do
-    # Track current file from diff headers
+    # Track current file from diff headers (also resets line counter)
     if [[ "$line" =~ ^diff\ --git\ a/(.+)\ b/ ]]; then
       current_file="${BASH_REMATCH[1]}"
+      current_line=0
       continue
     fi
     # Also capture from +++ header
@@ -674,10 +676,9 @@ cmd_audit_session() {
       continue
     fi
 
-    # Get line number from @@ hunk header
-    local line_num=""
+    # Set line counter from @@ hunk header (anchors all subsequent + lines).
     if [[ "$line" =~ ^@@.*\+([0-9]+) ]]; then
-      line_num="${BASH_REMATCH[1]}"
+      current_line="${BASH_REMATCH[1]}"
       continue
     fi
 
@@ -695,7 +696,7 @@ cmd_audit_session() {
           patterns_json=$(echo "$patterns_json" | jq \
             --arg pattern "$pname" \
             --arg file "$current_file" \
-            --arg line_num "${line_num:-0}" \
+            --arg line_num "$current_line" \
             --arg context "$context" \
             '. + [{pattern: $pattern, file: $file, line: ($line_num | tonumber), context: $context}]')
 
@@ -705,6 +706,8 @@ cmd_audit_session() {
             '.[$cat] = ((.[$cat] // 0) + 1)')
         fi
       done
+      # Advance line counter for the next + line in this hunk.
+      current_line=$((current_line + 1))
     fi
   done <<< "$diff_output"
 
