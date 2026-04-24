@@ -3,7 +3,7 @@
 > Feature: bts-117-remote-presence-check
 > Work: linear:BTS-117
 > Created: 1777073597
-> Status: In Progress
+> Status: Complete
 
 ## Summary
 
