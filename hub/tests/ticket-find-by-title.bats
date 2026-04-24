@@ -208,6 +208,25 @@ JSON
   echo "$output" | jq -e '. == []'
 }
 
+@test "BTS-129: null-status edge case — match returned with status: null, not dropped" {
+  set -e
+  _linear_config
+  # If both .status and .state.name are missing/null, the filter emits
+  # status: null rather than dropping the match. Dedup only needs id/title —
+  # losing matches over a missing status field would defeat the primitive's
+  # purpose. Callers can still act on {id, title, url}.
+  run bash "$OPS" resolve ticket.find-by-title "missing-status-test" --project-dir "$PROJECT"
+  local template title
+  template=$(echo "$output" | jq -r '.client_filter.jq_template')
+  title=$(echo "$output" | jq -r '.invocation.params.query')
+  local mock='[{"id":"BTS-X","title":"missing-status-test issue","url":"u"}]'
+  local matches
+  matches=$(echo "$mock" | jq --arg title "$title" "$template")
+  echo "$matches" | jq -e 'length == 1'
+  echo "$matches" | jq -e '.[0].id == "BTS-X"'
+  echo "$matches" | jq -e '.[0].status == null'
+}
+
 @test "BTS-129: filter unwraps Linear MCP {issues:[...]} shape AND reads top-level .status" {
   set -e
   _linear_config

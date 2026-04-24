@@ -75,6 +75,9 @@ CMD=""
 OPERATION=""
 OP_ARGS=""
 OP_ARG2=""
+# EXACT is only consumed by ticket.find-by-title. Other operations ignore it
+# harmlessly. Do not add new operations that read $EXACT without also
+# renaming/scoping this variable.
 EXACT=0
 
 [[ $# -eq 0 ]] && usage
