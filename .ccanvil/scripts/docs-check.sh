@@ -1173,6 +1173,66 @@ cmd_sync_check() {
 }
 
 # ---------------------------------------------------------------------------
+# cmd_pr_guard — Verify the current feature branch is not behind its base
+# (origin/main) before finalizing a PR (BTS-122 AC-5).
+#
+# Usage:
+#   docs-check.sh pr-guard
+#
+# Invoked from the /pr skill's pre-flight block. Fetches origin/main and
+# checks that no commits exist in origin/main that aren't already in HEAD.
+# If the base has moved past the feature branch, a squash-merge will still
+# work but the PR body won't reflect the latest base — more importantly,
+# any CI that rebases against main will surface conflicts downstream.
+#
+# Exit codes:
+#   0   feature branch is up-to-date with base, OR no origin/no origin/main
+#       ref (no-op, matches cmd_sync_check AC-9), OR fetch failed (WARN:
+#       emitted, graceful degradation)
+#   1   feature branch is behind origin/main — rebase or merge to update
+# ---------------------------------------------------------------------------
+cmd_pr_guard() {
+  local repo_root
+  repo_root=$(git rev-parse --show-toplevel 2>/dev/null) || {
+    echo "ERROR: not inside a git worktree." >&2
+    exit 1
+  }
+
+  # No-op if no origin remote (fresh local-only repo).
+  if ! git -C "$repo_root" remote get-url origin >/dev/null 2>&1; then
+    return 0
+  fi
+
+  # Fetch with short timeout; degrade gracefully on failure.
+  if ! git -C "$repo_root" \
+      -c http.lowSpeedLimit=1 -c http.lowSpeedTime=5 \
+      fetch origin main 2>/dev/null; then
+    echo "WARN: offline — skipping pr-guard sync check" >&2
+    return 0
+  fi
+
+  # No-op if origin/main ref absent after fetch.
+  if ! git -C "$repo_root" rev-parse --verify origin/main >/dev/null 2>&1; then
+    return 0
+  fi
+
+  # Commits in origin/main not in HEAD → base has moved past feature branch.
+  local behind_count
+  behind_count=$(git -C "$repo_root" rev-list --count HEAD..origin/main 2>/dev/null || echo "0")
+
+  if [[ "$behind_count" -gt 0 ]]; then
+    echo "ERROR: feature branch is BEHIND origin/main by $behind_count commit(s) — the PR base has moved." >&2
+    echo "" >&2
+    echo "Resolve by one of:" >&2
+    echo "  git rebase origin/main         # linear history, preferred for draft PRs" >&2
+    echo "  git merge origin/main          # merge-commit alternative" >&2
+    return 1
+  fi
+
+  return 0
+}
+
+# ---------------------------------------------------------------------------
 # cmd_land — Switch to main, sync with remote, delete feature branch.
 #
 # Usage:
@@ -2314,6 +2374,7 @@ case "$cmd" in
   extract-work)      cmd_extract_work "$@" ;;
   auto-close-emit)   cmd_auto_close_emit "$@" ;;
   sync-check)        cmd_sync_check "$@" ;;
+  pr-guard)          cmd_pr_guard "$@" ;;
   radar-gather)      cmd_radar_gather "$@" ;;
   idea-add)          cmd_idea_add "$@" ;;
   idea-list)         cmd_idea_list "$@" ;;

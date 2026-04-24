@@ -118,6 +118,53 @@ teardown() {
 }
 
 # ===========================================================================
+# Phase 4 — cmd_pr_guard (AC-5)
+# ===========================================================================
+
+@test "BTS-122 AC-5: pr-guard exits 0 when feature branch is ahead of base" {
+  cd "$REPO"
+  git -C "$REPO" checkout -q -b claude/feat/example
+  git -C "$REPO" -c user.email=t@t -c user.name=t commit -q --allow-empty -m "feature work"
+
+  run bash "$DOCS" pr-guard
+  [ "$status" -eq 0 ]
+}
+
+@test "BTS-122 AC-5: pr-guard halts when feature branch is behind its base" {
+  cd "$REPO"
+  git -C "$REPO" checkout -q -b claude/feat/example
+  git -C "$REPO" -c user.email=t@t -c user.name=t commit -q --allow-empty -m "feature work"
+
+  # Move origin/main forward by pushing from a side clone.
+  local SIDE
+  SIDE=$(mktemp -d)
+  git clone -q "$BARE" "$SIDE"
+  git -C "$SIDE" -c user.email=t@t -c user.name=t commit -q --allow-empty -m "base-moved"
+  git -C "$SIDE" push -q origin main
+  rm -rf "$SIDE"
+
+  run bash "$DOCS" pr-guard
+  [ "$status" -eq 1 ]
+  [[ "$output" =~ "behind" ]]
+  [[ "$output" =~ "rebase origin/main" ]] || [[ "$output" =~ "merge origin/main" ]]
+}
+
+@test "BTS-122 AC-5: pr-guard is a no-op when no origin remote exists" {
+  local LOCAL
+  LOCAL=$(mktemp -d)
+  git -C "$LOCAL" init -q -b main
+  git -C "$LOCAL" -c user.email=t@t -c user.name=t commit -q --allow-empty -m "init"
+  git -C "$LOCAL" checkout -q -b claude/feat/example
+  git -C "$LOCAL" -c user.email=t@t -c user.name=t commit -q --allow-empty -m "work"
+
+  cd "$LOCAL"
+  run bash "$DOCS" pr-guard
+  [ "$status" -eq 0 ]
+
+  rm -rf "$LOCAL"
+}
+
+# ===========================================================================
 # Phase 3 — cmd_land offline-degradation (AC-7)
 # ===========================================================================
 
