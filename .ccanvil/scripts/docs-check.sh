@@ -1226,14 +1226,19 @@ cmd_land() {
   }
   echo "Switched to main."
 
-  # Fetch and reset (if remote exists)
+  # Fetch and reset (if remote exists). BTS-122 AC-7: fetch failure degrades
+  # gracefully — emit WARN: and SKIP the hard reset so we don't blow away
+  # local main in favor of a stale cached ref (or no ref at all).
   if git remote get-url origin >/dev/null 2>&1; then
-    git fetch origin 2>/dev/null
-    echo "Fetched origin."
-    local sha
-    sha=$(git rev-parse --short origin/main 2>/dev/null || git rev-parse --short origin/master 2>/dev/null || echo "unknown")
-    git reset --hard "origin/main" 2>/dev/null || git reset --hard "origin/master" 2>/dev/null || true
-    echo "Main updated to $sha."
+    if git fetch origin 2>/dev/null; then
+      echo "Fetched origin."
+      local sha
+      sha=$(git rev-parse --short origin/main 2>/dev/null || git rev-parse --short origin/master 2>/dev/null || echo "unknown")
+      git reset --hard "origin/main" 2>/dev/null || git reset --hard "origin/master" 2>/dev/null || true
+      echo "Main updated to $sha."
+    else
+      echo "WARN: offline — skipping origin fetch and reset. Local main left at current HEAD." >&2
+    fi
   fi
 
   # Post-merge safety net: if the landed branch maps to a spec archive that's

@@ -116,3 +116,30 @@ teardown() {
 
   rm -rf "$LOCAL" "$EMPTY_BARE"
 }
+
+# ===========================================================================
+# Phase 3 — cmd_land offline-degradation (AC-7)
+# ===========================================================================
+
+@test "BTS-122 AC-7: cmd_land emits WARN: and exits 0 when fetch fails" {
+  cd "$REPO"
+  # Create and switch to a feature branch so cmd_land doesn't take the
+  # "already on main" early return path.
+  git -C "$REPO" checkout -q -b claude/feat/dummy
+  # Break origin URL so fetch fails.
+  git -C "$REPO" remote set-url origin "/nonexistent/path/does-not-exist.git"
+
+  # Capture the pre-land HEAD on main to assert no reset happened.
+  local pre_main_sha
+  pre_main_sha=$(git -C "$REPO" rev-parse main)
+
+  run bash "$DOCS" land --force
+  [ "$status" -eq 0 ]
+  [[ "$output" =~ "WARN" ]]
+
+  # Assert main wasn't reset to a stale/unknown ref.
+  local post_main_sha
+  post_main_sha=$(git -C "$REPO" rev-parse main)
+  [ "$pre_main_sha" = "$post_main_sha" ]
+}
+
