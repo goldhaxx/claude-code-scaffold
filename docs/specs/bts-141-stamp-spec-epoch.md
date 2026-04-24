@@ -3,7 +3,7 @@
 > Feature: bts-141-stamp-spec-epoch
 > Work: linear:BTS-141
 > Created: 1777072738
-> Status: Draft
+> Status: Complete
 
 ## Summary
 

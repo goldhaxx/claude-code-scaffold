@@ -41,7 +41,7 @@ A work ref is one of:
    - Include at least one error/edge case criterion
    - Reference specific files and patterns from the codebase
    - Keep under 100 lines
-   - Set metadata: `> Feature: <feature_id>`, `> Work: <provider>:<id>`, `> Created: <epoch>` (via `date +%s`), `> Status: Draft`
+   - Set metadata: `> Feature: <feature_id>`, `> Work: <provider>:<id>`, `> Created: PLACEHOLDER`, `> Status: Draft`. Then run `bash .ccanvil/scripts/docs-check.sh stamp-spec <feature_id>` to replace the placeholder with the current epoch deterministically (BTS-141 — never substitute the epoch via inline shell-variable interpolation; the script owns the timestamp).
 
 9. **If from an idea:** Run `bash .ccanvil/scripts/docs-check.sh idea-update <num> promoted`
 

@@ -2564,6 +2564,57 @@ cmd_title_from_body() {
 }
 
 # ---------------------------------------------------------------------------
+# cmd_stamp_spec — Replace the > Created: line in a spec with the current epoch.
+#
+# Usage:
+#   docs-check.sh stamp-spec <feature_id> [docs-dir]
+#
+# Replaces an existing `> Created: <anything>` line in docs/specs/<id>.md with
+# `> Created: <current epoch>`. Errors if the spec does not exist or lacks a
+# Created: line — never silently inserts.
+#
+# Output (stdout, JSON): {"feature_id":"<id>","stamped_epoch":<n>,"file":"<path>"}
+# ---------------------------------------------------------------------------
+cmd_stamp_spec() {
+  local feature_id="${1:-}"
+  local docs_dir="${2:-docs}"
+
+  if [[ -z "$feature_id" ]]; then
+    echo "ERROR: stamp-spec requires <feature_id>" >&2
+    return 2
+  fi
+
+  local spec_path="$docs_dir/specs/$feature_id.md"
+  if [[ ! -f "$spec_path" ]]; then
+    echo "ERROR: spec not found: $spec_path" >&2
+    return 1
+  fi
+
+  if ! grep -q '^> Created:' "$spec_path"; then
+    echo "ERROR: no Created: line in $spec_path — write a placeholder first" >&2
+    return 1
+  fi
+
+  local epoch
+  epoch=$(date +%s)
+
+  # Replace the Created: line in place. Use a temp file for portability.
+  local tmp
+  tmp="${spec_path}.stamp.tmp"
+  awk -v ep="$epoch" '
+    /^> Created:/ && !done { print "> Created: " ep; done=1; next }
+    { print }
+  ' "$spec_path" > "$tmp"
+  mv "$tmp" "$spec_path"
+
+  jq -n \
+    --arg fid "$feature_id" \
+    --argjson ep "$epoch" \
+    --arg f "$spec_path" \
+    '{feature_id: $fid, stamped_epoch: $ep, file: $f}'
+}
+
+# ---------------------------------------------------------------------------
 # Dispatch
 # ---------------------------------------------------------------------------
 
@@ -2600,8 +2651,9 @@ case "$cmd" in
   idea-upgrade)      cmd_idea_upgrade "$@" ;;
   title-from-body)   cmd_title_from_body "$@" ;;
   legacy-refs-scan)  cmd_legacy_refs_scan "$@" ;;
+  stamp-spec)        cmd_stamp_spec "$@" ;;
   *)
-    echo "Usage: docs-check.sh {status|validate|recommend|audit-session|config-get|list-specs|activate|complete|pr-cleanup|land|idea-add|idea-list|idea-count|idea-update|idea-sync|idea-migrate|idea-setup|idea-upgrade|title-from-body|legacy-refs-scan} [args...]" >&2
+    echo "Usage: docs-check.sh {status|validate|recommend|audit-session|config-get|list-specs|activate|complete|pr-cleanup|land|idea-add|idea-list|idea-count|idea-update|idea-sync|idea-migrate|idea-setup|idea-upgrade|title-from-body|legacy-refs-scan|stamp-spec} [args...]" >&2
     exit 1
     ;;
 esac
