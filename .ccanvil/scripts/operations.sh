@@ -622,6 +622,26 @@ linear_mcp_adapter() {
           "contract":{"output":$output}
         }'
       ;;
+    ticket.transition)
+      # Provider-neutral ticket state transition. OP_ARGS = ticket id,
+      # OP_ARG2 = role (triage|backlog|icebox|canceled|duplicate|done).
+      # Emits a save_issue payload with id + stateId pre-populated so the
+      # caller dispatches a single MCP call with no manual UUID paste.
+      tool="mcp__claude_ai_Linear__save_issue"
+      output_contract='["id","status"]'
+      local t_state_id
+      t_state_id=$(linear_state_id "$provider_config" "$OP_ARG2")
+      jq -n --arg tool "$tool" --arg id "$op_args" --arg state_id "$t_state_id" \
+        --argjson output "$output_contract" \
+        '{
+          "provider":"linear","mechanism":"mcp",
+          "invocation":{
+            "tool":$tool,
+            "params":{"id":$id,"stateId":$state_id}
+          },
+          "contract":{"output":$output}
+        }'
+      ;;
     *)
       # Unsupported operation for this provider — fall back to local
       local_adapter "$op"
@@ -687,7 +707,10 @@ cmd_resolve() {
     local group
     group=$(operation_group "$op")
     routed_provider=$(jq -r --arg g "$group" '.integrations.routing[$g] // ""' "$CONFIG_FILE")
-    if [[ -z "$routed_provider" && "$group" == "work" ]]; then
+    if [[ -z "$routed_provider" && ("$group" == "work" || "$group" == "ticket") ]]; then
+      # work and ticket groups share the idea provider's routing — on a
+      # Linear-configured node, `routing.idea=linear` alone is enough to
+      # route work.resolve and ticket.transition through the Linear adapter.
       routed_provider=$(jq -r '.integrations.routing.idea // ""' "$CONFIG_FILE")
     fi
     [[ -z "$routed_provider" ]] && routed_provider="local"
