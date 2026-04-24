@@ -9,7 +9,8 @@ Configuration preset hub for Claude Code — spec-driven development, determinis
 
 ## Commands
 ```bash
-bats hub/tests/                                           # Run all tests
+bash .ccanvil/scripts/bats-report.sh --parallel           # Run full suite (parallel, ~75% faster)
+bats hub/tests/                                           # Run all tests (serial)
 bash .ccanvil/scripts/docs-check.sh activate <id>         # Activate spec → branch + draft PR
 bash .ccanvil/scripts/docs-check.sh complete <id>         # Complete spec → cleanup + PR ready
 bash .ccanvil/scripts/docs-check.sh land                  # Return to main after merge

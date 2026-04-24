@@ -57,6 +57,7 @@
 | Command | What it does |
 |---------|-------------|
 | `bats-lint.sh <dir-or-file>` | Flag bats `@test` blocks with ≥2 sequential `jq -e` assertions and no `set -e` at the top — the leak pattern where only the last `jq -e` governs the test's exit code (BTS-127). Exit 0 clean, 1 if any leaks found (file:line to stderr), 2 on usage error. Convention doc: `.claude/rules/tdd.md`. |
+| `bats-report.sh [--parallel] [--json] [<bats-args>...]` | Run the bats suite exactly once and emit structured output (BTS-118). Replaces the 3×-invocation pattern (`bats \| tail; bats \| grep ok; bats \| grep not ok`). `--parallel` uses `bats --jobs N` where `N = max(2, cpu/2)`; requires `brew install parallel` on macOS. Falls back to serial with `WARN:` when parallel is missing. `--json` emits `{ok, not_ok, total, tail, raw_exit}`. Default target `hub/tests/`; exit mirrors bats exit. Wall-time: serial ~260s → `--parallel` ~67s (74% reduction on the 894-test suite). |
 
 ## Context Budget Scripts
 

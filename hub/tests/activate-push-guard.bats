@@ -7,19 +7,11 @@
 
 SCRIPT="$BATS_TEST_DIRNAME/../../.ccanvil/scripts/docs-check.sh"
 
+load helpers/seed-repo
+
 setup() {
   export TMPDIR="${BATS_TEST_TMPDIR}"
-  REPO=$(mktemp -d)
-  BARE=$(mktemp -d)
-
-  # Local repo with one commit + an origin
-  git -C "$REPO" init -q -b main
-  git -C "$REPO" -c user.email=t@t -c user.name=t commit -q --allow-empty -m "init"
-  git -C "$BARE" init --bare -q -b main
-  git -C "$REPO" remote add origin "$BARE"
-  git -C "$REPO" push -q -u origin main
-
-  mkdir -p "$REPO/docs/specs"
+  seed_repo_with_origin --docs-specs
 }
 
 teardown() {

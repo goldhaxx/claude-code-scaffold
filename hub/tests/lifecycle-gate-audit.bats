@@ -12,16 +12,11 @@ bats_require_minimum_version 1.5.0
 
 DOCS="$BATS_TEST_DIRNAME/../../.ccanvil/scripts/docs-check.sh"
 
+load helpers/seed-repo
+
 setup() {
   export TMPDIR="${BATS_TEST_TMPDIR}"
-  REPO=$(mktemp -d)
-  BARE=$(mktemp -d)
-
-  git -C "$REPO" init -q -b main
-  git -C "$REPO" -c user.email=t@t -c user.name=t commit -q --allow-empty -m "init"
-  git -C "$BARE" init --bare -q -b main
-  git -C "$REPO" remote add origin "$BARE"
-  git -C "$REPO" push -q -u origin main
+  seed_repo_with_origin
 }
 
 teardown() {

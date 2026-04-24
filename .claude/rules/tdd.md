@@ -68,6 +68,18 @@ In bats, a test passes iff the *last* statement's exit code is 0. Sequential `jq
 
 Enforced by `.ccanvil/scripts/bats-lint.sh` (runs in CI and locally).
 
+## Running the suite (BTS-118)
+
+Use `.ccanvil/scripts/bats-report.sh` when you need tail + pass/fail counts. It runs bats **once** and derives all metrics from a single capture — never chain `bats | tail`, `bats | grep ok`, `bats | grep not ok` (that's 3× the runtime):
+
+```bash
+bash .ccanvil/scripts/bats-report.sh --parallel           # fastest (GNU parallel required)
+bash .ccanvil/scripts/bats-report.sh --json <path>        # structured output for skills
+bash .ccanvil/scripts/bats-report.sh -f 'some filter'     # bats args pass through
+```
+
+Parallelism (`--parallel`) uses `bats --jobs N` where N = max(2, cpu/2). Requires GNU parallel: `brew install parallel` on macOS, `apt install parallel` on Debian/Ubuntu, `dnf install parallel` on Fedora. Falls back to serial with a WARN: if missing — CI runners without parallel installed silently run serially, so check CI logs if runs feel slow. See `.ccanvil/guide/command-reference.md` for full flag list.
+
 <!-- NODE-SPECIFIC-START -->
 <!-- Add project-specific content below this line. -->
 <!-- Hub content above is updated via /ccanvil-pull. -->

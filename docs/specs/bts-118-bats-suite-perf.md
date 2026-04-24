@@ -3,7 +3,7 @@
 > Feature: bts-118-bats-suite-perf
 > Work: linear:BTS-118
 > Created: 1777054322
-> Status: Draft
+> Status: Complete
 
 ## Summary
 
