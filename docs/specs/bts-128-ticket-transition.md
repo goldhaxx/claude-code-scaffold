@@ -3,7 +3,7 @@
 > Feature: bts-128-ticket-transition
 > Work: linear:BTS-128
 > Created: 1776992519
-> Status: In Progress
+> Status: Complete
 
 ## Summary
 
