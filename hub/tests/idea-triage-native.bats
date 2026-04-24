@@ -201,10 +201,15 @@ EOF
 @test "Step 12: /idea skill names all four triage outcomes via operations.sh resolvers" {
   local skill="$BATS_TEST_DIRNAME/../../.claude/skills/idea/SKILL.md"
   [ -f "$skill" ]
-  grep -q 'idea\.promote' "$skill"
-  grep -q 'idea\.defer'   "$skill"
-  grep -q 'idea\.dismiss' "$skill"
-  grep -q 'idea\.merge'   "$skill"
+  # Outcome names — table rows remain promote/defer/dismiss/merge.
+  grep -q 'promote'   "$skill"
+  grep -q 'defer'     "$skill"
+  grep -q 'dismiss'   "$skill"
+  grep -q 'merge'     "$skill"
+  # Resolver verb — post-BTS-128, the four outcomes dispatch through a
+  # single wrapper (`ticket.transition <id> <role>`) rather than four
+  # separate idea.* resolvers.
+  grep -q 'ticket\.transition' "$skill"
   # Agentic: stateId, not state names.
   grep -qE 'params\.stateId|stateId:' "$skill"
   grep -q 'review-icebox' "$skill"

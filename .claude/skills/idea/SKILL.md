@@ -103,16 +103,16 @@ Batched review of items in Triage state. **Fully agentic** — every outcome is 
    - bash: run `docs-check.sh idea-list --status triage`.
 3. **Load context:** read `docs/roadmap.md` (if present); run `bash .ccanvil/scripts/operations.sh exec backlog.list` for existing backlog.
 4. **Present a table of recommendations.** One row per item. Ask for approval.
-5. **For each approved outcome, resolve the verb and dispatch:**
+5. **For each approved outcome, resolve via `ticket.transition` and dispatch:**
 
 | Outcome | `operations.sh resolve` | Linear dispatch (`save_issue`) | Local dispatch |
 |---------|-------------------------|--------------------------------|----------------|
-| **promote** | `idea.promote` → params.stateId (backlog) | `{id, stateId: <params.stateId>, priority: <1-4>}` | `idea-update <uid> backlog` |
-| **defer**   | `idea.defer` → params.stateId (icebox)     | `{id, stateId: <params.stateId>}`                 | `idea-update <uid> icebox` |
-| **dismiss** | `idea.dismiss` → params.stateId (canceled) | `{id, stateId: <params.stateId>}`                 | `idea-update <uid> canceled` |
-| **merge**   | `idea.merge <target-id>` → params.stateId (duplicate) + duplicateOf | `{id, stateId: <params.stateId>, duplicateOf: <params.duplicateOf>}` | `idea-update <uid> duplicate` |
+| **promote** | `ticket.transition <id> backlog` → params.{id, stateId} | `{...params, priority: <1-4>}` | `idea-update <uid> backlog` |
+| **defer**   | `ticket.transition <id> icebox`  → params.{id, stateId} | `{...params}`                  | `idea-update <uid> icebox` |
+| **dismiss** | `ticket.transition <id> canceled` → params.{id, stateId} | `{...params}`                 | `idea-update <uid> canceled` |
+| **merge**   | `ticket.transition <id> duplicate` → params.{id, stateId} | `{...params, duplicateOf: <target>}` | `idea-update <uid> duplicate` |
 
-Always pass `stateId` from the resolver — never pass `state: "<name>"`. State names collide with type names in Linear's workflow resolver and silently become no-ops.
+The `ticket.transition` wrapper (BTS-128) returns both `id` and `stateId` pre-populated, collapsing the previous "resolve stateId → manually stitch id → dispatch" pattern into a single resolver call. Always pass `stateId` from the resolver — never pass `state: "<name>"`. State names collide with type names in Linear's workflow resolver and silently become no-ops.
 
 **On MCP failure for any outcome**, append to pending log:
 
