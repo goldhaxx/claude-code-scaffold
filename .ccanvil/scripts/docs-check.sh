@@ -2615,6 +2615,45 @@ cmd_stamp_spec() {
 }
 
 # ---------------------------------------------------------------------------
+# cmd_remote_presence — Probe origin remote presence for a repo (BTS-117).
+#
+# Usage:
+#   docs-check.sh remote-presence [repo-dir]
+#
+# Output (stdout, JSON): {has_origin: bool, url: string|null, git_repo: bool}
+# Exit code: always 0 (callers branch on has_origin, not status).
+# ---------------------------------------------------------------------------
+cmd_remote_presence() {
+  local repo_dir="${1:-.}"
+
+  local git_repo="false"
+  local has_origin="false"
+  local url="null"
+
+  if git -C "$repo_dir" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    git_repo="true"
+    local origin_url
+    if origin_url=$(git -C "$repo_dir" remote get-url origin 2>/dev/null) && [[ -n "$origin_url" ]]; then
+      has_origin="true"
+      url=$(printf '%s' "$origin_url" | jq -Rs .)
+    fi
+  fi
+
+  if [[ "$url" == "null" ]]; then
+    jq -nc \
+      --argjson has "$has_origin" \
+      --argjson g "$git_repo" \
+      '{has_origin: $has, url: null, git_repo: $g}'
+  else
+    jq -nc \
+      --argjson has "$has_origin" \
+      --argjson u "$url" \
+      --argjson g "$git_repo" \
+      '{has_origin: $has, url: $u, git_repo: $g}'
+  fi
+}
+
+# ---------------------------------------------------------------------------
 # cmd_idea_pending_append — Safely append one entry to .ccanvil/ideas-pending.log.
 #
 # BTS-123: replaces the unsafe `echo '{"op":...}' >> log` pattern that broke on
@@ -2791,8 +2830,9 @@ case "$cmd" in
   stamp-spec)        cmd_stamp_spec "$@" ;;
   idea-pending-append) cmd_idea_pending_append "$@" ;;
   idea-pending-validate) cmd_idea_pending_validate "$@" ;;
+  remote-presence)   cmd_remote_presence "$@" ;;
   *)
-    echo "Usage: docs-check.sh {status|validate|recommend|audit-session|config-get|list-specs|activate|complete|pr-cleanup|land|idea-add|idea-list|idea-count|idea-update|idea-sync|idea-migrate|idea-setup|idea-upgrade|title-from-body|legacy-refs-scan|stamp-spec|idea-pending-append|idea-pending-validate} [args...]" >&2
+    echo "Usage: docs-check.sh {status|validate|recommend|audit-session|config-get|list-specs|activate|complete|pr-cleanup|land|idea-add|idea-list|idea-count|idea-update|idea-sync|idea-migrate|idea-setup|idea-upgrade|title-from-body|legacy-refs-scan|stamp-spec|idea-pending-append|idea-pending-validate|remote-presence} [args...]" >&2
     exit 1
     ;;
 esac
