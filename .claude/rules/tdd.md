@@ -34,6 +34,40 @@ When implementing any feature or fix:
 After every file edit, the test suite runs automatically via hooks.
 If tests fail after your change, fix immediately before proceeding.
 
+## Strict-mode bats tests (BTS-127)
+
+In bats, a test passes iff the *last* statement's exit code is 0. Sequential `jq -e` assertions leak silently — only the final one governs:
+
+```bash
+@test "leaky" {
+  echo "$output" | jq -e '.a == "x"'   # fails silently if false
+  echo "$output" | jq -e '.b == "y"'   # fails silently if false
+  echo "$output" | jq -e '.c == "z"'   # ONLY this one decides the test's status
+}
+```
+
+**Rule:** any `@test` block with ≥2 `jq -e` assertions MUST either:
+
+- **(a)** start with `set -e` so every failing assertion halts the test, OR
+- **(b)** combine assertions into a single compound `jq -e '.a == "x" and .b == "y"'`.
+
+**Prefer (a)** — preserves readable per-line assertions and bats reports the exact failing line. Use (b) only when the tight form is genuinely clearer.
+
+```bash
+@test "strict (a)" {
+  set -e   # BTS-127: halt on any assertion failure
+  run bash "$SCRIPT" some-cmd
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '.a == "x"'
+  echo "$output" | jq -e '.b == "y"'
+  echo "$output" | jq -e '.c == "z"'
+}
+```
+
+`set -e` does NOT affect bats's `run` — `run` captures the inner exit code into `$status` and itself returns 0. So `set -e` only halts on direct assertions after `run`, which is what you want.
+
+Enforced by `.ccanvil/scripts/bats-lint.sh` (runs in CI and locally).
+
 <!-- NODE-SPECIFIC-START -->
 <!-- Add project-specific content below this line. -->
 <!-- Hub content above is updated via /ccanvil-pull. -->
