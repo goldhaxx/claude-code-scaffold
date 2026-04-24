@@ -21,7 +21,8 @@ set -euo pipefail
 
 PROJECT_DIR="."
 GLOBAL_CLAUDE_MD="$HOME/.claude/CLAUDE.md"
-TEXT_MODE=false
+# Tri-state: "" = auto (TTY-aware after arg parsing); "true" / "false" = explicit override.
+TEXT_MODE=""
 BUDGET_FLAG=""
 CONTEXT_WINDOW_FLAG=""
 MODEL_FLAG=""
@@ -36,7 +37,7 @@ BUDGET_PERCENT=4  # 4% of context window
 CMD=""
 
 usage() {
-  echo "Usage: context-budget.sh check [--project-dir DIR] [--global-claude-md PATH] [--text] [--budget N] [--context-window N] [--model MODEL_ID]" >&2
+  echo "Usage: context-budget.sh check [--project-dir DIR] [--global-claude-md PATH] [--text|--json] [--budget N] [--context-window N] [--model MODEL_ID]" >&2
   exit 2
 }
 
@@ -50,6 +51,8 @@ while [[ $# -gt 0 ]]; do
       GLOBAL_CLAUDE_MD="$2"; shift 2 ;;
     --text)
       TEXT_MODE=true; shift ;;
+    --json)
+      TEXT_MODE=false; shift ;;
     --budget)
       BUDGET_FLAG="$2"; shift 2 ;;
     --context-window)
@@ -64,6 +67,16 @@ while [[ $# -gt 0 ]]; do
 done
 
 [[ -z "$CMD" ]] && usage
+
+# TTY-aware default: if no explicit --text/--json was passed, use text when
+# stdout is a terminal and JSON when piped/redirected (BTS-135).
+if [[ -z "$TEXT_MODE" ]]; then
+  if [[ -t 1 ]]; then
+    TEXT_MODE=true
+  else
+    TEXT_MODE=false
+  fi
+fi
 
 # ---------------------------------------------------------------------------
 # Helpers
