@@ -45,7 +45,13 @@ A work ref is one of:
 
 9. **If from an idea:** Run `bash .ccanvil/scripts/docs-check.sh idea-update <num> promoted`
 
-10. **Report:** Display the spec summary and suggest next step: "Spec written to `docs/specs/<feature_id>.md`. When ready, run `docs-check.sh activate <feature_id>` to create a branch and begin work."
+10. **BTS-136: auto-transition Linear ticket to Todo.** If the resolved work ref is `linear:<ID>`, dispatch `ticket.transition <ID> todo` via `operations.sh resolve` + Linear MCP `save_issue` (use `state` from the resolved params — never `stateId`). Pattern mirrors `/idea triage`'s outcome dispatchers. On MCP failure, append `{"op":"ticket.transition","args":{"id":"<ID>","role":"todo"},"ts":<epoch>}` to `.ccanvil/ideas-pending.log` so `/idea sync` replays it later. Silent for `local:<uid>` and other providers (no Todo semantics there).
+
+11. **Report:** Display the spec summary and suggest next step: "Spec written to `docs/specs/<feature_id>.md`. When ready, run `docs-check.sh activate <feature_id>` to create a branch and begin work."
+
+## Note on `activate` transitions (BTS-136)
+
+When `docs-check.sh activate` is run on a spec carrying `Work: linear:<ID>`, it emits an `AUTO-TRANSITION: {"provider":"linear","id":"<ID>","role":"in_progress"}` marker on stdout — same pattern as `/land`'s `AUTO-CLOSE:`. The caller (typically Claude after `/spec`) MUST scan stdout for this marker and dispatch the corresponding `save_issue` via Linear MCP using `state` from `operations.sh resolve ticket.transition <ID> in_progress`. On MCP failure, append `{"op":"ticket.transition","args":{"id":"<ID>","role":"in_progress"},"ts":<epoch>}` to `.ccanvil/ideas-pending.log`. Silent for non-linear providers.
 
 ## Rules
 

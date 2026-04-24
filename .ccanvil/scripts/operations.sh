@@ -661,16 +661,16 @@ linear_mcp_adapter() {
         exit 1
       fi
       if [[ -z "$OP_ARG2" ]]; then
-        echo "ERROR: ticket.transition requires a role as the second argument. Valid roles: triage, backlog, icebox, canceled, duplicate, done" >&2
+        echo "ERROR: ticket.transition requires a role as the second argument. Valid roles: triage, backlog, icebox, canceled, duplicate, done, todo, in_progress" >&2
         exit 1
       fi
       # Validate role against the fixed vocabulary BEFORE config lookup —
       # fail loud here so an unknown role never silently degrades to an
       # empty state that MCP would reject with an opaque 400.
       case "$OP_ARG2" in
-        triage|backlog|icebox|canceled|duplicate|done) ;;
+        triage|backlog|icebox|canceled|duplicate|done|todo|in_progress) ;;
         *)
-          echo "ERROR: unknown role '$OP_ARG2' for ticket.transition. Valid roles: triage, backlog, icebox, canceled, duplicate, done" >&2
+          echo "ERROR: unknown role '$OP_ARG2' for ticket.transition. Valid roles: triage, backlog, icebox, canceled, duplicate, done, todo, in_progress" >&2
           exit 1
           ;;
       esac

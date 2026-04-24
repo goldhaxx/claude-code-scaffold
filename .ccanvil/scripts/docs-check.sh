@@ -959,6 +959,11 @@ cmd_activate() {
       echo "NOTE: Draft PR not created — gh CLI not available. Run /pr to create manually."
     fi
   fi
+
+  # BTS-136: emit AUTO-TRANSITION marker for the linked Linear issue. The
+  # /spec or /activate caller scans stdout and dispatches the MCP transition.
+  # Silent for legacy specs (no Work:), local-provider, or unknown providers.
+  cmd_auto_transition_emit "$branch_name" "in_progress" "$docs_dir"
 }
 
 # ---------------------------------------------------------------------------
@@ -1120,6 +1125,47 @@ cmd_extract_work() {
 #   Work: local:<uid>               → log skip (scope is Linear-only, AC-6)
 #   Work: <other>:<id>              → log skip (no adapter, AC-7)
 # ---------------------------------------------------------------------------
+cmd_auto_transition_emit() {
+  # BTS-136 — emit AUTO-TRANSITION marker for a given role. Mirror of
+  # cmd_auto_close_emit's decision tree — only difference is the role is
+  # caller-specified and the marker prefix is different.
+  local branch="${1:?Usage: auto-transition-emit <branch-name> <role> [docs-dir]}"
+  local role="${2:?Usage: auto-transition-emit <branch-name> <role> [docs-dir]}"
+  local docs_dir="${3:-$DEFAULT_DOCS_DIR}"
+
+  if [[ ! "$branch" =~ ^claude/[^/]+/(.+)$ ]]; then
+    return 0
+  fi
+  local feature_id="${BASH_REMATCH[1]}"
+  local spec_file="${docs_dir}/specs/${feature_id}.md"
+  if [[ ! -f "$spec_file" ]]; then
+    return 0
+  fi
+
+  local work_json
+  work_json=$(cmd_extract_work "$spec_file")
+  if [[ -z "$work_json" ]]; then
+    return 0
+  fi
+
+  local provider id
+  provider=$(echo "$work_json" | jq -r '.provider')
+  id=$(echo "$work_json" | jq -r '.id')
+
+  case "$provider" in
+    linear)
+      jq -cn --arg id "$id" --arg role "$role" \
+        '{provider:"linear",id:$id,role:$role}' | \
+        sed 's/^/AUTO-TRANSITION: /'
+      ;;
+    *)
+      # Local + unknown providers: silent. Linear-only auto-transition
+      # matches BTS-119's Linear-only auto-close scope.
+      return 0
+      ;;
+  esac
+}
+
 cmd_auto_close_emit() {
   local branch="${1:?Usage: auto-close-emit <branch-name> [docs-dir]}"
   local docs_dir="${2:-$DEFAULT_DOCS_DIR}"
@@ -2535,6 +2581,7 @@ case "$cmd" in
   land-recover-branch) cmd_land_recover_branch "$@" ;;
   extract-work)      cmd_extract_work "$@" ;;
   auto-close-emit)   cmd_auto_close_emit "$@" ;;
+  auto-transition-emit) cmd_auto_transition_emit "$@" ;;
   sync-check)        cmd_sync_check "$@" ;;
   pr-guard)          cmd_pr_guard "$@" ;;
   radar-gather)      cmd_radar_gather "$@" ;;

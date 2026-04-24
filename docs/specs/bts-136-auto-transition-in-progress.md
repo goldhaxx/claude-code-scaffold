@@ -3,7 +3,7 @@
 > Feature: bts-136-auto-transition-in-progress
 > Work: linear:BTS-136
 > Created: 1777069198
-> Status: Draft
+> Status: Complete
 
 ## Summary
 
