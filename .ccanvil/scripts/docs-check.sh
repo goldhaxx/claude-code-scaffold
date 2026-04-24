@@ -1310,7 +1310,11 @@ cmd_land_recover_branch() {
   # committed on main right before /compact), skip it and look at HEAD~1.
   local subject
   subject=$(git log -1 --format=%s 2>/dev/null)
-  if [[ "$subject" =~ ^docs:[[:space:]]*stasis ]]; then
+  # Tightened from `^docs:[[:space:]]*stasis` (reviewer WARN): require at
+  # least one space after `docs:` and ensure `stasis` is followed by a word
+  # boundary (space or end) so `docs:stasis-notes` or `docs: stasisnotes`
+  # don't falsely trigger the skip.
+  if [[ "$subject" =~ ^docs:[[:space:]]+stasis([[:space:]]|$) ]]; then
     subject=$(git log -1 --skip=1 --format=%s 2>/dev/null)
   fi
 
