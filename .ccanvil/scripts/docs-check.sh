@@ -1101,6 +1101,73 @@ cmd_auto_close_emit() {
 }
 
 # ---------------------------------------------------------------------------
+# cmd_sync_check — Verify local main is in sync with origin/main (BTS-122).
+#
+# Usage:
+#   docs-check.sh sync-check <repo-root>
+#
+# Fetches origin/main (with http.lowSpeedTime=5 timeout) then compares local
+# main against the refreshed ref. Exit codes:
+#   0   in sync, or no-op (no origin remote, or no origin/main ref, or fetch
+#       failed and we warned but let the caller proceed on cached state)
+#   1   local AHEAD — unpushed commits would leak into a new feature branch
+#   2   local BEHIND — activate would cut from a stale baseline
+#
+# Graceful degradation: fetch failures emit `WARN: offline — skipping sync
+# check` on stderr and return 0. Matches BTS-119's "never block forward
+# progress on network flakes" posture.
+# ---------------------------------------------------------------------------
+cmd_sync_check() {
+  local repo_root="${1:?Usage: sync-check <repo-root>}"
+
+  # AC-9: no origin remote at all → no-op success.
+  if ! git -C "$repo_root" remote get-url origin >/dev/null 2>&1; then
+    return 0
+  fi
+
+  # AC-1/AC-3: fetch with short timeout; degrade to WARN on failure.
+  if ! git -C "$repo_root" \
+      -c http.lowSpeedLimit=1 -c http.lowSpeedTime=5 \
+      fetch origin main 2>/dev/null; then
+    echo "WARN: offline — skipping sync check" >&2
+    return 0
+  fi
+
+  # AC-9: fetch succeeded but origin/main ref still absent (empty remote).
+  if ! git -C "$repo_root" rev-parse --verify origin/main >/dev/null 2>&1; then
+    return 0
+  fi
+
+  local ahead behind
+  ahead=$(git -C "$repo_root" rev-list --reverse --format="%h %s" \
+            --no-commit-header origin/main..main 2>/dev/null || true)
+  behind=$(git -C "$repo_root" rev-list --count main..origin/main 2>/dev/null || echo "0")
+
+  # Ahead takes precedence over behind when diverged — unpushed leak is the
+  # more dangerous failure mode.
+  if [[ -n "$ahead" ]]; then
+    echo "ERROR: local main is AHEAD of origin/main — unpushed commits would leak into the feature branch." >&2
+    echo "" >&2
+    echo "Unpushed commits:" >&2
+    echo "$ahead" | sed 's/^/  /' >&2
+    echo "" >&2
+    echo "Resolve by pushing main first:" >&2
+    echo "  git push origin main" >&2
+    return 1
+  fi
+
+  if [[ "$behind" -gt 0 ]]; then
+    echo "ERROR: local main is BEHIND origin/main by $behind commit(s) — activate would cut from a stale baseline." >&2
+    echo "" >&2
+    echo "Resolve by pulling first:" >&2
+    echo "  git pull --ff-only origin main" >&2
+    return 2
+  fi
+
+  return 0
+}
+
+# ---------------------------------------------------------------------------
 # cmd_land — Switch to main, sync with remote, delete feature branch.
 #
 # Usage:
@@ -2236,6 +2303,7 @@ case "$cmd" in
   land)              cmd_land "$@" ;;
   extract-work)      cmd_extract_work "$@" ;;
   auto-close-emit)   cmd_auto_close_emit "$@" ;;
+  sync-check)        cmd_sync_check "$@" ;;
   radar-gather)      cmd_radar_gather "$@" ;;
   idea-add)          cmd_idea_add "$@" ;;
   idea-list)         cmd_idea_list "$@" ;;
