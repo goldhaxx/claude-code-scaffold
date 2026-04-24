@@ -29,7 +29,7 @@ Collect these inputs via scripts — all deterministic, all cheap:
 3. `bash .ccanvil/scripts/docs-check.sh radar-gather` — active spec, completed specs, idea counts, roadmap theme, git activity, backlog.
 4. `bash .ccanvil/scripts/docs-check.sh idea-count` — untriaged idea count for the Next Steps section.
 5. `bash .ccanvil/scripts/docs-check.sh audit-session --since <last-stasis-commit>` — scan git diffs for stochastic patterns (fallback to last 20 commits if no prior stasis).
-6. `bash .ccanvil/scripts/docs-check.sh legacy-refs-scan` — check for stale references to legacy verbs/artifacts (fuels Cross-Session Patterns).
+6. `bash .ccanvil/scripts/docs-check.sh legacy-refs-scan --respect-allowlist hub/tests/legacy-refs-allowlist.txt` — check for stale references to legacy verbs/artifacts, pre-filtered by the allowlist (BTS-132) so only REAL drift surfaces in Cross-Session Patterns. On downstream nodes without `hub/tests/`, omit the flag — the raw output is fine.
 7. `bash .ccanvil/scripts/permissions-audit.sh check` (if available) — classify any DANGER or UNREVIEWED permissions.
 8. `bash .ccanvil/scripts/context-budget.sh check` (if available) — context budget HEALTHY/WARNING/CRITICAL.
 9. `git log --oneline -20` — recent commit history.

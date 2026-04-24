@@ -179,7 +179,7 @@ The `/idea` skill routes captures through `operations.sh` based on the node's pr
 |---------|-------------|
 | `docs-check.sh status [docs-dir]` | Extract metadata (feature_id, hashes, timestamps) from spec/plan/stasis → JSON |
 | `docs-check.sh validate [docs-dir]` | Check alignment: `aligned`, `stale-plan`, `stale-stasis`, `mismatched`, `unlinked`, `missing-determinism-review` |
-| `docs-check.sh legacy-refs-scan [project-dir]` | Scan for legacy references (`/catchup`, `/checkpoint`, `docs/checkpoint.md`, etc.) → JSON. Scope: `hub-owned` vs `node-specific`. Exit 1 if any found |
+| `docs-check.sh legacy-refs-scan [--respect-allowlist <path>] [project-dir]` | Scan for legacy references (`/catchup`, `/checkpoint`, `docs/checkpoint.md`, etc.) → JSON. Scope: `hub-owned` vs `node-specific`. `--respect-allowlist <path>` (BTS-132) pre-filters matches against ERE patterns in `<path>` (same format as `hub/tests/legacy-refs-allowlist.txt`) — comments (`^#`) and blank lines skipped. Exit 1 if any post-filter matches remain; exit 2 if allowlist file is missing. |
 | `docs-check.sh recommend [docs-dir]` | State machine → `{next_action, reason}` (e.g., "Run /plan", "Ready to build") |
 | `docs-check.sh audit-session [--since commit] [repo-dir]` | Scan git diffs for stochastic patterns (cp, jq, shasum, git -C, curl, wget) + commit messages for indicator phrases → JSON |
 

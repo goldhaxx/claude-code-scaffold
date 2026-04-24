@@ -104,3 +104,95 @@ EOF
   run bash "$SCRIPT" legacy-refs-scan "$FIXTURE"
   [ "$status" -eq 0 ]
 }
+
+# ============================================================================
+# BTS-132 — --respect-allowlist flag
+# ============================================================================
+
+@test "BTS-132 AC-1: default behavior (no flag) returns full raw match list" {
+  # Regression guard — existing callers see no change.
+  mkdir -p "$FIXTURE/docs/specs"
+  echo "See /catchup details." > "$FIXTURE/docs/specs/legacy.md"
+  echo "Also /checkpoint here." > "$FIXTURE/README.md"
+  run bash "$SCRIPT" legacy-refs-scan "$FIXTURE"
+  [ "$status" -eq 1 ]
+  [ "$(echo "$output" | jq 'length')" -eq 2 ]
+}
+
+@test "BTS-132 AC-2: --respect-allowlist filters matches whose file:line:content matches an allowlist pattern" {
+  set -e
+  mkdir -p "$FIXTURE/docs/specs"
+  echo "See /catchup details." > "$FIXTURE/docs/specs/legacy.md"
+  echo "Also /checkpoint here." > "$FIXTURE/README.md"
+  # Allowlist excludes docs/specs/ so only README.md match survives.
+  local allowlist="$FIXTURE/allowlist.txt"
+  cat > "$allowlist" <<'EOF'
+# Historical specs
+^docs/specs/
+EOF
+  run bash "$SCRIPT" legacy-refs-scan --respect-allowlist "$allowlist" "$FIXTURE"
+  [ "$status" -eq 1 ]
+  [ "$(echo "$output" | jq 'length')" -eq 1 ]
+  echo "$output" | jq -e '.[0].file == "README.md"'
+}
+
+@test "BTS-132 AC-2 edge: allowlist covers ALL matches → exit 0, empty array" {
+  set -e
+  mkdir -p "$FIXTURE/docs/specs"
+  echo "Legacy /catchup in spec." > "$FIXTURE/docs/specs/old.md"
+  local allowlist="$FIXTURE/allowlist.txt"
+  echo '^docs/specs/' > "$allowlist"
+  run bash "$SCRIPT" legacy-refs-scan --respect-allowlist "$allowlist" "$FIXTURE"
+  [ "$status" -eq 0 ]
+  [ "$(echo "$output" | jq 'length')" -eq 0 ]
+}
+
+@test "BTS-132 AC-3: --respect-allowlist with missing file exits 2 with ERROR" {
+  mkdir -p "$FIXTURE/docs"
+  echo "/catchup" > "$FIXTURE/docs/readme.md"
+  run bash "$SCRIPT" legacy-refs-scan --respect-allowlist /nonexistent.txt "$FIXTURE"
+  [ "$status" -eq 2 ]
+  [[ "$output" =~ "ERROR" ]] || [[ "$stderr" =~ "ERROR" ]] || [[ "${output}${stderr:-}" =~ "allowlist" ]]
+}
+
+@test "BTS-132 AC-4: allowlist comments and blank lines are skipped" {
+  set -e
+  mkdir -p "$FIXTURE"
+  echo "/checkpoint here" > "$FIXTURE/a.md"
+  local allowlist="$FIXTURE/allowlist.txt"
+  cat > "$allowlist" <<'EOF'
+# This is a comment and should be skipped.
+
+# Another comment
+^a\.md:
+EOF
+  run bash "$SCRIPT" legacy-refs-scan --respect-allowlist "$allowlist" "$FIXTURE"
+  [ "$status" -eq 0 ]
+  [ "$(echo "$output" | jq 'length')" -eq 0 ]
+}
+
+@test "BTS-132 AC-5: exit 0 when post-filter matches are zero, 1 when remain" {
+  set -e
+  mkdir -p "$FIXTURE/docs" "$FIXTURE/src"
+  echo "/catchup 1" > "$FIXTURE/docs/a.md"
+  echo "/catchup 2" > "$FIXTURE/src/b.sh"
+  local allowlist="$FIXTURE/allowlist.txt"
+  # Only covers docs/ — src/ match survives.
+  echo '^docs/' > "$allowlist"
+  run bash "$SCRIPT" legacy-refs-scan --respect-allowlist "$allowlist" "$FIXTURE"
+  [ "$status" -eq 1 ]
+  [ "$(echo "$output" | jq 'length')" -eq 1 ]
+  echo "$output" | jq -e '.[0].file == "src/b.sh"'
+}
+
+@test "BTS-132 AC-6: output schema (file, line, match, scope) preserved after filtering" {
+  set -e
+  mkdir -p "$FIXTURE/src" "$FIXTURE/docs"
+  echo "/catchup foo" > "$FIXTURE/src/helper.sh"
+  echo "/catchup doc" > "$FIXTURE/docs/spec.md"
+  local allowlist="$FIXTURE/allowlist.txt"
+  echo '^docs/' > "$allowlist"
+  run bash "$SCRIPT" legacy-refs-scan --respect-allowlist "$allowlist" "$FIXTURE"
+  [ "$status" -eq 1 ]
+  echo "$output" | jq -e '.[0] | has("file") and has("line") and has("match") and has("scope")'
+}

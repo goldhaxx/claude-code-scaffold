@@ -3,7 +3,7 @@
 > Feature: bts-132-legacy-refs-allowlist-flag
 > Work: linear:BTS-132
 > Created: 1777065516
-> Status: Draft
+> Status: Complete
 
 ## Summary
 

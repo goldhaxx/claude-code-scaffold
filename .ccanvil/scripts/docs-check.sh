@@ -2154,6 +2154,24 @@ cmd_idea_setup() {
 # Exit: 0 if empty; 1 if any matches found.
 # ---------------------------------------------------------------------------
 cmd_legacy_refs_scan() {
+  # BTS-132: optional --respect-allowlist <path> pre-filters raw matches
+  # against a user-supplied allowlist (same ERE format as
+  # hub/tests/legacy-refs-allowlist.txt). Default (no flag) returns every
+  # raw match — preserves existing behavior for backward compat.
+  local allowlist=""
+  if [[ "${1:-}" == "--respect-allowlist" ]]; then
+    allowlist="${2:-}"
+    if [[ -z "$allowlist" ]]; then
+      echo "ERROR: --respect-allowlist requires a path argument" >&2
+      return 2
+    fi
+    if [[ ! -f "$allowlist" ]]; then
+      echo "ERROR: allowlist file not found: $allowlist" >&2
+      return 2
+    fi
+    shift 2
+  fi
+
   local project_dir="${1:-.}"
 
   local pattern='/catchup|/checkpoint|docs/checkpoint\.md|checkpoint\.(read|write)|stale-checkpoint'
@@ -2172,6 +2190,24 @@ cmd_legacy_refs_scan() {
   if [[ -z "$raw_matches" ]]; then
     echo "[]"
     return 0
+  fi
+
+  # BTS-132: when --respect-allowlist was passed, filter raw_matches against
+  # the allowlist. Skip comment lines (^#) and blank lines; apply remaining
+  # ERE patterns via grep -vEf. Normalize leading './' on file paths first
+  # since allowlist entries are repo-relative (e.g., `^hub/research/`).
+  if [[ -n "$allowlist" ]]; then
+    local allowlist_tmp
+    allowlist_tmp=$(mktemp)
+    trap 'rm -f "$allowlist_tmp"' RETURN
+    grep -vE '^[[:space:]]*(#|$)' "$allowlist" > "$allowlist_tmp" || true
+    if [[ -s "$allowlist_tmp" ]]; then
+      raw_matches=$(echo "$raw_matches" | sed 's|^\./||' | grep -vEf "$allowlist_tmp" || true)
+    fi
+    if [[ -z "$raw_matches" ]]; then
+      echo "[]"
+      return 0
+    fi
   fi
 
   # Per-file marker line lookup. macOS ships bash 3.2 (no associative arrays),
