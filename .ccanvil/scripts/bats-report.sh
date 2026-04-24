@@ -14,8 +14,9 @@
 #   --json      Emit `{ok, not_ok, total, tail, raw_exit}` to stdout.
 #   --help      Show this help and exit 0.
 #
-# Default target: `hub/tests/`. Pass explicit paths (file or dir) to override.
-# Pass bats-native args (e.g. `-f 'filter'`) alongside; they're forwarded.
+# Default target: `hub/tests/` (relative to CWD — run from the repo root).
+# Pass explicit paths (file or dir) to override. Pass bats-native args
+# (e.g. `-f 'filter'`) alongside; they're forwarded.
 #
 # Exit code mirrors bats's exit (0 on pass, non-zero on any failure).
 
@@ -81,7 +82,7 @@ if (( parallel_mode )); then
     echo "  Falling back to serial execution." >&2
   fi
 fi
-bats_cmd+=("${passthrough[@]}")
+bats_cmd+=("${passthrough[@]+"${passthrough[@]}"}")
 
 # Run bats ONCE, capture to tempfile.
 tmp=$(mktemp)

@@ -101,8 +101,10 @@ seed_bats() {
 
 @test "BTS-118: --parallel adds --jobs when GNU parallel is available" {
   set -e
-  # We only run this test if parallel is installed. Otherwise it's covered by
-  # the WARN fallback test below.
+  # Isolation under --jobs is validated empirically (3× consecutive runs at
+  # 902/902 green, timings recorded in the PR body) — AC-7 doesn't have a
+  # unit test because bats's $BATS_TEST_TMPDIR isolation is enforced by the
+  # bats runtime, not by bats-report.sh.
   command -v parallel >/dev/null 2>&1 || skip "GNU parallel not installed"
   seed_bats "$WORK/pass.bats" \
     'TESTZ "one" { [ 1 -eq 1 ]; }' \

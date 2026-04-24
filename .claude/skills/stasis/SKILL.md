@@ -64,7 +64,7 @@ What was completed this session. Use git log + file changes as the factual spine
 
 ### ## Current State
 - **Branch:** current branch
-- **Tests:** result of the project's test suite
+- **Tests:** result of `bash .ccanvil/scripts/bats-report.sh --parallel` (single invocation — BTS-118)
 - **Uncommitted changes:** summary from `git diff --stat`
 - **Build status:** clean / errors (state any failing steps)
 

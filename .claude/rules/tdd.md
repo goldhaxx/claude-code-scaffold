@@ -78,7 +78,7 @@ bash .ccanvil/scripts/bats-report.sh --json <path>        # structured output fo
 bash .ccanvil/scripts/bats-report.sh -f 'some filter'     # bats args pass through
 ```
 
-Parallelism (`--parallel`) uses `bats --jobs N` where N = max(2, cpu/2). Requires `brew install parallel` on macOS; falls back to serial with a WARN: if missing. See `.ccanvil/guide/command-reference.md` for full flag list.
+Parallelism (`--parallel`) uses `bats --jobs N` where N = max(2, cpu/2). Requires GNU parallel: `brew install parallel` on macOS, `apt install parallel` on Debian/Ubuntu, `dnf install parallel` on Fedora. Falls back to serial with a WARN: if missing — CI runners without parallel installed silently run serially, so check CI logs if runs feel slow. See `.ccanvil/guide/command-reference.md` for full flag list.
 
 <!-- NODE-SPECIFIC-START -->
 <!-- Add project-specific content below this line. -->

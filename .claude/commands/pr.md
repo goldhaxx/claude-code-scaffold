@@ -5,7 +5,7 @@ This command ensures the branch is ready for merge: tests pass, docs are validat
 ## Pre-flight checks
 
 1. Verify you are NOT on the default branch (main/master). If so, STOP with: "Cannot finalize from the default branch. Activate a spec first to create a feature branch."
-2. Run the project's test suite. If tests fail, STOP — show failures and do not proceed.
+2. Run the project's test suite via `bash .ccanvil/scripts/bats-report.sh --parallel` (BTS-118 — single invocation, emits tail + `PASS/FAIL/TOTAL`). Never chain `bats | tail`, `bats | grep ok`, `bats | grep not ok` — that's 3× the wall-time. If tests fail (exit non-zero), STOP — show failures and do not proceed.
 3. Run `.ccanvil/scripts/docs-check.sh validate` (if it exists). If result is not `aligned` and not `no-active-spec`, STOP — show the validation result. Then run `bash .ccanvil/scripts/docs-check.sh pr-guard` (BTS-122). If pr-guard exits non-zero, STOP and surface the error — the feature branch is behind `origin/main` and should be rebased or merged before finalizing. Fetch failures (offline) emit `WARN:` on stderr and pass — never block finalization on a network flake.
 
 ## Optional: Code review gate
