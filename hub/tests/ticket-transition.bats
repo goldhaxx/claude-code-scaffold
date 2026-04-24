@@ -117,7 +117,7 @@ _local_config() {
 # Step 3 — Happy-path resolver on Linear provider (AC-2)
 # ===========================================================================
 
-@test "BTS-128 AC-2: resolver emits Linear save_issue payload with id + stateId" {
+@test "BTS-128 AC-2: resolver emits Linear save_issue payload with id + state" {
   set -e
   _linear_config_with_state_ids
   run bash "$OPS" resolve ticket.transition BTS-1 backlog --project-dir "$PROJECT"
@@ -129,7 +129,7 @@ _local_config() {
     and .mechanism == "mcp"
     and .invocation.tool == "mcp__claude_ai_Linear__save_issue"
     and .invocation.params.id == "BTS-1"
-    and .invocation.params.stateId == "fixture-backlog-uuid"
+    and .invocation.params.state == "fixture-backlog-uuid"
   '
 }
 
@@ -141,35 +141,35 @@ _local_config() {
   _linear_config_with_state_ids
   run bash "$OPS" resolve ticket.transition BTS-1 triage --project-dir "$PROJECT"
   [ "$status" -eq 0 ]
-  echo "$output" | jq -e '.invocation.params.id == "BTS-1" and .invocation.params.stateId == "fixture-triage-uuid"'
+  echo "$output" | jq -e '.invocation.params.id == "BTS-1" and .invocation.params.state == "fixture-triage-uuid"'
 }
 
 @test "BTS-128 AC-3: role=icebox resolves to fixture-icebox-uuid" {
   _linear_config_with_state_ids
   run bash "$OPS" resolve ticket.transition BTS-1 icebox --project-dir "$PROJECT"
   [ "$status" -eq 0 ]
-  echo "$output" | jq -e '.invocation.params.id == "BTS-1" and .invocation.params.stateId == "fixture-icebox-uuid"'
+  echo "$output" | jq -e '.invocation.params.id == "BTS-1" and .invocation.params.state == "fixture-icebox-uuid"'
 }
 
 @test "BTS-128 AC-3: role=canceled resolves to fixture-canceled-uuid" {
   _linear_config_with_state_ids
   run bash "$OPS" resolve ticket.transition BTS-1 canceled --project-dir "$PROJECT"
   [ "$status" -eq 0 ]
-  echo "$output" | jq -e '.invocation.params.id == "BTS-1" and .invocation.params.stateId == "fixture-canceled-uuid"'
+  echo "$output" | jq -e '.invocation.params.id == "BTS-1" and .invocation.params.state == "fixture-canceled-uuid"'
 }
 
 @test "BTS-128 AC-3: role=duplicate resolves to fixture-duplicate-uuid" {
   _linear_config_with_state_ids
   run bash "$OPS" resolve ticket.transition BTS-1 duplicate --project-dir "$PROJECT"
   [ "$status" -eq 0 ]
-  echo "$output" | jq -e '.invocation.params.id == "BTS-1" and .invocation.params.stateId == "fixture-duplicate-uuid"'
+  echo "$output" | jq -e '.invocation.params.id == "BTS-1" and .invocation.params.state == "fixture-duplicate-uuid"'
 }
 
 @test "BTS-128 AC-3: role=done resolves to fixture-done-uuid" {
   _linear_config_with_state_ids
   run bash "$OPS" resolve ticket.transition BTS-1 done --project-dir "$PROJECT"
   [ "$status" -eq 0 ]
-  echo "$output" | jq -e '.invocation.params.id == "BTS-1" and .invocation.params.stateId == "fixture-done-uuid"'
+  echo "$output" | jq -e '.invocation.params.id == "BTS-1" and .invocation.params.state == "fixture-done-uuid"'
 }
 
 # ===========================================================================

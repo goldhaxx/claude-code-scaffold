@@ -97,14 +97,14 @@ EOF
 
 # =========================================================================
 # Step 2 — State-ID config shape + lookup helper
-# Covers AC-4 foundation: resolve emits params.stateId when config carries it.
+# Covers AC-4 foundation: resolve emits params.state when config carries it.
 # =========================================================================
 
-@test "Step 2: idea.triage resolve includes state_ids.triage as params.stateId" {
+@test "Step 2: idea.triage resolve includes state_ids.triage as params.state" {
   _linear_config_with_state_ids
   run bash "$OPS" resolve idea.triage --project-dir "$PROJECT"
   [ "$status" -eq 0 ]
-  echo "$output" | jq -e '.invocation.params.stateId == "aaaaaaaa-0000-0000-0000-000000000001"'
+  echo "$output" | jq -e '.invocation.params.state == "aaaaaaaa-0000-0000-0000-000000000001"'
 }
 
 # =========================================================================
@@ -159,30 +159,30 @@ EOF
   echo "$output" | jq -e '.invocation.command | test("idea-update.*duplicate")'
 }
 
-@test "Step 5: Linear idea.promote returns save_issue with stateId=backlog" {
+@test "Step 5: Linear idea.promote returns save_issue with state=backlog" {
   set -e
   _linear_config_with_state_ids
   run bash "$OPS" resolve idea.promote --project-dir "$PROJECT"
   [ "$status" -eq 0 ]
   echo "$output" | jq -e '.provider == "linear"'
   echo "$output" | jq -e '.invocation.tool == "mcp__claude_ai_Linear__save_issue"'
-  echo "$output" | jq -e '.invocation.params.stateId == "bbbbbbbb-0000-0000-0000-000000000002"'
+  echo "$output" | jq -e '.invocation.params.state == "bbbbbbbb-0000-0000-0000-000000000002"'
 }
 
-@test "Step 5: Linear idea.defer returns save_issue with stateId=icebox" {
+@test "Step 5: Linear idea.defer returns save_issue with state=icebox" {
   set -e
   _linear_config_with_state_ids
   run bash "$OPS" resolve idea.defer --project-dir "$PROJECT"
   [ "$status" -eq 0 ]
   echo "$output" | jq -e '.invocation.tool == "mcp__claude_ai_Linear__save_issue"'
-  echo "$output" | jq -e '.invocation.params.stateId == "cccccccc-0000-0000-0000-000000000003"'
+  echo "$output" | jq -e '.invocation.params.state == "cccccccc-0000-0000-0000-000000000003"'
 }
 
-@test "Step 5: Linear idea.dismiss returns save_issue with stateId=canceled" {
+@test "Step 5: Linear idea.dismiss returns save_issue with state=canceled" {
   _linear_config_with_state_ids
   run bash "$OPS" resolve idea.dismiss --project-dir "$PROJECT"
   [ "$status" -eq 0 ]
-  echo "$output" | jq -e '.invocation.params.stateId == "dddddddd-0000-0000-0000-000000000004"'
+  echo "$output" | jq -e '.invocation.params.state == "dddddddd-0000-0000-0000-000000000004"'
 }
 
 # =========================================================================
@@ -214,8 +214,8 @@ EOF
   # single wrapper (`ticket.transition <id> <role>`) rather than four
   # separate idea.* resolvers.
   grep -q 'ticket\.transition' "$skill"
-  # Agentic: stateId, not state names.
-  grep -qE 'params\.stateId|stateId:' "$skill"
+  # Agentic: state, not state names.
+  grep -qE 'params\.state|state:' "$skill"
   grep -q 'review-icebox' "$skill"
 }
 
@@ -350,13 +350,13 @@ EOF
   echo "$output" | jq -e '.invocation.command | test("idea-review-icebox")'
 }
 
-@test "Step 8: idea.review-icebox Linear resolver includes icebox stateId + type filter" {
+@test "Step 8: idea.review-icebox Linear resolver includes icebox state + type filter" {
   set -e
   _linear_config_with_state_ids
   run bash "$OPS" resolve idea.review-icebox --project-dir "$PROJECT"
   [ "$status" -eq 0 ]
   echo "$output" | jq -e '.invocation.tool == "mcp__claude_ai_Linear__list_issues"'
-  echo "$output" | jq -e '.invocation.params.stateId == "cccccccc-0000-0000-0000-000000000003"'
+  echo "$output" | jq -e '.invocation.params.state == "cccccccc-0000-0000-0000-000000000003"'
 }
 
 # =========================================================================
@@ -428,7 +428,7 @@ EOF
   echo "$output" | grep -q 'ERROR'
 }
 
-@test "Step 5: Linear idea.merge returns save_issue with stateId=duplicate (no duplicateOf in resolver)" {
+@test "Step 5: Linear idea.merge returns save_issue with state=duplicate (no duplicateOf in resolver)" {
   set -e
   # OP_ARGS is the source uid (uniform with promote/defer/dismiss); the
   # skill pairs duplicateOf in at dispatch time from user input. The
@@ -436,36 +436,36 @@ EOF
   _linear_config_with_state_ids
   run bash "$OPS" resolve idea.merge src-uid --project-dir "$PROJECT"
   [ "$status" -eq 0 ]
-  echo "$output" | jq -e '.invocation.params.stateId == "eeeeeeee-0000-0000-0000-000000000005"'
+  echo "$output" | jq -e '.invocation.params.state == "eeeeeeee-0000-0000-0000-000000000005"'
   echo "$output" | jq -e '.invocation.params | has("duplicateOf") | not'
 }
 
-@test "Step 5: Linear idea.promote omits stateId when state_ids absent" {
+@test "Step 5: Linear idea.promote omits state when state_ids absent" {
   _linear_config_no_state_ids
   run bash "$OPS" resolve idea.promote --project-dir "$PROJECT"
   [ "$status" -eq 0 ]
-  echo "$output" | jq -e '.invocation.params | has("stateId") | not'
+  echo "$output" | jq -e '.invocation.params | has("state") | not'
 }
 
-@test "Step 5: Linear idea.defer omits stateId when state_ids absent" {
+@test "Step 5: Linear idea.defer omits state when state_ids absent" {
   _linear_config_no_state_ids
   run bash "$OPS" resolve idea.defer --project-dir "$PROJECT"
   [ "$status" -eq 0 ]
-  echo "$output" | jq -e '.invocation.params | has("stateId") | not'
+  echo "$output" | jq -e '.invocation.params | has("state") | not'
 }
 
-@test "Step 5: Linear idea.dismiss omits stateId when state_ids absent" {
+@test "Step 5: Linear idea.dismiss omits state when state_ids absent" {
   _linear_config_no_state_ids
   run bash "$OPS" resolve idea.dismiss --project-dir "$PROJECT"
   [ "$status" -eq 0 ]
-  echo "$output" | jq -e '.invocation.params | has("stateId") | not'
+  echo "$output" | jq -e '.invocation.params | has("state") | not'
 }
 
-@test "Step 5: Linear idea.merge omits stateId when state_ids absent" {
+@test "Step 5: Linear idea.merge omits state when state_ids absent" {
   _linear_config_no_state_ids
   run bash "$OPS" resolve idea.merge src-uid --project-dir "$PROJECT"
   [ "$status" -eq 0 ]
-  echo "$output" | jq -e '.invocation.params | has("stateId") | not'
+  echo "$output" | jq -e '.invocation.params | has("state") | not'
 }
 
 @test "Step 5: local idea.merge resolves to idea-update <source-uid> duplicate" {
@@ -492,21 +492,21 @@ EOF
 }
 
 # =========================================================================
-# BTS-121 — idea.add routes Linear captures to Triage via stateId.
+# BTS-121 — idea.add routes Linear captures to Triage via state.
 # Empirically falsified the prior "Linear auto-routes API-created issues to
 # Triage" assumption; team default (Backlog) wins when no state is passed.
-# Resolver now injects stateId from state_ids.triage using the same
+# Resolver now injects state from state_ids.triage using the same
 # conditional-merge pattern as idea.{promote,defer,dismiss,merge}.
 # =========================================================================
 
-@test "BTS-121 AC-1: idea.add emits stateId when state_ids.triage is configured" {
+@test "BTS-121 AC-1: idea.add emits state when state_ids.triage is configured" {
   _linear_config_with_state_ids
   run bash "$OPS" resolve idea.add --project-dir "$PROJECT"
   [ "$status" -eq 0 ]
-  echo "$output" | jq -e '.invocation.params.stateId == "aaaaaaaa-0000-0000-0000-000000000001"'
+  echo "$output" | jq -e '.invocation.params.state == "aaaaaaaa-0000-0000-0000-000000000001"'
 }
 
-@test "BTS-121 AC-2: idea.add stateId is additive — project/team/labels still present" {
+@test "BTS-121 AC-2: idea.add state is additive — project/team/labels still present" {
   set -e
   _linear_config_with_state_ids
   run bash "$OPS" resolve idea.add --project-dir "$PROJECT"
@@ -514,21 +514,21 @@ EOF
   echo "$output" | jq -e '.invocation.params.project == "Test Project"'
   echo "$output" | jq -e '.invocation.params.team == "Test Team"'
   echo "$output" | jq -e '.invocation.params.labels == ["idea"]'
-  echo "$output" | jq -e '.invocation.params | has("stateId")'
+  echo "$output" | jq -e '.invocation.params | has("state")'
 }
 
-@test "BTS-121 AC-3: idea.add omits stateId when state_ids absent" {
+@test "BTS-121 AC-3: idea.add omits state when state_ids absent" {
   set -e
   _linear_config_no_state_ids
   run bash "$OPS" resolve idea.add --project-dir "$PROJECT"
   [ "$status" -eq 0 ]
-  echo "$output" | jq -e '.invocation.params | has("stateId") | not'
+  echo "$output" | jq -e '.invocation.params | has("state") | not'
   # Existing contract still holds — project/team/labels present.
   echo "$output" | jq -e '.invocation.params.project == "Test Project"'
   echo "$output" | jq -e '.invocation.params.labels == ["idea"]'
 }
 
-@test "BTS-121 AC-5: idea.add omits stateId when state_ids.triage is empty string" {
+@test "BTS-121 AC-5: idea.add omits state when state_ids.triage is empty string" {
   mkdir -p "$PROJECT/.claude"
   cat > "$PROJECT/.claude/ccanvil.json" <<'JSON'
 {
@@ -553,36 +553,41 @@ JSON
   run bash "$OPS" resolve idea.add --project-dir "$PROJECT"
   [ "$status" -eq 0 ]
   # Empty string must be treated as unconfigured to avoid Linear API errors
-  # or silent no-ops from passing stateId:"".
-  echo "$output" | jq -e '.invocation.params | has("stateId") | not'
+  # or silent no-ops from passing state:"".
+  echo "$output" | jq -e '.invocation.params | has("state") | not'
 }
 
 # =========================================================================
-# Step 3 — Capture routes to Linear-native Triage via explicit stateId.
-# Covers AC-1 (Linear half): idea.add passes stateId=triage when configured,
+# Step 3 — Capture routes to Linear-native Triage via explicit state.
+# Covers AC-1 (Linear half): idea.add passes state=<UUID> when configured,
 # superseded by the BTS-121 block above but retained to assert contract
-# invariants (no legacy `state` name key; project/team/labels still present).
+# invariants: no legacy `stateId` key (BTS-139 rename guard), project/team/
+# labels still present.
 # =========================================================================
 
-@test "Step 3: idea.add Linear resolver does NOT pass .invocation.params.state" {
+@test "Step 3: idea.add Linear resolver does NOT pass legacy stateId key (BTS-139 regression guard)" {
   set -e
   _linear_config_with_state_ids
   run bash "$OPS" resolve idea.add --project-dir "$PROJECT"
   [ "$status" -eq 0 ]
-  # state (name) must be absent — name-based dispatch is forbidden
-  # (Linear state-name/type collision documented in /idea skill Rules).
-  echo "$output" | jq -e '.invocation.params | has("state") | not'
+  # Post-BTS-139: the legacy `stateId` key must never appear. Linear MCP
+  # silently ignores it, causing captures to fall through to the team's
+  # default state (Backlog). Use `state` (UUID) only.
+  echo "$output" | jq -e '.invocation.params | has("stateId") | not'
   # Project + team + labels still present.
   echo "$output" | jq -e '.invocation.params.project == "Test Project"'
   echo "$output" | jq -e '.invocation.params.labels == ["idea"]'
 }
 
-@test "Step 2: idea.triage resolve stateId is null when config lacks state_ids" {
+@test "Step 2: idea.triage resolve has no legacy stateId key when config lacks state_ids" {
   _linear_config_no_state_ids
   run bash "$OPS" resolve idea.triage --project-dir "$PROJECT"
   [ "$status" -eq 0 ]
-  # Either absent or null — both are acceptable "no configured ID" signals.
-  echo "$output" | jq -e '(.invocation.params.stateId // null) == null'
+  # Post-BTS-139: the stateId key must never appear. idea.triage may fall
+  # back to a name-based `state: "Idea"` filter for list_issues when
+  # state_ids is absent (legitimate — list_issues' state param accepts
+  # "type, name, or ID"). What we must never emit is the legacy stateId.
+  echo "$output" | jq -e '.invocation.params | has("stateId") | not'
 }
 
 @test "Step 1: cmd_idea_count sums legacy + new vocab into new-named counters" {

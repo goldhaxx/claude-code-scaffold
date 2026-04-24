@@ -5,7 +5,7 @@ description: Capture, list, triage, review-icebox, or sync project ideas via the
 
 Capture, list, triage, review-icebox, or sync project ideas. The skill resolves each operation through `.ccanvil/scripts/operations.sh`, which picks a provider based on `.claude/ccanvil.json` + `.claude/ccanvil.local.json`:
 
-- **Linear provider** — projects whose `ccanvil.local.json` sets `integrations.routing.idea = "linear"` capture directly into Linear's Triage state via MCP. The resolver injects `stateId` from `state_ids.triage` when configured, routing captures into the Triage inbox deterministically. All mutations (promote, defer, dismiss, merge) transition issues by **state ID** — never by name — so no Linear UI interaction is ever required.
+- **Linear provider** — projects whose `ccanvil.local.json` sets `integrations.routing.idea = "linear"` capture directly into Linear's Triage state via MCP. The resolver injects `state` from `state_ids.triage` when configured, routing captures into the Triage inbox deterministically. All mutations (promote, defer, dismiss, merge) transition issues by **state ID** — never by name — so no Linear UI interaction is ever required.
 - **Local provider** (default) — everything else writes to `.ccanvil/ideas.log` (JSONL, gitignored, never committed). Same five-state vocabulary: triage / backlog / icebox / canceled / duplicate.
 
 Either way, `/idea` never touches git. No commits. No branch creation. Capture works from any branch, including main.
@@ -45,7 +45,7 @@ bash .ccanvil/scripts/operations.sh resolve idea.add --project-dir .
 
 ### Step 3a — Linear path (`mechanism == "mcp"`)
 
-Extract `.invocation.tool`, `.invocation.params.project`, `.invocation.params.team`, `.invocation.params.labels`, and `.invocation.params.stateId` (present when `state_ids.triage` is configured) from the resolution. Pass `stateId` through to `save_issue` when present — this routes the capture into Linear's Triage state deterministically. When unconfigured, omit `stateId` entirely; Linear will fall through to the team's default state (usually Backlog, **not** Triage — the earlier "auto-routes API-created issues to Triage" assumption was falsified empirically).
+Extract `.invocation.tool`, `.invocation.params.project`, `.invocation.params.team`, `.invocation.params.labels`, and `.invocation.params.state` (present when `state_ids.triage` is configured) from the resolution. Pass `state` through to `save_issue` when present — this routes the capture into Linear's Triage state deterministically. When unconfigured, omit `state` entirely; Linear will fall through to the team's default state (usually Backlog, **not** Triage — the earlier "auto-routes API-created issues to Triage" assumption was falsified empirically).
 
 Call the MCP tool directly:
 
@@ -54,7 +54,7 @@ mcp__claude_ai_Linear__save_issue
   team:        <params.team>
   project:     <params.project>
   labels:      <params.labels>      # typically ["idea"]
-  stateId:     <params.stateId>     # only when present in resolver output
+  state:     <params.state>     # only when present in resolver output
   title:       <generated title>
   description: <original raw text, verbatim>
 ```
@@ -99,7 +99,7 @@ Batched review of items in Triage state. **Fully agentic** — every outcome is 
 
 1. **Resolve:** `bash .ccanvil/scripts/operations.sh resolve idea.triage --project-dir .`
 2. **List Triage items:**
-   - mcp: call `mcp__claude_ai_Linear__list_issues` with `.invocation.params` (includes `stateId` when configured — disambiguation-proof).
+   - mcp: call `mcp__claude_ai_Linear__list_issues` with `.invocation.params` (includes `state` when configured — disambiguation-proof).
    - bash: run `docs-check.sh idea-list --status triage`.
 3. **Load context:** read `docs/roadmap.md` (if present); run `bash .ccanvil/scripts/operations.sh exec backlog.list` for existing backlog.
 4. **Present a table of recommendations.** One row per item. Ask for approval.
@@ -107,12 +107,12 @@ Batched review of items in Triage state. **Fully agentic** — every outcome is 
 
 | Outcome | `operations.sh resolve` | Linear dispatch (`save_issue`) | Local dispatch |
 |---------|-------------------------|--------------------------------|----------------|
-| **promote** | `ticket.transition <id> backlog` → params.{id, stateId} | `{...params, priority: <1-4>}` | `idea-update <uid> backlog` |
-| **defer**   | `ticket.transition <id> icebox`  → params.{id, stateId} | `{...params}`                  | `idea-update <uid> icebox` |
-| **dismiss** | `ticket.transition <id> canceled` → params.{id, stateId} | `{...params}`                 | `idea-update <uid> canceled` |
-| **merge**   | `ticket.transition <id> duplicate` → params.{id, stateId} | `{...params, duplicateOf: <target>}` | `idea-update <uid> duplicate` |
+| **promote** | `ticket.transition <id> backlog` → params.{id, state} | `{...params, priority: <1-4>}` | `idea-update <uid> backlog` |
+| **defer**   | `ticket.transition <id> icebox`  → params.{id, state} | `{...params}`                  | `idea-update <uid> icebox` |
+| **dismiss** | `ticket.transition <id> canceled` → params.{id, state} | `{...params}`                 | `idea-update <uid> canceled` |
+| **merge**   | `ticket.transition <id> duplicate` → params.{id, state} | `{...params, duplicateOf: <target>}` | `idea-update <uid> duplicate` |
 
-The `ticket.transition` wrapper (BTS-128) returns both `id` and `stateId` pre-populated, collapsing the previous "resolve stateId → manually stitch id → dispatch" pattern into a single resolver call. Always pass `stateId` from the resolver — never pass `state: "<name>"`. State names collide with type names in Linear's workflow resolver and silently become no-ops.
+The `ticket.transition` wrapper (BTS-128) returns both `id` and `state` pre-populated, collapsing the previous "resolve state → manually stitch id → dispatch" pattern into a single resolver call. Always pass `state` from the resolver — never pass `state: "<name>"`. State names collide with type names in Linear's workflow resolver and silently become no-ops.
 
 **On MCP failure for any outcome**, append to pending log:
 
@@ -129,7 +129,7 @@ Re-evaluate Icebox items older than 60d. Prevents graveyard drift.
 
 1. Resolve: `bash .ccanvil/scripts/operations.sh resolve idea.review-icebox --project-dir .`
 2. Pull stale items:
-   - mcp: `mcp__claude_ai_Linear__list_issues` with `params.stateId` (icebox); filter locally by `createdAt <= now - 60d`.
+   - mcp: `mcp__claude_ai_Linear__list_issues` with `params.state` (icebox); filter locally by `createdAt <= now - 60d`.
    - bash: run `docs-check.sh idea-review-icebox`.
 3. Present a table. For each, ask: **promote back to Backlog**, **keep in Icebox** (re-stamp review timestamp — future), **dismiss** (canceled), or **merge** into another issue.
 4. Dispatch outcomes using the same rubric as `/idea triage` above.
@@ -142,10 +142,10 @@ Only meaningful when the Linear provider is configured and `.ccanvil/ideas-pendi
 2. Run the returned command (always local bash: `docs-check.sh idea-sync`).
 3. For each entry, dispatch by `op`:
    - `add` → `save_issue` with title/body/labels (capture).
-   - `promote` → `save_issue` with id + stateId(backlog) + priority.
-   - `defer` / `dismiss` → `save_issue` with id + target stateId.
-   - `merge` → `save_issue` with id + stateId(duplicate) + duplicateOf.
-   - `ticket.transition` → re-resolve `ticket.transition <args.id> <args.role>` via `operations.sh`; dispatch the returned `save_issue` with `id + stateId` from `.invocation.params`. Queued by `/land` (BTS-119) when auto-close MCP fails. Idempotent — Linear's API accepts transitions to the current state without error.
+   - `promote` → `save_issue` with id + state(backlog) + priority.
+   - `defer` / `dismiss` → `save_issue` with id + target state.
+   - `merge` → `save_issue` with id + state(duplicate) + duplicateOf.
+   - `ticket.transition` → re-resolve `ticket.transition <args.id> <args.role>` via `operations.sh`; dispatch the returned `save_issue` with `id + state` from `.invocation.params`. Queued by `/land` (BTS-119) when auto-close MCP fails. Idempotent — Linear's API accepts transitions to the current state without error.
 4. On success per entry: `docs-check.sh idea-sync --ack <ts>`.
 5. Report: `SYNCED: N / PENDING: M`.
 
@@ -154,7 +154,7 @@ Only meaningful when the Linear provider is configured and `.ccanvil/ideas-pendi
 For projects that pre-date this change, items may still live in the deprecated custom "Idea" state (Linear) or legacy status values (local).
 
 - **Local log:** `bash .ccanvil/scripts/docs-check.sh idea-migrate-state .` — rewrites legacy vocab in `.ccanvil/ideas.log`, timestamped backup preserved. Idempotent.
-- **Linear workspace:** iterate issues in the deprecated custom Idea state, promote each to Backlog via `save_issue` with stateId. Then delete the custom state in Linear's workflow config (manual operator step — Linear may block deletion of states with historical refs).
+- **Linear workspace:** iterate issues in the deprecated custom Idea state, promote each to Backlog via `save_issue` with state. Then delete the custom state in Linear's workflow config (manual operator step — Linear may block deletion of states with historical refs).
 
 ## Rules
 

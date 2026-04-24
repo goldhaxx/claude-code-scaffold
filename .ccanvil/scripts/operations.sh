@@ -486,13 +486,13 @@ linear_mcp_adapter() {
     idea.add)
       tool="mcp__claude_ai_Linear__save_issue"
       output_contract='["id","title","status"]'
-      # Explicit stateId dispatch targets Triage when state_ids.triage is
+      # Explicit state dispatch targets Triage when state_ids.triage is
       # configured; falls through to team default (typically Backlog) when
       # unconfigured. The prior assumption that Linear auto-routes
       # API-created issues to Triage was falsified empirically — team
-      # default wins without an explicit stateId. Uses the same conditional
+      # default wins without an explicit state. Uses the same conditional
       # merge pattern as idea.{promote,defer,dismiss,merge}; omitting
-      # stateId keeps backward-compat with nodes that haven't migrated.
+      # state keeps backward-compat with nodes that haven't migrated.
       local triage_state_id
       triage_state_id=$(linear_state_id "$provider_config" "triage")
       jq -n --arg tool "$tool" --arg project "$project" --arg team "$team" \
@@ -503,7 +503,7 @@ linear_mcp_adapter() {
           "invocation":{
             "tool":$tool,
             "params":({"project":$project,"team":$team,"labels":[$label]} +
-                      (if $state_id != "" then {"stateId":$state_id} else {} end))
+                      (if $state_id != "" then {"state":$state_id} else {} end))
           },
           "contract":{"output":$output}
         }'
@@ -517,7 +517,7 @@ linear_mcp_adapter() {
         '{"provider":"linear","mechanism":"mcp","invocation":{"tool":$tool,"params":{"project":$project,"team":$team,"label":$label}},"contract":{"output":$output}}'
       ;;
     idea.triage)
-      # stateId takes precedence over name-based state dispatch — when
+      # state takes precedence over name-based state dispatch — when
       # configured, omit `state` to avoid the name/type collision trap
       # documented in the /idea skill's Rules section.
       tool="mcp__claude_ai_Linear__list_issues"
@@ -536,7 +536,7 @@ linear_mcp_adapter() {
             "params":(
               {"project":$project,"team":$team,"label":$label}
               + (if $state_id != ""
-                  then {"stateId":$state_id}
+                  then {"state":$state_id}
                   else {"state":$state}
                  end)
             )
@@ -551,13 +551,13 @@ linear_mcp_adapter() {
       local_adapter "$op"
       ;;
     # --- triage-outcome mutations ---
-    # Each verb emits save_issue with a target stateId (+ duplicateOf for
+    # Each verb emits save_issue with a target state (+ duplicateOf for
     # merge). The skill fills in `id` (the source item being transitioned)
     # and priority (promote only) at dispatch time.
-    # Each mutation resolver emits params.stateId only when state_ids is
+    # Each mutation resolver emits params.state only when state_ids is
     # configured; omitting it falls through to the skill's name-based
     # fallback (or surfaces the config gap as a visible error at dispatch).
-    # Passing `stateId: ""` to Linear is silently no-op / API error — always
+    # Passing `state: ""` to Linear is silently no-op / API error — always
     # gate with the conditional merge pattern.
     idea.promote)
       tool="mcp__claude_ai_Linear__save_issue"
@@ -570,7 +570,7 @@ linear_mcp_adapter() {
           "provider":"linear","mechanism":"mcp",
           "invocation":{
             "tool":$tool,
-            "params":(if $state_id != "" then {"stateId":$state_id} else {} end)
+            "params":(if $state_id != "" then {"state":$state_id} else {} end)
           },
           "contract":{"output":$output}
         }'
@@ -586,7 +586,7 @@ linear_mcp_adapter() {
           "provider":"linear","mechanism":"mcp",
           "invocation":{
             "tool":$tool,
-            "params":(if $state_id != "" then {"stateId":$state_id} else {} end)
+            "params":(if $state_id != "" then {"state":$state_id} else {} end)
           },
           "contract":{"output":$output}
         }'
@@ -602,7 +602,7 @@ linear_mcp_adapter() {
           "provider":"linear","mechanism":"mcp",
           "invocation":{
             "tool":$tool,
-            "params":(if $state_id != "" then {"stateId":$state_id} else {} end)
+            "params":(if $state_id != "" then {"state":$state_id} else {} end)
           },
           "contract":{"output":$output}
         }'
@@ -611,7 +611,7 @@ linear_mcp_adapter() {
       # OP_ARGS is the source item uid (uniform with promote/defer/dismiss).
       # The merge target (duplicateOf) is NOT resolver-known — the skill
       # pairs it in at dispatch time from user input. The resolver only
-      # tells the skill which tool + stateId to use.
+      # tells the skill which tool + state to use.
       tool="mcp__claude_ai_Linear__save_issue"
       output_contract='["id","status","duplicateOf"]'
       local dup_state_id
@@ -622,7 +622,7 @@ linear_mcp_adapter() {
           "provider":"linear","mechanism":"mcp",
           "invocation":{
             "tool":$tool,
-            "params":(if $state_id != "" then {"stateId":$state_id} else {} end)
+            "params":(if $state_id != "" then {"state":$state_id} else {} end)
           },
           "contract":{"output":$output}
         }'
@@ -641,7 +641,7 @@ linear_mcp_adapter() {
             "tool":$tool,
             "params":(
               {"project":$project,"team":$team,"label":$label}
-              + (if $state_id != "" then {"stateId":$state_id} else {} end)
+              + (if $state_id != "" then {"state":$state_id} else {} end)
             )
           },
           "contract":{"output":$output}
@@ -650,7 +650,7 @@ linear_mcp_adapter() {
     ticket.transition)
       # Provider-neutral ticket state transition. OP_ARGS = ticket id,
       # OP_ARG2 = role (triage|backlog|icebox|canceled|duplicate|done).
-      # Emits a save_issue payload with id + stateId pre-populated so the
+      # Emits a save_issue payload with id + state pre-populated so the
       # caller dispatches a single MCP call with no manual UUID paste.
       tool="mcp__claude_ai_Linear__save_issue"
       output_contract='["id","status"]'
@@ -666,7 +666,7 @@ linear_mcp_adapter() {
       fi
       # Validate role against the fixed vocabulary BEFORE config lookup —
       # fail loud here so an unknown role never silently degrades to an
-      # empty stateId that MCP would reject with an opaque 400.
+      # empty state that MCP would reject with an opaque 400.
       case "$OP_ARG2" in
         triage|backlog|icebox|canceled|duplicate|done) ;;
         *)
@@ -678,7 +678,7 @@ linear_mcp_adapter() {
       t_state_id=$(linear_state_id "$provider_config" "$OP_ARG2")
       if [[ -z "$t_state_id" ]]; then
         # Fail loud on missing config rather than silently emitting an
-        # empty stateId — the wrapper's contract is UUID-or-error.
+        # empty state — the wrapper's contract is UUID-or-error.
         echo "ERROR: role '$OP_ARG2' is not configured in integrations.providers.linear.state_ids — add it to .claude/ccanvil.json or .claude/ccanvil.local.json" >&2
         exit 1
       fi
@@ -688,7 +688,7 @@ linear_mcp_adapter() {
           "provider":"linear","mechanism":"mcp",
           "invocation":{
             "tool":$tool,
-            "params":{"id":$id,"stateId":$state_id}
+            "params":{"id":$id,"state":$state_id}
           },
           "contract":{"output":$output}
         }'

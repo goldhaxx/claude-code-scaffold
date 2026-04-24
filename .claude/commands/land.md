@@ -12,8 +12,8 @@ Return the working tree to main after a PR merge, then auto-close the linked Lin
    ```bash
    bash .ccanvil/scripts/operations.sh resolve ticket.transition <id> <role> --project-dir .
    ```
-   The resolver returns `.invocation.tool` (`mcp__claude_ai_Linear__save_issue`) and `.invocation.params` (`{id, stateId}`).
-6. Dispatch the MCP call with the resolved params. The tool is `mcp__claude_ai_Linear__save_issue`; pass `id` and `stateId` from `.invocation.params`.
+   The resolver returns `.invocation.tool` (`mcp__claude_ai_Linear__save_issue`) and `.invocation.params` (`{id, state}`).
+6. Dispatch the MCP call with the resolved params. The tool is `mcp__claude_ai_Linear__save_issue`; pass `id` and `state` from `.invocation.params`.
 7. **On MCP success:** echo `Auto-closed <id> → Done`. Done.
 8. **On MCP failure** (network/auth/server error): append one JSONL line to `.ccanvil/ideas-pending.log`:
    ```bash

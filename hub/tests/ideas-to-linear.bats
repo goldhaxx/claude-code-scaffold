@@ -127,10 +127,10 @@ JSON
   # state (name) forbidden — name-based dispatch collides with state types
   # in Linear's workflow resolver. (Superseded by idea-triage-native AC-1.)
   echo "$output" | jq -e '.invocation.params | has("state") | not'
-  # This fixture lacks state_ids, so stateId is also absent here.
+  # This fixture lacks state_ids, so state is also absent here.
   # The BTS-121 block in idea-triage-native.bats asserts the positive path
-  # (state_ids configured → stateId present) and the empty-string guard.
-  echo "$output" | jq -e '.invocation.params | has("stateId") | not'
+  # (state_ids configured → state present) and the empty-string guard.
+  echo "$output" | jq -e '.invocation.params | has("state") | not'
   echo "$output" | jq -e '.invocation.params.labels[0] == "idea"'
 }
 
@@ -408,9 +408,14 @@ EOF
   echo "$output" | jq -e '.invocation.tool == "mcp__claude_ai_Linear__save_issue"'
   echo "$output" | jq -e '.invocation.params.project == "ccanvil"'
   echo "$output" | jq -e '.invocation.params.team == "Blocktech Solutions"'
-  # state omitted — Linear auto-routes API-created issues to native Triage.
-  # (Superseded by idea-triage-native AC-1.)
-  echo "$output" | jq -e '.invocation.params | has("state") | not'
+  # Post-BTS-121 + BTS-139: state is PRESENT (the Triage UUID from
+  # state_ids.triage in ccanvil.local.json). Earlier assumption that
+  # Linear auto-routes unspecified-state captures to Triage was falsified
+  # empirically (BTS-121). The BTS-139 rename ensures we emit `state`
+  # (matching Linear MCP's schema), not the legacy `stateId` (which
+  # silently no-ops).
+  echo "$output" | jq -e '.invocation.params | has("state")'
+  echo "$output" | jq -e '.invocation.params | has("stateId") | not'
   echo "$output" | jq -e '.invocation.params.labels[0] == "idea"'
 }
 
