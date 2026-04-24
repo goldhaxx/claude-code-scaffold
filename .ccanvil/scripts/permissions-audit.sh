@@ -32,7 +32,7 @@ TEXT_MODE=false
 VERBOSE=false
 
 usage() {
-  echo "Usage: permissions-audit.sh <check|init> [--settings-dir DIR] [--log FILE] [--text] [--verbose]" >&2
+  echo "Usage: permissions-audit.sh <check|init> [--settings-dir DIR] [--log FILE] [--text|--json] [--verbose]" >&2
   exit 2
 }
 
@@ -46,6 +46,8 @@ while [[ $# -gt 0 ]]; do
       LOG_FILE="$2"; shift 2 ;;
     --text)
       TEXT_MODE=true; shift ;;
+    --json)
+      TEXT_MODE=false; shift ;;
     --verbose)
       VERBOSE=true; shift ;;
     -h|--help)
@@ -54,6 +56,18 @@ while [[ $# -gt 0 ]]; do
       echo "Unknown option: $1" >&2; usage ;;
   esac
 done
+
+# Emit a JSON error envelope on stdout (when not in --text mode), then exit.
+# Always echoes the human-readable message to stderr too.
+emit_error_envelope() {
+  local msg="$1"
+  local code="$2"
+  echo "ERROR: $msg" >&2
+  if [[ "$TEXT_MODE" != "true" ]]; then
+    jq -n --arg e "$msg" --argjson c "$code" '{error: $e, exit: $c}'
+  fi
+  exit "$code"
+}
 
 [[ -z "$CMD" ]] && usage
 
@@ -152,8 +166,7 @@ cmd_check() {
 
   # settings.json must exist
   if [[ ! -f "$settings_file" ]]; then
-    echo "ERROR: $settings_file not found" >&2
-    exit 2
+    emit_error_envelope "$settings_file not found" 2
   fi
 
   # Parse both files
@@ -176,8 +189,7 @@ cmd_check() {
     log_missing=true
     echo "NOTE: $LOG_FILE not found — run permissions-audit.sh init" >&2
   elif ! jq empty "$LOG_FILE" 2>/dev/null; then
-    echo "ERROR: $LOG_FILE is not valid JSON" >&2
-    exit 2
+    emit_error_envelope "$LOG_FILE is not valid JSON" 2
   else
     log_data=$(jq '.entries // {}' "$LOG_FILE")
   fi
