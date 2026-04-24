@@ -131,3 +131,50 @@ seed_bats() {
   run bash "$LINT" "$WORK"
   [ "$status" -eq 0 ]
 }
+
+@test "BTS-127: lint ignores jq -e inside heredoc bodies (fixture-generator tests)" {
+  set -e
+  # Simulates a test that *writes a file containing jq -e* via heredoc.
+  # The jq -e lines inside the heredoc are data, not assertions — must not
+  # count toward the leak threshold.
+  seed_bats "$WORK/fixture_gen.bats" \
+    'TESTZ "writes fixture with jq -e inside" {' \
+    '  cat > "$WORK/inner.bats" <<BATS' \
+    '@test "inner" {' \
+    "  echo '{\"a\":1}' | jq -e '.a == 1'" \
+    "  echo '{\"a\":1}' | jq -e '.a == 1'" \
+    '}' \
+    'BATS' \
+    '  run bash foo' \
+    '}'
+  run bash "$LINT" "$WORK"
+  [ "$status" -eq 0 ]
+}
+
+@test "BTS-127: lint ignores heredoc with quoted delimiter" {
+  set -e
+  seed_bats "$WORK/quoted_heredoc.bats" \
+    "TESTZ \"quoted heredoc\" {" \
+    "  cat > out <<'END'" \
+    "echo '{}' | jq -e '.a'" \
+    "echo '{}' | jq -e '.b'" \
+    "echo '{}' | jq -e '.c'" \
+    'END' \
+    '}'
+  run bash "$LINT" "$WORK"
+  [ "$status" -eq 0 ]
+}
+
+@test "BTS-127: lint does not count 'run jq -e' toward leak threshold" {
+  set -e
+  # run captures exit status into $status — jq -e invoked via run cannot leak.
+  seed_bats "$WORK/run_jq.bats" \
+    'TESTZ "run jq -e" {' \
+    "  run jq -e '.a == 1' <<<'{\"a\":1}'" \
+    '  [ "$status" -eq 0 ]' \
+    "  run jq -e '.b == 2' <<<'{\"b\":2}'" \
+    '  [ "$status" -eq 0 ]' \
+    '}'
+  run bash "$LINT" "$WORK"
+  [ "$status" -eq 0 ]
+}

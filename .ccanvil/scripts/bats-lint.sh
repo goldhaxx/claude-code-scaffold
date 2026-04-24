@@ -36,10 +36,22 @@ violations=0
 lint_file() {
   local file="$1"
   local in_block=0 depth=0 jq_count=0 set_e_seen=0 block_line=0
-  local line_no=0 line opens closes
+  local in_heredoc=0 heredoc_delim=""
+  local line_no=0 line opens closes trimmed
 
   while IFS= read -r line || [[ -n "$line" ]]; do
     line_no=$((line_no + 1))
+
+    # Heredoc body: skip all per-line analysis until the end delimiter.
+    # The delimiter line is either exactly $heredoc_delim, or (for `<<-`) any
+    # amount of leading tabs followed by the delimiter.
+    if (( in_heredoc )); then
+      trimmed="${line#"${line%%[! 	]*}"}"
+      if [[ "$trimmed" == "$heredoc_delim" ]]; then
+        in_heredoc=0
+      fi
+      continue
+    fi
 
     if (( in_block == 0 )); then
       if [[ "$line" =~ ^@test.*\{ ]]; then
@@ -57,7 +69,18 @@ lint_file() {
       continue
     fi
 
-    if [[ "$line" =~ jq[[:space:]]+-e ]]; then
+    # Detect a heredoc opening on this line. We still do brace counting on
+    # this line (the `<<` line may itself contain block-level braces), but we
+    # skip jq/set-e detection from the next line through the end delimiter.
+    if [[ "$line" =~ \<\<-?[[:space:]]*[\'\"]?([A-Za-z_][A-Za-z0-9_]*)[\'\"]? ]]; then
+      heredoc_delim="${BASH_REMATCH[1]}"
+      in_heredoc=1
+    fi
+
+    # `run jq -e` captures exit code into $status and cannot leak — skip.
+    if [[ "$line" =~ run[[:space:]]+.*jq[[:space:]]+-e ]]; then
+      :
+    elif [[ "$line" =~ jq[[:space:]]+-e ]]; then
       jq_count=$((jq_count + 1))
     elif (( jq_count == 0 )) && [[ "$line" =~ ^[[:space:]]*set[[:space:]]+-e ]]; then
       set_e_seen=1
@@ -77,6 +100,8 @@ lint_file() {
       depth=0
       jq_count=0
       set_e_seen=0
+      in_heredoc=0
+      heredoc_delim=""
     fi
   done < "$file"
 }
