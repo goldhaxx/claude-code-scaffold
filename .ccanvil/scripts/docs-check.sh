@@ -1190,7 +1190,9 @@ cmd_land() {
   # the Linear issue transition to Done. Pure emission — the skill parses
   # stdout, resolves `ticket.transition <id> done`, and handles MCP +
   # pending-log fallback. Users who invoke this script directly (bypassing
-  # the /land skill) see the marker and a hint; auto-close does not fire.
+  # the /land skill) see the marker on stdout; auto-close does not fire and
+  # the Linear issue stays open until it is transitioned manually or /land
+  # is used on the next merge.
   cmd_auto_close_emit "$branch"
 
   # Delete local branch

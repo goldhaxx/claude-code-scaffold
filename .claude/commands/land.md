@@ -28,9 +28,10 @@ If the Linear issue is already in `Done` (e.g. manually transitioned, or replaye
 
 ## Rules
 
-- `/land` is the post-merge canonical flow. Users who run `docs-check.sh land` directly bypass the MCP dispatch — the marker will print on stdout but nothing will read it. Those users can run `/idea sync` later to process any queued transitions, or re-run `/land` on the next merge.
+- `/land` is the post-merge canonical flow. Users who run `docs-check.sh land` directly bypass the MCP dispatch — the `AUTO-CLOSE: {...}` marker prints on stdout, but nothing parses it, nothing writes to the pending log, and nothing transitions the issue. In that case the Linear issue stays open and must be closed manually (via `/idea triage`, direct `ticket.transition <id> done`, or the Linear UI).
 - `/land` NEVER fails the land step because of MCP/Linear errors — the pending-log fallback guarantees forward progress.
 - When no AUTO-CLOSE marker is emitted (legacy spec, local provider, non-claude branch, etc.), `/land` is a transparent passthrough over `docs-check.sh land`.
+- **Known gap:** if the user has already switched to main (e.g. after `gh pr merge --squash --delete-branch` which switches + deletes in one step) before invoking `/land`, `cmd_land`'s "already on main" early-return path runs the fast-forward but skips the branch-regex safety net, so no AUTO-CLOSE marker is emitted and no auto-close fires. Workaround: run `/land` from the feature branch BEFORE `gh pr merge` switches you to main. A future ship can add squash-commit-subject parsing to recover the feature-id on the already-on-main path.
 
 <!-- NODE-SPECIFIC-START -->
 <!-- Add project-specific content below this line. -->

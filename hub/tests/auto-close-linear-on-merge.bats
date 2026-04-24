@@ -86,7 +86,11 @@ MD
 # Step 1 — cmd_extract_work happy path (AC-2 foundation)
 # ===========================================================================
 
-@test "BTS-119 AC-2: cmd_extract_work returns linear provider + id JSON" {
+@test "BTS-119 AC-2 (foundation): cmd_extract_work returns linear provider + id JSON" {
+  # AC-2 requires the land flow invoke operations.sh resolve ticket.transition.
+  # This test exercises the data-extraction precondition only — the resolver
+  # call itself lives in land.md (skill prose) and is covered by the AC-1
+  # dogfood smoke test against the BTS-119 branch on merge.
   _spec_linear "BTS-119" "bts-119-foo"
   run bash "$DOCS" extract-work "$PROJECT/docs/specs/bts-119-foo.md"
   [ "$status" -eq 0 ]
@@ -149,7 +153,7 @@ MD
 
 @test "BTS-119 AC-2/AC-9: auto-close-emit prints AUTO-CLOSE marker for linear Work" {
   _spec_linear "BTS-119" "bts-119-foo"
-  run bash -c "cd $PROJECT && bash $DOCS auto-close-emit claude/feat/bts-119-foo"
+  run bash -c "cd \"$PROJECT\" && bash \"$DOCS\" auto-close-emit claude/feat/bts-119-foo"
   [ "$status" -eq 0 ]
   # Marker line is structured JSON with role=done pre-applied — caller just
   # reads the id and dispatches.
@@ -160,7 +164,7 @@ MD
 
 @test "BTS-119 AC-5: auto-close-emit is silent for spec without Work: (legacy)" {
   _spec_no_work "legacy-foo"
-  run bash -c "cd $PROJECT && bash $DOCS auto-close-emit claude/feat/legacy-foo"
+  run bash -c "cd \"$PROJECT\" && bash \"$DOCS\" auto-close-emit claude/feat/legacy-foo"
   [ "$status" -eq 0 ]
   # Silent — no marker, no skip log. Matches validator's grandfather rule.
   [ -z "$output" ]
@@ -168,7 +172,7 @@ MD
 
 @test "BTS-119 AC-6: auto-close-emit skips with explicit log for local provider" {
   _spec_local "idea-29" "foo-local"
-  run bash -c "cd $PROJECT && bash $DOCS auto-close-emit claude/feat/foo-local"
+  run bash -c "cd \"$PROJECT\" && bash \"$DOCS\" auto-close-emit claude/feat/foo-local"
   [ "$status" -eq 0 ]
   [[ ! "$output" =~ "AUTO-CLOSE: " ]]
   [[ "$output" =~ "local provider" ]]
@@ -177,7 +181,7 @@ MD
 
 @test "BTS-119 AC-7: auto-close-emit skips unknown provider with named log" {
   _spec_other_provider "42" "future-foo"
-  run bash -c "cd $PROJECT && bash $DOCS auto-close-emit claude/feat/future-foo"
+  run bash -c "cd \"$PROJECT\" && bash \"$DOCS\" auto-close-emit claude/feat/future-foo"
   [ "$status" -eq 0 ]
   [[ ! "$output" =~ "AUTO-CLOSE: " ]]
   [[ "$output" =~ "provider 'github'" ]]
@@ -186,7 +190,7 @@ MD
 
 @test "BTS-119 AC-9: auto-close-emit skips non-claude branch with log" {
   _spec_linear "BTS-119" "bts-119-foo"
-  run bash -c "cd $PROJECT && bash $DOCS auto-close-emit hotfix/urgent"
+  run bash -c "cd \"$PROJECT\" && bash \"$DOCS\" auto-close-emit hotfix/urgent"
   [ "$status" -eq 0 ]
   [[ ! "$output" =~ "AUTO-CLOSE: " ]]
   [[ "$output" =~ "no feature-id detected" ]]
@@ -194,7 +198,7 @@ MD
 
 @test "BTS-119 (edge): auto-close-emit is silent when spec file is missing" {
   # Non-spec-driven branch — no archive ever existed. Silent success.
-  run bash -c "cd $PROJECT && bash $DOCS auto-close-emit claude/feat/never-had-a-spec"
+  run bash -c "cd \"$PROJECT\" && bash \"$DOCS\" auto-close-emit claude/feat/never-had-a-spec"
   [ "$status" -eq 0 ]
   [ -z "$output" ]
 }
@@ -230,7 +234,8 @@ JSONL
   run bash "$DOCS" idea-sync --ack 1777004190 "$PROJECT"
   [ "$status" -eq 0 ]
   [[ "$output" =~ "ACKED: 1777004190" ]]
-  # The other entry survives.
+  # The other entry survives. Re-read pending log and assert status + shape.
   run bash "$DOCS" idea-sync "$PROJECT"
+  [ "$status" -eq 0 ]
   echo "$output" | jq -e '.pending == 1 and .entries[0].op == "add"'
 }

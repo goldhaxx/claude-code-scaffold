@@ -3,7 +3,7 @@
 > Feature: bts-119-auto-close-linear-on-merge
 > Work: linear:BTS-119
 > Created: 1777004190
-> Spec hash: 7adf72b8
+> Spec hash: 1fcf1704
 > Based on: docs/spec.md
 
 ## Objective
