@@ -61,14 +61,20 @@ mcp__claude_ai_Linear__save_issue
 
 On success: echo `Captured: <identifier> — <title>`.
 
-**On failure** (network, auth, server error): append to pending log:
+**On failure** (network, auth, server error): append to pending log via the deterministic helper (BTS-123 — never hand-roll JSON via `echo` + interpolation):
 
 ```bash
-echo '{"op":"add","args":{"title":"<title>","body":"<body>"},"ts":'"$(date +%s)"'}' \
-  >> .ccanvil/ideas-pending.log
+bash .ccanvil/scripts/docs-check.sh idea-pending-append \
+  --op add --title "$TITLE" --body "$BODY"
 ```
 
-Echo `PENDING: <title> (<N> total pending)`. Exit 0 — capture MUST succeed from the user's perspective.
+Then count entries via the validator (NEVER `wc -l` — physical lines ≠ JSON entries):
+
+```bash
+N=$(bash .ccanvil/scripts/docs-check.sh idea-pending-validate | jq -r .count)
+```
+
+Echo `PENDING: <title> ($N total pending)`. Exit 0 — capture MUST succeed from the user's perspective.
 
 ### Step 3b — local path (`mechanism == "bash"`)
 
@@ -114,11 +120,18 @@ Batched review of items in Triage state. **Fully agentic** — every outcome is 
 
 The `ticket.transition` wrapper (BTS-128) returns both `id` and `state` pre-populated, collapsing the previous "resolve state → manually stitch id → dispatch" pattern into a single resolver call. Always pass `state` from the resolver — never pass `state: "<name>"`. State names collide with type names in Linear's workflow resolver and silently become no-ops.
 
-**On MCP failure for any outcome**, append to pending log:
+**On MCP failure for any outcome**, append to pending log via the deterministic helper (BTS-123):
 
 ```bash
-echo '{"op":"promote","args":{"id":"BTS-X","priority":3},"ts":'"$(date +%s)"'}' \
-  >> .ccanvil/ideas-pending.log
+# promote
+bash .ccanvil/scripts/docs-check.sh idea-pending-append --op promote --id BTS-X --priority 3
+# defer / dismiss
+bash .ccanvil/scripts/docs-check.sh idea-pending-append --op defer --id BTS-X
+bash .ccanvil/scripts/docs-check.sh idea-pending-append --op dismiss --id BTS-X
+# merge
+bash .ccanvil/scripts/docs-check.sh idea-pending-append --op merge --id BTS-X --duplicate-of BTS-Y
+# ticket.transition (queued by /land on auto-close MCP failure)
+bash .ccanvil/scripts/docs-check.sh idea-pending-append --op ticket.transition --id BTS-X --role done
 ```
 
 Exit 0 per item. `/idea sync` replays these later.

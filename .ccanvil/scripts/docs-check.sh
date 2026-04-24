@@ -2615,6 +2615,143 @@ cmd_stamp_spec() {
 }
 
 # ---------------------------------------------------------------------------
+# cmd_idea_pending_append — Safely append one entry to .ccanvil/ideas-pending.log.
+#
+# BTS-123: replaces the unsafe `echo '{"op":...}' >> log` pattern that broke on
+# bodies with newlines/quotes/backslashes. Uses jq -nc for JSON-correct escape.
+#
+# Usage:
+#   docs-check.sh idea-pending-append --op <op> [flags...]
+#
+# Per-op flag matrix:
+#   add               --title <T> --body <B>
+#   promote           --id <ID> --priority <N>
+#   defer | dismiss   --id <ID>
+#   merge             --id <ID> --duplicate-of <DID>
+#   ticket.transition --id <ID> --role <ROLE>
+# ---------------------------------------------------------------------------
+cmd_idea_pending_append() {
+  local op="" title="" body="" id="" priority="" role="" duplicate_of=""
+  local project_dir="."
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --op)             op="$2"; shift 2 ;;
+      --title)          title="$2"; shift 2 ;;
+      --body)           body="$2"; shift 2 ;;
+      --id)             id="$2"; shift 2 ;;
+      --priority)       priority="$2"; shift 2 ;;
+      --role)           role="$2"; shift 2 ;;
+      --duplicate-of)   duplicate_of="$2"; shift 2 ;;
+      --project-dir)    project_dir="$2"; shift 2 ;;
+      *)                echo "ERROR: unknown flag: $1" >&2; return 2 ;;
+    esac
+  done
+
+  if [[ -z "$op" ]]; then
+    echo "ERROR: idea-pending-append requires --op" >&2
+    return 2
+  fi
+
+  local pending="$project_dir/.ccanvil/ideas-pending.log"
+  mkdir -p "$(dirname "$pending")"
+
+  local ts
+  ts=$(date +%s)
+
+  local entry
+  case "$op" in
+    add)
+      if [[ -z "$title" ]]; then echo "ERROR: --op add requires --title" >&2; return 2; fi
+      entry=$(jq -nc \
+        --arg op "$op" --arg title "$title" --arg body "$body" --argjson ts "$ts" \
+        '{op:$op, args:{title:$title, body:$body}, ts:$ts}')
+      ;;
+    promote)
+      if [[ -z "$id" || -z "$priority" ]]; then
+        echo "ERROR: --op promote requires --id and --priority" >&2; return 2
+      fi
+      entry=$(jq -nc \
+        --arg op "$op" --arg id "$id" --argjson priority "$priority" --argjson ts "$ts" \
+        '{op:$op, args:{id:$id, priority:$priority}, ts:$ts}')
+      ;;
+    defer|dismiss)
+      if [[ -z "$id" ]]; then echo "ERROR: --op $op requires --id" >&2; return 2; fi
+      entry=$(jq -nc \
+        --arg op "$op" --arg id "$id" --argjson ts "$ts" \
+        '{op:$op, args:{id:$id}, ts:$ts}')
+      ;;
+    merge)
+      if [[ -z "$id" || -z "$duplicate_of" ]]; then
+        echo "ERROR: --op merge requires --id and --duplicate-of" >&2; return 2
+      fi
+      entry=$(jq -nc \
+        --arg op "$op" --arg id "$id" --arg dup "$duplicate_of" --argjson ts "$ts" \
+        '{op:$op, args:{id:$id, duplicateOf:$dup}, ts:$ts}')
+      ;;
+    ticket.transition)
+      if [[ -z "$id" || -z "$role" ]]; then
+        echo "ERROR: --op ticket.transition requires --id and --role" >&2; return 2
+      fi
+      entry=$(jq -nc \
+        --arg op "$op" --arg id "$id" --arg role "$role" --argjson ts "$ts" \
+        '{op:$op, args:{id:$id, role:$role}, ts:$ts}')
+      ;;
+    *)
+      echo "ERROR: unknown op: $op (expected: add|promote|defer|dismiss|merge|ticket.transition)" >&2
+      return 2
+      ;;
+  esac
+
+  printf '%s\n' "$entry" >> "$pending"
+}
+
+# ---------------------------------------------------------------------------
+# cmd_idea_pending_validate — Validate every line in .ccanvil/ideas-pending.log.
+#
+# Output (stdout, JSON): {count: N, valid: bool, errors: [<line-num>...]}
+# Exit codes: 0 when valid (or empty/missing), non-zero when any line fails to parse.
+# ---------------------------------------------------------------------------
+cmd_idea_pending_validate() {
+  local project_dir="${1:-.}"
+  local pending="$project_dir/.ccanvil/ideas-pending.log"
+
+  if [[ ! -f "$pending" ]]; then
+    jq -n '{count: 0, valid: true, errors: []}'
+    return 0
+  fi
+
+  local count=0
+  local errors_json="[]"
+  local lineno=0
+
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    lineno=$((lineno + 1))
+    [[ -z "$line" ]] && continue
+    if echo "$line" | jq -e . >/dev/null 2>&1; then
+      count=$((count + 1))
+    else
+      errors_json=$(echo "$errors_json" | jq --argjson n "$lineno" '. + [$n]')
+    fi
+  done < "$pending"
+
+  local valid="true"
+  if [[ "$(echo "$errors_json" | jq 'length')" -gt 0 ]]; then
+    valid="false"
+  fi
+
+  jq -n \
+    --argjson count "$count" \
+    --argjson valid "$valid" \
+    --argjson errors "$errors_json" \
+    '{count: $count, valid: $valid, errors: $errors}'
+
+  if [[ "$valid" == "false" ]]; then
+    return 1
+  fi
+}
+
+# ---------------------------------------------------------------------------
 # Dispatch
 # ---------------------------------------------------------------------------
 
@@ -2652,8 +2789,10 @@ case "$cmd" in
   title-from-body)   cmd_title_from_body "$@" ;;
   legacy-refs-scan)  cmd_legacy_refs_scan "$@" ;;
   stamp-spec)        cmd_stamp_spec "$@" ;;
+  idea-pending-append) cmd_idea_pending_append "$@" ;;
+  idea-pending-validate) cmd_idea_pending_validate "$@" ;;
   *)
-    echo "Usage: docs-check.sh {status|validate|recommend|audit-session|config-get|list-specs|activate|complete|pr-cleanup|land|idea-add|idea-list|idea-count|idea-update|idea-sync|idea-migrate|idea-setup|idea-upgrade|title-from-body|legacy-refs-scan|stamp-spec} [args...]" >&2
+    echo "Usage: docs-check.sh {status|validate|recommend|audit-session|config-get|list-specs|activate|complete|pr-cleanup|land|idea-add|idea-list|idea-count|idea-update|idea-sync|idea-migrate|idea-setup|idea-upgrade|title-from-body|legacy-refs-scan|stamp-spec|idea-pending-append|idea-pending-validate} [args...]" >&2
     exit 1
     ;;
 esac

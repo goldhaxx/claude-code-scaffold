@@ -3,7 +3,7 @@
 > Feature: bts-123-pending-log-fallback-integrity
 > Work: linear:BTS-123
 > Created: 1777073200
-> Status: Draft
+> Status: Complete
 
 ## Summary
 
