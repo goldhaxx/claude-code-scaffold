@@ -20,7 +20,7 @@ Bash scripts in `.ccanvil/scripts/` are write-aware of the configured provider (
 - [ ] **AC-1:** `.ccanvil/scripts/linear-query.sh` exists with subcommands: `list-issues`, `get-issue`, `list-states`, `list-labels`, `save-issue`, `transition`. Each accepts JSON args on stdin or via flags; emits canonical JSON on stdout.
 - [ ] **AC-2:** `linear-query.sh` exits 2 with `LINEAR_API_KEY not set` to stderr when env var is missing AND any subcommand other than `--help` is invoked. Exits 0 on `--help`.
 - [ ] **AC-3:** `linear-query.sh` authenticates via the `Authorization: <api_key>` header (Linear's accepted form). All requests POST to `https://api.linear.app/graphql` with `Content-Type: application/json`.
-- [ ] **AC-4:** `operations.sh resolve idea.list` returns `mechanism: "http"` with `invocation` carrying `endpoint`, `query` (GraphQL template), `variables`, and `auth_env: "LINEAR_API_KEY"` when `routing.idea = linear`. Same for `idea.count`, `idea.add`, `idea.triage`, `ticket.transition`, `ticket.get`, `backlog.list`.
+- [ ] **AC-4:** `operations.sh resolve <verb>` returns `mechanism: "http"` with `invocation` carrying `command` (a complete `linear-query.sh` invocation), `endpoint`, and `auth_env: "LINEAR_API_KEY"` when `routing.idea = linear`. Migrated verbs in this PR: `idea.count`, `ticket.transition`, `ticket.get`. Remaining verbs (`idea.list`, `idea.add`, `idea.triage`, `idea.promote/defer/dismiss/merge`, `backlog.list`) are deferred to a phased follow-up — they consume from `/idea` capture/list/triage paths that need parallel skill-prose updates with shell-quoting handling for dynamic content (title/description). The `ticket.transition` migration in v1 already covers the dispatcher pattern used by `/spec`, `/activate`, `/land`, and `/idea` triage outcomes.
 - [ ] **AC-5:** `cmd_idea_count`, when called on a Linear-routed project, returns counts derived from a Linear API query — not from `.ccanvil/ideas.log`. The local-log fast path remains for `routing.idea = local`.
 - [ ] **AC-6:** `radar-gather` JSON output reflects Linear state on Linear-routed projects (e.g., the `ideas.triage` count matches `linear-query.sh list-issues --state triage --label idea`).
 - [ ] **AC-7:** Write mutations dispatched through the substrate succeed end-to-end against a stubbed GraphQL endpoint in tests: `save-issue` (create), `save-issue` with `id+state` (transition), `save-issue` with `id+priority` or `id+labels` (update).
@@ -46,9 +46,9 @@ Bash scripts in `.ccanvil/scripts/` are write-aware of the configured provider (
 
 ## Out of Scope
 
-- **Provider-onboarding workflow** — the `/init --provider linear` flow that walks operators through API key setup. Captured as adjacent ticket; not a v1 deliverable here. v1 expects the env var to already be set and surfaces a clean error if not (AC-2).
+- **Provider-onboarding workflow** — the `/init --provider linear` flow that walks operators through API key setup. Captured as BTS-165; not a v1 deliverable here. v1 expects the env var to already be set and surfaces a clean error if not (AC-2).
 - **Schema introspection / GraphQL fragment library** — v1 hand-writes the queries it needs.
-- **Skill migration** — skills like `/idea` and `/permissions-review` currently call MCP directly; v1 leaves that path intact. Skills can opt into `http` later as a follow-up.
+- **Phased migration of `/idea` capture/list/triage walkthrough** — `idea.add`, `idea.list`, `idea.triage` resolver verbs still emit MCP shape; `/idea` skill prose for capture/list/triage walkthrough is unchanged. These need parallel updates with shell-quoting handling for dynamic content (title/description). Captured as a follow-up phase. The dispatcher pattern used by `/spec`, `/activate`, `/land`, and `/idea` triage **outcomes** IS migrated in v1 via `ticket.transition`.
 - **Multi-workspace support** — a single `LINEAR_API_KEY` against a single workspace.
 - **Caching** — no client-side cache. If hot-loop usage emerges, revisit with a 5s TTL (per BTS-164 capture).
 - **Webhooks / real-time events.**
