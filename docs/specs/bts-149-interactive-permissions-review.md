@@ -3,7 +3,7 @@
 > Feature: bts-149-interactive-permissions-review
 > Work: linear:BTS-149
 > Created: 1777090148
-> Status: In Progress
+> Status: Complete
 
 ## Summary
 
