@@ -547,6 +547,18 @@ cmd_promote_review() {
 # BTS-149 — apply --decisions <jsonl>: interactive triage substrate
 # ---------------------------------------------------------------------------
 
+# Globals used by the ERR trap installed during cmd_apply's mutation pass.
+# Set immediately before mutations start so the trap can restore from .bak
+# on any failure mid-stream (AC-4 atomicity).
+_APPLY_LOCAL_FILE=""
+_APPLY_MAIN_FILE=""
+
+apply_restore_and_exit() {
+  [[ -n "$_APPLY_LOCAL_FILE" && -f "$_APPLY_LOCAL_FILE.bak" ]] && mv "$_APPLY_LOCAL_FILE.bak" "$_APPLY_LOCAL_FILE"
+  [[ -n "$_APPLY_MAIN_FILE"  && -f "$_APPLY_MAIN_FILE.bak"  ]] && mv "$_APPLY_MAIN_FILE.bak"  "$_APPLY_MAIN_FILE"
+  exit 3
+}
+
 cmd_apply() {
   if [[ -z "$DECISIONS_FILE" ]]; then
     emit_error_envelope "apply requires --decisions <file>" 2
@@ -585,23 +597,81 @@ cmd_apply() {
     esac
   done < "$DECISIONS_FILE"
 
-  # Execution pass. Steps 4-6 add real delete/promote/accept-danger logic;
-  # step 3 scaffolding only counts keep-local as skipped. No mutations
-  # mean no backup files needed.
-  local applied=0 skipped=0
+  # Determine which target files need backup based on decision verbs.
+  local local_file="$SETTINGS_DIR/settings.local.json"
+  local main_file="$SETTINGS_DIR/settings.json"
+  local needs_local_bak=0 needs_main_bak=0
   while IFS= read -r line || [[ -n "$line" ]]; do
     [[ -z "$line" ]] && continue
     local dec
     dec=$(echo "$line" | jq -r '.decision')
     case "$dec" in
-      keep-local)
-        skipped=$((skipped+1)) ;;
-      delete|promote|accept-danger)
-        # Step 4-6 implement these. For now treat as no-op so scaffolding
-        # tests pass; later steps flip the counter.
-        : ;;
+      delete)  needs_local_bak=1 ;;
+      promote) needs_local_bak=1; needs_main_bak=1 ;;
     esac
   done < "$DECISIONS_FILE"
+
+  # Refuse to run if stale .bak files exist (recovery from previous
+  # failed apply). Investigate manually rather than silently overwrite.
+  if [[ "$needs_local_bak" -eq 1 && -f "$local_file.bak" ]]; then
+    emit_error_envelope "$local_file.bak exists — recovery file from previous failed apply; investigate and remove manually" 3
+  fi
+  if [[ "$needs_main_bak" -eq 1 && -f "$main_file.bak" ]]; then
+    emit_error_envelope "$main_file.bak exists — recovery file from previous failed apply; investigate and remove manually" 3
+  fi
+
+  # Create backups for the files we're about to mutate. Skip if the
+  # source file doesn't exist (no need to back up nothing).
+  _APPLY_LOCAL_FILE="$local_file"
+  _APPLY_MAIN_FILE="$main_file"
+  if [[ "$needs_local_bak" -eq 1 && -f "$local_file" ]]; then
+    cp "$local_file" "$local_file.bak"
+  fi
+  if [[ "$needs_main_bak" -eq 1 && -f "$main_file" ]]; then
+    cp "$main_file" "$main_file.bak"
+  fi
+  trap apply_restore_and_exit ERR
+
+  # Execution pass. delete is implemented in step 4; promote/accept-danger
+  # land in steps 5-6.
+  local applied=0 skipped=0
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    [[ -z "$line" ]] && continue
+    local dec perm
+    dec=$(echo "$line" | jq -r '.decision')
+    perm=$(echo "$line" | jq -r '.permission')
+    case "$dec" in
+      keep-local)
+        skipped=$((skipped+1))
+        ;;
+      delete)
+        if [[ ! -f "$local_file" ]]; then
+          skipped=$((skipped+1))
+          continue
+        fi
+        # Skip if the permission isn't actually present in local.
+        if ! jq -e --arg p "$perm" '.permissions.allow | index($p) != null' "$local_file" >/dev/null 2>&1; then
+          skipped=$((skipped+1))
+          continue
+        fi
+        local tmp
+        tmp=$(mktemp)
+        jq --arg p "$perm" '.permissions.allow |= map(select(. != $p))' "$local_file" > "$tmp"
+        mv "$tmp" "$local_file"
+        applied=$((applied+1))
+        ;;
+      promote|accept-danger)
+        # Steps 5-6 implement these. Counted as skipped for now so the
+        # scaffolding stays internally consistent.
+        skipped=$((skipped+1))
+        ;;
+    esac
+  done < "$DECISIONS_FILE"
+
+  # Cleanup backups on success.
+  trap - ERR
+  [[ -f "$local_file.bak" ]] && rm "$local_file.bak"
+  [[ -f "$main_file.bak"  ]] && rm "$main_file.bak"
 
   jq -n --argjson a "$applied" --argjson s "$skipped" \
     '{applied: $a, skipped: $s, errors: []}'

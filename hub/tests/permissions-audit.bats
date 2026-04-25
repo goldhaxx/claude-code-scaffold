@@ -1050,3 +1050,95 @@ JSON
   run bash "$SCRIPT" apply --settings-dir "$FIXTURE" --log "$FIXTURE/permissions-log.json"
   [ "$status" -ne 0 ]
 }
+
+# Step 4: AC-3 (delete decision)
+
+@test "BTS-149 AC-3: delete removes entry from settings.local.json allow list" {
+  set -e
+  cat > "$FIXTURE/settings.json" <<'JSON'
+{"permissions":{"allow":["Bash(ls:*)"]}}
+JSON
+  cat > "$FIXTURE/settings.local.json" <<'JSON'
+{"permissions":{"allow":["Bash(rm:*)","Bash(stale:*)"]}}
+JSON
+  cat > "$FIXTURE/decisions.jsonl" <<'JSONL'
+{"permission":"Bash(stale:*)","decision":"delete"}
+JSONL
+  run bash "$SCRIPT" apply --decisions "$FIXTURE/decisions.jsonl" \
+    --settings-dir "$FIXTURE" --log "$FIXTURE/permissions-log.json"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '.applied == 1'
+  echo "$output" | jq -e '.skipped == 0'
+  jq -e '.permissions.allow == ["Bash(rm:*)"]' "$FIXTURE/settings.local.json"
+  jq -e '.permissions.allow == ["Bash(ls:*)"]' "$FIXTURE/settings.json"
+}
+
+@test "BTS-149 AC-3: delete of permission absent from local is a skip not an apply" {
+  set -e
+  cat > "$FIXTURE/settings.json" <<'JSON'
+{"permissions":{"allow":["Bash(ls:*)"]}}
+JSON
+  cat > "$FIXTURE/settings.local.json" <<'JSON'
+{"permissions":{"allow":["Bash(rm:*)"]}}
+JSON
+  cat > "$FIXTURE/decisions.jsonl" <<'JSONL'
+{"permission":"Bash(absent:*)","decision":"delete"}
+JSONL
+  run bash "$SCRIPT" apply --decisions "$FIXTURE/decisions.jsonl" \
+    --settings-dir "$FIXTURE" --log "$FIXTURE/permissions-log.json"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '.applied == 0'
+  echo "$output" | jq -e '.skipped == 1'
+  jq -e '.permissions.allow == ["Bash(rm:*)"]' "$FIXTURE/settings.local.json"
+}
+
+@test "BTS-149 AC-4: delete creates and removes .bak file on success" {
+  set -e
+  cat > "$FIXTURE/settings.json" <<'JSON'
+{"permissions":{"allow":["Bash(ls:*)"]}}
+JSON
+  cat > "$FIXTURE/settings.local.json" <<'JSON'
+{"permissions":{"allow":["Bash(stale:*)"]}}
+JSON
+  cat > "$FIXTURE/decisions.jsonl" <<'JSONL'
+{"permission":"Bash(stale:*)","decision":"delete"}
+JSONL
+  run bash "$SCRIPT" apply --decisions "$FIXTURE/decisions.jsonl" \
+    --settings-dir "$FIXTURE" --log "$FIXTURE/permissions-log.json"
+  [ "$status" -eq 0 ]
+  [ ! -f "$FIXTURE/settings.json.bak" ]
+  [ ! -f "$FIXTURE/settings.local.json.bak" ]
+}
+
+@test "BTS-149 AC-4: refuses to apply when stale .bak files already exist" {
+  cat > "$FIXTURE/settings.json" <<'JSON'
+{"permissions":{"allow":["Bash(ls:*)"]}}
+JSON
+  cat > "$FIXTURE/settings.local.json" <<'JSON'
+{"permissions":{"allow":["Bash(stale:*)"]}}
+JSON
+  echo '{"permissions":{"allow":[]}}' > "$FIXTURE/settings.local.json.bak"
+  cat > "$FIXTURE/decisions.jsonl" <<'JSONL'
+{"permission":"Bash(stale:*)","decision":"delete"}
+JSONL
+  run bash "$SCRIPT" apply --decisions "$FIXTURE/decisions.jsonl" \
+    --settings-dir "$FIXTURE" --log "$FIXTURE/permissions-log.json"
+  [ "$status" -ne 0 ]
+  # original local file untouched (still has the entry)
+  jq -e '.permissions.allow == ["Bash(stale:*)"]' "$FIXTURE/settings.local.json"
+}
+
+@test "BTS-149 AC-3: delete with missing settings.local.json is a skip" {
+  set -e
+  cat > "$FIXTURE/settings.json" <<'JSON'
+{"permissions":{"allow":["Bash(ls:*)"]}}
+JSON
+  cat > "$FIXTURE/decisions.jsonl" <<'JSONL'
+{"permission":"Bash(stale:*)","decision":"delete"}
+JSONL
+  run bash "$SCRIPT" apply --decisions "$FIXTURE/decisions.jsonl" \
+    --settings-dir "$FIXTURE" --log "$FIXTURE/permissions-log.json"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '.applied == 0'
+  echo "$output" | jq -e '.skipped == 1'
+}
