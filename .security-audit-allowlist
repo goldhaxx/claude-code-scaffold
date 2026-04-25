@@ -1,0 +1,21 @@
+# .security-audit-allowlist
+#
+# Substring patterns matched against file paths. One pattern per line.
+# Lines starting with # and blank lines are ignored.
+#
+# CURRENT MECHANISM IS FILE-LEVEL ONLY — silencing a file silences ALL
+# findings in it, current and future. Per-finding allowlisting (file +
+# category + detail-substring) is captured as BTS-152 and would make
+# this affordance more precise.
+#
+# Each entry MUST include a comment explaining why the file is allowlisted
+# and what review surface still covers it.
+
+# settings.json contains absolute path patterns (e.g., Read(//Users/...))
+# that flag as PII because of the username segment. Permissions in this
+# file are independently reviewed via permissions-audit.sh; the security
+# audit's PII scan is redundant for permission entries by design.
+# Origin: BTS-142 autonomy-first permissions rewrite.
+# Per-finding granularity: BTS-152 (when shipped, switch this entry to a
+# detail-substring pattern targeting only PII-in-permission entries).
+.claude/settings.json
