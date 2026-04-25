@@ -498,6 +498,70 @@ JSON
 }
 
 # =========================================================================
+# guard-workspace.sh — sort -o output flag (BTS-157)
+# =========================================================================
+
+@test "BTS-157 AC-1: blocks sort -o ~/.zshrc" {
+  set -e   # BTS-127
+  input='{"tool_name":"Bash","tool_input":{"command":"sort -o ~/.zshrc input"}}'
+  run bash -c "echo '$input' | '$WORKSPACE_HOOK'"
+  [ "$status" -eq 2 ]
+  echo "$output" | grep -q "BLOCKED"
+  echo "$output" | grep -q "~/.zshrc"
+}
+
+@test "BTS-157 AC-2: blocks sort -o /etc/foo" {
+  input='{"tool_name":"Bash","tool_input":{"command":"sort -o /etc/foo input"}}'
+  run bash -c "echo '$input' | '$WORKSPACE_HOOK'"
+  [ "$status" -eq 2 ]
+}
+
+@test "BTS-157 AC-3: allows sort -o ./local-output (relative path)" {
+  input='{"tool_name":"Bash","tool_input":{"command":"sort -o ./local-output input"}}'
+  run bash -c "echo '$input' | '$WORKSPACE_HOOK'"
+  [ "$status" -eq 0 ]
+}
+
+@test "BTS-157 AC-4: allows sort -o ~/projects/ccanvil/foo (inside workspace)" {
+  input='{"tool_name":"Bash","tool_input":{"command":"sort -o ~/projects/ccanvil/foo input"}}'
+  run bash -c "echo '$input' | '$WORKSPACE_HOOK'"
+  [ "$status" -eq 0 ]
+}
+
+@test "BTS-157 AC-5: allows sort -o /tmp/foo (whitelisted)" {
+  input='{"tool_name":"Bash","tool_input":{"command":"sort -o /tmp/foo input"}}'
+  run bash -c "echo '$input' | '$WORKSPACE_HOOK'"
+  [ "$status" -eq 0 ]
+}
+
+@test "BTS-157 AC-6: bypass via ALLOW_OUTSIDE_WORKSPACE=1" {
+  input='{"tool_name":"Bash","tool_input":{"command":"ALLOW_OUTSIDE_WORKSPACE=1 sort -o ~/.zshrc input"}}'
+  run bash -c "echo '$input' | '$WORKSPACE_HOOK'"
+  [ "$status" -eq 0 ]
+}
+
+@test "BTS-157 AC-7: allows plain sort input (no -o)" {
+  input='{"tool_name":"Bash","tool_input":{"command":"sort input"}}'
+  run bash -c "echo '$input' | '$WORKSPACE_HOOK'"
+  [ "$status" -eq 0 ]
+}
+
+@test "BTS-157 AC-8: blocks sort input > ~/.zshrc (redirect target via token scan)" {
+  # Bonus coverage: once sort is a gated verb, the tilde token in the
+  # redirect target trips the fence too — even though the hook doesn't
+  # parse > as a redirect operator. Path B-adjacent free win.
+  input='{"tool_name":"Bash","tool_input":{"command":"sort input > ~/.zshrc"}}'
+  run bash -c "echo '$input' | '$WORKSPACE_HOOK'"
+  [ "$status" -eq 2 ]
+}
+
+@test "BTS-157 AC-9: allows xsort -o ~/.zshrc (sort substring in another verb)" {
+  input='{"tool_name":"Bash","tool_input":{"command":"xsort -o ~/.zshrc x"}}'
+  run bash -c "echo '$input' | '$WORKSPACE_HOOK'"
+  [ "$status" -eq 0 ]
+}
+
+# =========================================================================
 # guard-workspace.sh — workspace fence (BTS-146)
 # =========================================================================
 
