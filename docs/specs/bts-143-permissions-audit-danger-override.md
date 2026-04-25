@@ -3,7 +3,7 @@
 > Feature: bts-143-permissions-audit-danger-override
 > Work: linear:BTS-143
 > Created: 1777085933
-> Status: In Progress
+> Status: Complete
 
 ## Summary
 
