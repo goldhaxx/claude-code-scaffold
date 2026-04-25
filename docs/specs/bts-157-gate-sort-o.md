@@ -3,7 +3,7 @@
 > Feature: bts-157-gate-sort-o
 > Work: linear:BTS-157
 > Created: 1777153313
-> Status: In Progress
+> Status: Complete
 
 ## Summary
 
