@@ -224,6 +224,60 @@ JSON
   _get_body | jq -e '.variables.filter.team.name.eq == "T"'
 }
 
+@test "BTS-166 AC-2: list-teams sends teams query and parses nodes" {
+  set -e
+  _setup_stub
+  cat > "$LINEAR_STUB_RESPONSE" <<'JSON'
+{"data":{"teams":{"nodes":[
+  {"id":"t1","name":"Blocktech Solutions","key":"BTS"},
+  {"id":"t2","name":"Other Team","key":"OTH"}
+]}}}
+JSON
+  run bash -c "source '$STUB_FIXTURE' && bash '$LQ' list-teams"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e 'length == 2'
+  echo "$output" | jq -e '.[0].id == "t1" and .[0].name == "Blocktech Solutions"'
+  _get_body | jq -e '.query | contains("teams")'
+}
+
+@test "BTS-166 AC-2: list-teams --name <NAME> filters by team name" {
+  set -e
+  _setup_stub
+  cat > "$LINEAR_STUB_RESPONSE" <<'JSON'
+{"data":{"teams":{"nodes":[{"id":"t1","name":"Blocktech Solutions","key":"BTS"}]}}}
+JSON
+  run bash -c "source '$STUB_FIXTURE' && bash '$LQ' list-teams --name 'Blocktech Solutions'"
+  [ "$status" -eq 0 ]
+  _get_body | jq -e '.variables.filter.name.eq == "Blocktech Solutions"'
+}
+
+@test "BTS-166 AC-2: list-projects sends projects query and parses nodes" {
+  set -e
+  _setup_stub
+  cat > "$LINEAR_STUB_RESPONSE" <<'JSON'
+{"data":{"projects":{"nodes":[
+  {"id":"p1","name":"ccanvil","slugId":"ccanvil"},
+  {"id":"p2","name":"other","slugId":"other"}
+]}}}
+JSON
+  run bash -c "source '$STUB_FIXTURE' && bash '$LQ' list-projects"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e 'length == 2'
+  echo "$output" | jq -e '.[0].id == "p1" and .[0].name == "ccanvil"'
+  _get_body | jq -e '.query | contains("projects")'
+}
+
+@test "BTS-166 AC-2: list-projects --name <NAME> filters by project name" {
+  set -e
+  _setup_stub
+  cat > "$LINEAR_STUB_RESPONSE" <<'JSON'
+{"data":{"projects":{"nodes":[{"id":"p1","name":"ccanvil","slugId":"ccanvil"}]}}}
+JSON
+  run bash -c "source '$STUB_FIXTURE' && bash '$LQ' list-projects --name ccanvil"
+  [ "$status" -eq 0 ]
+  _get_body | jq -e '.variables.filter.name.eq == "ccanvil"'
+}
+
 @test "BTS-164 AC-1: list-labels --team T sends issueLabels query and parses nodes" {
   set -e
   _setup_stub
@@ -326,6 +380,75 @@ JSON
   run --separate-stderr bash -c "source '$STUB_FIXTURE' && bash '$LQ' save-issue --id BTS-100 --priority 1"
   [ "$status" -eq 3 ]
   [[ "$stderr" =~ "Field is required" ]]
+}
+
+# ===========================================================================
+# BTS-166 AC-2: name-based create flags --team / --project / --labels
+# ===========================================================================
+# When --team / --project / --labels are passed without their -id counterparts,
+# save-issue does a one-shot lookup via the teams / projects / issueLabels
+# queries and substitutes the resolved IDs. -id flags take precedence on collision.
+
+@test "BTS-166 AC-2: save-issue --team NAME resolves NAME→teamId via list-teams query" {
+  set -e
+  _setup_stub
+  # Sequence-aware stub: each curl invocation reads the next response file,
+  # tracked via a counter file in TMPDIR. This lets us serve the team-lookup
+  # response then the issueCreate response from a single test.
+  local responses_dir="$BATS_TEST_TMPDIR/seq"
+  mkdir -p "$responses_dir"
+  cat > "$responses_dir/1.json" <<'JSON'
+{"data":{"teams":{"nodes":[{"id":"team-uuid","name":"Blocktech Solutions","key":"BTS"}]}}}
+JSON
+  cat > "$responses_dir/2.json" <<'JSON'
+{"data":{"issueCreate":{"success":true,"issue":{"id":"u","identifier":"BTS-300","title":"t"}}}}
+JSON
+  # Counter file persists across exported-function calls (linear-query.sh
+  # invokes curl multiple times in a single bash subprocess).
+  local counter="$BATS_TEST_TMPDIR/seq.count"
+  echo 0 > "$counter"
+  # Override LINEAR_STUB_RESPONSE per-call by writing a wrapper that updates
+  # the symlink/path before invoking the real stub's curl. Easier: bypass the
+  # stub fixture entirely with a stand-alone curl override.
+  cat > "$BATS_TEST_TMPDIR/seq-stub.sh" <<EOF
+curl() {
+  local n
+  n=\$(cat '$counter')
+  n=\$((n + 1))
+  echo "\$n" > '$counter'
+  cat '$responses_dir/'"\$n"'.json'
+  local body=""
+  while [ \$# -gt 0 ]; do
+    case "\$1" in
+      --data|--data-raw|-d) body="\$2"; shift 2 ;;
+      *) shift ;;
+    esac
+  done
+  printf 'BODY:%s\n' "\$body" >> "\$LINEAR_STUB_CAPTURE"
+}
+export -f curl
+EOF
+  run bash -c "source '$BATS_TEST_TMPDIR/seq-stub.sh' && bash '$LQ' save-issue --team 'Blocktech Solutions' --project-id proj-uuid --title 'new' --description 'body'"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '.id == "BTS-300"'
+  # The LAST captured BODY is the issueCreate; assert teamId resolved correctly.
+  local last_body
+  last_body=$(grep '^BODY:' "$LINEAR_STUB_CAPTURE" | tail -1 | sed 's/^BODY://')
+  echo "$last_body" | jq -e '.variables.input.teamId == "team-uuid"'
+}
+
+@test "BTS-166 AC-2: save-issue --team-id wins when both --team and --team-id are passed" {
+  set -e
+  _setup_stub
+  # Only one curl call (no lookup needed) since --team-id short-circuits.
+  cat > "$LINEAR_STUB_RESPONSE" <<'JSON'
+{"data":{"issueCreate":{"success":true,"issue":{"id":"u","identifier":"BTS-301","title":"t"}}}}
+JSON
+  run bash -c "source '$STUB_FIXTURE' && bash '$LQ' save-issue --team 'Some Other Team' --team-id explicit-uuid --project-id p --title 'new' --description 'body'"
+  [ "$status" -eq 0 ]
+  local body
+  body=$(_get_body)
+  echo "$body" | jq -e '.variables.input.teamId == "explicit-uuid"'
 }
 
 # ===========================================================================

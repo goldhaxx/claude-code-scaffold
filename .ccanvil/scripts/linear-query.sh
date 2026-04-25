@@ -300,6 +300,64 @@ cmd_list_labels() {
   _post_graphql "$query" "$variables" | jq '[.issueLabels.nodes[] | {id, name}]'
 }
 
+# BTS-166: name-based create flags in save-issue need NAME→ID lookups for
+# team and project. Both follow the same shape as list-labels: optional
+# --name filter, returns [{id, name}].
+
+cmd_list_teams() {
+  _require_api_key
+  local name=""
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --name) name="$2"; shift 2 ;;
+      *) _die 2 "list-teams: unknown flag: $1" ;;
+    esac
+  done
+
+  local filter='{}'
+  if [[ -n "$name" ]]; then
+    filter=$(printf '%s' "$filter" | jq --arg v "$name" '. + {name:{eq:$v}}')
+  fi
+
+  local variables
+  variables=$(jq -n --argjson f "$filter" '{filter:$f}')
+
+  local query='query ($filter: TeamFilter) {
+    teams(filter: $filter) {
+      nodes { id name key }
+    }
+  }'
+
+  _post_graphql "$query" "$variables" | jq '[.teams.nodes[] | {id, name, key}]'
+}
+
+cmd_list_projects() {
+  _require_api_key
+  local name=""
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --name) name="$2"; shift 2 ;;
+      *) _die 2 "list-projects: unknown flag: $1" ;;
+    esac
+  done
+
+  local filter='{}'
+  if [[ -n "$name" ]]; then
+    filter=$(printf '%s' "$filter" | jq --arg v "$name" '. + {name:{eq:$v}}')
+  fi
+
+  local variables
+  variables=$(jq -n --argjson f "$filter" '{filter:$f}')
+
+  local query='query ($filter: ProjectFilter) {
+    projects(filter: $filter) {
+      nodes { id name slugId }
+    }
+  }'
+
+  _post_graphql "$query" "$variables" | jq '[.projects.nodes[] | {id, name, slugId}]'
+}
+
 cmd_save_issue() {
   _require_api_key
 
@@ -310,6 +368,7 @@ cmd_save_issue() {
   local team_id="" project_id="" parent_id="" duplicate_of=""
   local priority="" label_ids=""
   local input_json=""
+  local team_name="" project_name="" labels_csv=""
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -324,9 +383,47 @@ cmd_save_issue() {
       --priority)      priority="$2";     shift 2 ;;
       --label-ids)     label_ids="$2";    shift 2 ;;
       --input-json)    input_json="$2";   shift 2 ;;
+      --team)          team_name="$2";    shift 2 ;;
+      --project)       project_name="$2"; shift 2 ;;
+      --labels)        labels_csv="$2";   shift 2 ;;
       *) _die 2 "save-issue: unknown flag: $1" ;;
     esac
   done
+
+  # BTS-166 AC-2: name-based create flags. Resolve NAME→ID via list-teams /
+  # list-projects / list-labels when --*-id wasn't passed. -id flags take
+  # precedence on collision (caller knows the UUID; skip the extra roundtrip).
+  if [[ -z "$team_id" && -n "$team_name" ]]; then
+    team_id=$(cmd_list_teams --name "$team_name" | jq -r '.[0].id // ""')
+    if [[ -z "$team_id" ]]; then
+      _die 2 "save-issue: --team '$team_name' did not resolve to a team id"
+    fi
+  fi
+  if [[ -z "$project_id" && -n "$project_name" ]]; then
+    project_id=$(cmd_list_projects --name "$project_name" | jq -r '.[0].id // ""')
+    if [[ -z "$project_id" ]]; then
+      _die 2 "save-issue: --project '$project_name' did not resolve to a project id"
+    fi
+  fi
+  if [[ -z "$label_ids" && -n "$labels_csv" ]]; then
+    # Resolve each NAME → ID; --team filter scopes the lookup if available.
+    local resolved_ids=""
+    local IFS_old="$IFS"; IFS=,
+    for label_name in $labels_csv; do
+      local label_filter=()
+      if [[ -n "$team_name" ]]; then
+        label_filter=(--team "$team_name")
+      fi
+      local lid
+      lid=$(cmd_list_labels "${label_filter[@]}" | jq -r --arg n "$label_name" '.[] | select(.name == $n) | .id' | head -1)
+      if [[ -z "$lid" ]]; then
+        _die 2 "save-issue: --labels '$label_name' did not resolve to a label id"
+      fi
+      resolved_ids="${resolved_ids:+${resolved_ids},}${lid}"
+    done
+    IFS="$IFS_old"
+    label_ids="$resolved_ids"
+  fi
 
   # BTS-166 AC-1: --input-json -  reads a JSON object from stdin and seeds the
   # input object. CLI flags layered on top, so command-line values override
@@ -439,6 +536,8 @@ main() {
     get-issue)    cmd_get_issue    "$@" ;;
     list-states)  cmd_list_states  "$@" ;;
     list-labels)  cmd_list_labels  "$@" ;;
+    list-teams)    cmd_list_teams    "$@" ;;
+    list-projects) cmd_list_projects "$@" ;;
     save-issue)   cmd_save_issue   "$@" ;;
     *)
       _die 2 "Unknown subcommand: $subcommand. Run 'linear-query.sh --help' for usage."
