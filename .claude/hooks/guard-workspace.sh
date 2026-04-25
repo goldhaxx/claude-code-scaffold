@@ -58,8 +58,8 @@ NORMALIZED=$(echo "$COMMAND" | tr -d '"' | tr -d "'")
 violation=""
 for token in $NORMALIZED; do
   case "$token" in
-    /*)
-      # Absolute path
+    /?*)
+      # Absolute path (≥1 char after the slash — bare `/` is ignored)
       ok=false
       for prefix in "${ALLOWED_ABS[@]}"; do
         case "$token" in

@@ -345,3 +345,31 @@ WORKSPACE_HOOK="$BATS_TEST_DIRNAME/../../.claude/hooks/guard-workspace.sh"
   run bash -c "echo '$input' | '$WORKSPACE_HOOK'"
   [ "$status" -eq 0 ]
 }
+
+# guard-workspace.sh — bare-slash false-positive (BTS-147)
+
+@test "BTS-147 AC-1: allows bare slash token (jq math/format string)" {
+  input='{"tool_name":"Bash","tool_input":{"command":"bash script.sh | jq -r .a / .b"}}'
+  run bash -c "echo '$input' | '$WORKSPACE_HOOK'"
+  [ "$status" -eq 0 ]
+}
+
+@test "BTS-147 AC-3: real out-of-workspace path wins over bare slash" {
+  input='{"tool_name":"Bash","tool_input":{"command":"rm / /etc/foo"}}'
+  run bash -c "echo '$input' | '$WORKSPACE_HOOK'"
+  [ "$status" -eq 2 ]
+  echo "$output" | grep -q "/etc/foo"
+}
+
+@test "BTS-147 AC-5: ALLOW_OUTSIDE_WORKSPACE=1 still bypasses on bare-slash commands" {
+  input='{"tool_name":"Bash","tool_input":{"command":"ALLOW_OUTSIDE_WORKSPACE=1 bash script | jq .a / .b"}}'
+  run bash -c "echo '$input' | '$WORKSPACE_HOOK'"
+  [ "$status" -eq 0 ]
+}
+
+@test "BTS-147 AC-6: single-char absolute path /a still hits the whitelist check" {
+  input='{"tool_name":"Bash","tool_input":{"command":"rm /a"}}'
+  run bash -c "echo '$input' | '$WORKSPACE_HOOK'"
+  [ "$status" -eq 2 ]
+  echo "$output" | grep -q "/a"
+}
