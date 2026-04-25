@@ -423,6 +423,128 @@ EOF
   echo "$output" | jq -e '.danger == 1'
 }
 
+# =========================================================================
+# BTS-143: accept_danger override — DANGER pattern + filled log entry with
+# accept_danger:true → REVIEWED with risk_accepted:true preserved.
+# =========================================================================
+
+@test "BTS-143 AC-1: DANGER + accept_danger:true + filled fields → REVIEWED with risk_accepted" {
+  set -e
+  cat > "$FIXTURE/settings.json" <<'EOF'
+{
+  "permissions": {
+    "allow": ["Bash(echo:*)"]
+  }
+}
+EOF
+  cat > "$FIXTURE/permissions-log.json" <<'EOF'
+{
+  "entries": {
+    "Bash(echo:*)": {
+      "risk": "HIGH",
+      "rationale": "Output is intentional; hooks gate destructive cases",
+      "efficiency_justification": "Used constantly during development",
+      "reviewer": "zach",
+      "reviewed_epoch": 1777085000,
+      "accept_danger": true
+    }
+  }
+}
+EOF
+
+  run bash "$SCRIPT" check --settings-dir "$FIXTURE" --log "$FIXTURE/permissions-log.json"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '.entries[0].status == "REVIEWED"'
+  echo "$output" | jq -e '.entries[0].risk_accepted == true'
+  echo "$output" | jq -e '.entries[0].matched_pattern != null and .entries[0].matched_pattern != ""'
+  echo "$output" | jq -e '.danger == 0 and .reviewed == 1 and .unreviewed == 0'
+}
+
+@test "BTS-143 AC-2: DANGER + accept_danger:true + STUB rationale → DANGER (no override on incomplete)" {
+  set -e
+  cat > "$FIXTURE/settings.json" <<'EOF'
+{
+  "permissions": {
+    "allow": ["Bash(echo:*)"]
+  }
+}
+EOF
+  cat > "$FIXTURE/permissions-log.json" <<'EOF'
+{
+  "entries": {
+    "Bash(echo:*)": {
+      "risk": "HIGH",
+      "rationale": "TODO",
+      "efficiency_justification": "Used in scripts",
+      "reviewer": "zach",
+      "accept_danger": true
+    }
+  }
+}
+EOF
+
+  run bash "$SCRIPT" check --settings-dir "$FIXTURE" --log "$FIXTURE/permissions-log.json"
+  [ "$status" -eq 2 ]
+  echo "$output" | jq -e '.entries[0].status == "DANGER"'
+  echo "$output" | jq -e '.danger == 1'
+}
+
+@test "BTS-143 AC-3: DANGER + accept_danger:false + filled fields → DANGER (must opt in)" {
+  set -e
+  cat > "$FIXTURE/settings.json" <<'EOF'
+{
+  "permissions": {
+    "allow": ["Bash(echo:*)"]
+  }
+}
+EOF
+  cat > "$FIXTURE/permissions-log.json" <<'EOF'
+{
+  "entries": {
+    "Bash(echo:*)": {
+      "risk": "HIGH",
+      "rationale": "Filled but not accepting risk",
+      "efficiency_justification": "Used in scripts",
+      "reviewer": "zach",
+      "accept_danger": false
+    }
+  }
+}
+EOF
+
+  run bash "$SCRIPT" check --settings-dir "$FIXTURE" --log "$FIXTURE/permissions-log.json"
+  [ "$status" -eq 2 ]
+  echo "$output" | jq -e '.entries[0].status == "DANGER"'
+}
+
+@test "BTS-143 AC-7: text-mode shows [risk-accepted] annotation on override entry" {
+  set -e
+  cat > "$FIXTURE/settings.json" <<'EOF'
+{
+  "permissions": {
+    "allow": ["Bash(echo:*)"]
+  }
+}
+EOF
+  cat > "$FIXTURE/permissions-log.json" <<'EOF'
+{
+  "entries": {
+    "Bash(echo:*)": {
+      "risk": "HIGH",
+      "rationale": "Output is intentional",
+      "efficiency_justification": "Used constantly",
+      "reviewer": "zach",
+      "accept_danger": true
+    }
+  }
+}
+EOF
+
+  run bash "$SCRIPT" check --settings-dir "$FIXTURE" --log "$FIXTURE/permissions-log.json" --text
+  [ "$status" -eq 0 ]
+  echo "$output" | grep -F "risk-accepted"
+}
+
 @test "mixed statuses counted correctly" {
   set -e
   cat > "$FIXTURE/settings.json" <<'EOF'

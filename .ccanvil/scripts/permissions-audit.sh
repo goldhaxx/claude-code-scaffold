@@ -219,10 +219,37 @@ cmd_check() {
     matched_pattern=$(check_danger "$inner" || true)
 
     if [[ -n "$matched_pattern" ]]; then
-      # DANGER takes precedence regardless of log status
-      danger_count=$((danger_count + 1))
-      classified=$(echo "$classified" | jq --arg p "$perm" --argjson s "$sources" --arg mp "$matched_pattern" \
-        '. + [{permission: $p, source: $s, status: "DANGER", matched_pattern: $mp}]')
+      # BTS-143: check for explicit accept_danger override before DANGER classification.
+      # When the log entry has accept_danger:true AND all four required fields are filled,
+      # reclassify as REVIEWED with risk_accepted:true preserved for the audit trail.
+      # Otherwise, DANGER takes precedence (preserves prior behavior for log entries
+      # without accept_danger or with stub fields).
+      local log_entry override
+      log_entry=$(echo "$log_data" | jq -c --arg p "$perm" '.[$p] // null')
+      override=$(echo "$log_entry" | jq '
+        if . == null then false
+        elif .accept_danger != true then false
+        elif .risk == "" or .risk == "TODO" then false
+        elif .rationale == "" or .rationale == "TODO" then false
+        elif .efficiency_justification == "" or .efficiency_justification == "TODO" then false
+        elif .reviewer == "" or .reviewer == "TODO" then false
+        else true
+        end
+      ')
+
+      if [[ "$override" == "true" ]]; then
+        reviewed_count=$((reviewed_count + 1))
+        local risk rationale
+        risk=$(echo "$log_entry" | jq -r '.risk')
+        rationale=$(echo "$log_entry" | jq -r '.rationale')
+        classified=$(echo "$classified" | jq --arg p "$perm" --argjson s "$sources" \
+          --arg mp "$matched_pattern" --arg risk "$risk" --arg rationale "$rationale" \
+          '. + [{permission: $p, source: $s, status: "REVIEWED", matched_pattern: $mp, risk: $risk, rationale: $rationale, risk_accepted: true}]')
+      else
+        danger_count=$((danger_count + 1))
+        classified=$(echo "$classified" | jq --arg p "$perm" --argjson s "$sources" --arg mp "$matched_pattern" \
+          '. + [{permission: $p, source: $s, status: "DANGER", matched_pattern: $mp}]')
+      fi
     else
       # Check log for review status
       local log_entry is_reviewed
@@ -307,11 +334,21 @@ print_text_report() {
     echo ""
   fi
 
-  # REVIEWED entries (only with --verbose)
+  # REVIEWED entries — risk-accepted always visible (BTS-143), clean entries verbose-only
+  local has_risk_accepted
+  has_risk_accepted=$(echo "$entries" | jq '[.[] | select(.status == "REVIEWED" and .risk_accepted == true)] | length > 0')
+  if [[ "$has_risk_accepted" == "true" ]]; then
+    echo "--- REVIEWED (risk-accepted) ---"
+    echo "$entries" | jq -r '
+      [.[] | select(.status == "REVIEWED" and .risk_accepted == true)] | .[] |
+      "  \(.permission)  [\(.matched_pattern)] [risk-accepted] \(.rationale // "")  (from: \(.source | join(", ")))"
+    '
+    echo ""
+  fi
   if [[ "$VERBOSE" == "true" && "$reviewed_count" -gt 0 ]]; then
     echo "--- REVIEWED ---"
     echo "$entries" | jq -r '
-      [.[] | select(.status == "REVIEWED")] | .[] |
+      [.[] | select(.status == "REVIEWED" and (.risk_accepted // false) == false)] | .[] |
       "  \(.permission)  [\(.risk // "?")] \(.rationale // "")  (from: \(.source | join(", ")))"
     '
     echo ""

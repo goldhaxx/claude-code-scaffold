@@ -49,9 +49,9 @@
 
 | Command | What it does |
 |---------|-------------|
-| `permissions-audit.sh check [--settings-dir DIR] [--log FILE]` | Classify all Bash permission entries as DANGER/UNREVIEWED/REVIEWED → JSON |
-| `permissions-audit.sh check --text [--verbose]` | Human-readable grouped report (DANGER, UNREVIEWED, optionally REVIEWED) |
-| `permissions-audit.sh init [--settings-dir DIR] [--log FILE]` | Create/update decision log with stubs for unreviewed entries |
+| `permissions-audit.sh check [--settings-dir DIR] [--log FILE]` | Classify all Bash permission entries as DANGER/UNREVIEWED/REVIEWED → JSON. BTS-143: a permission that trips a DANGER pattern reclassifies as REVIEWED (with `matched_pattern` + `risk_accepted: true` preserved) when its log entry has `accept_danger: true` AND all four required fields (`risk`, `rationale`, `efficiency_justification`, `reviewer`) are filled. Without `accept_danger`, DANGER pattern matches stay DANGER. |
+| `permissions-audit.sh check --text [--verbose]` | Human-readable grouped report. Sections: DANGER, UNREVIEWED, REVIEWED (risk-accepted) — always visible, REVIEWED — verbose-only. Risk-accepted entries display the `[matched_pattern]` AND `[risk-accepted]` annotation so the deliberate override is auditable. |
+| `permissions-audit.sh init [--settings-dir DIR] [--log FILE]` | Create/update decision log with stubs for unreviewed entries. The schema includes `accept_danger: boolean` (default false) — set to `true` for deliberate broad-wildcard rationales (BTS-143). |
 
 ## Test Hygiene Scripts
 
