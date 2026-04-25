@@ -54,4 +54,19 @@ if [[ "$COMMAND" =~ chmod[[:space:]]+(-R[[:space:]]+)?(777|666|000)([[:space:]]|
   exit 2
 fi
 
+# Block rm with BOTH recursive (-r/-R/--recursive) AND force (-f/--force) flags.
+# Path-agnostic: the recursive-force shape is the catastrophic footgun, regardless
+# of target. Recursive-only (-r) and force-only (-f) are allowed — only the
+# combination triggers the gate. (BTS-156)
+#
+# Cluster form: any single -<chars> chunk containing both r/R and f.
+# Long form: --recursive and --force present anywhere (either order).
+# Word-anchored to avoid 'arm', 'form', etc. matching as 'rm'.
+if [[ "$COMMAND" =~ (^|[[:space:]])rm[[:space:]]+(-[a-zA-Z]*[rR][a-zA-Z]*[fF][a-zA-Z]*|-[a-zA-Z]*[fF][a-zA-Z]*[rR][a-zA-Z]*)([[:space:]]|$) ]] || \
+   { [[ "$COMMAND" =~ (^|[[:space:]])rm[[:space:]] ]] && [[ "$COMMAND" =~ --recursive ]] && [[ "$COMMAND" =~ --force ]]; }; then
+  echo "BLOCKED: rm with recursive AND force flags deletes without prompt." >&2
+  echo "  To bypass: ALLOW_DESTRUCTIVE=1 rm -rf ..." >&2
+  exit 2
+fi
+
 exit 0
