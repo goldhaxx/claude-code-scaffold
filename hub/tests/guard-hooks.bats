@@ -640,6 +640,110 @@ JSON
 }
 
 # =========================================================================
+# BTS-151: git commit early-exit (false-positive fix for both hooks)
+# =========================================================================
+
+@test "BTS-151 AC-1: guard-destructive allows git commit with literal rm -rf in body" {
+  # The BTS-156 regex matches rm + recursive + force anywhere in the
+  # command string. Without an early-exit, a commit message that talks
+  # about the rm-rf gate trips the destructive hook.
+  input='{"tool_name":"Bash","tool_input":{"command":"git commit -m \"feat(bts-156): add rm -rf shape gate\""}}'
+  run bash -c "echo '$input' | '$DESTRUCTIVE_HOOK'"
+  [ "$status" -eq 0 ]
+}
+
+@test "BTS-151 AC-2: guard-workspace allows git commit with verb + path-shaped string in body" {
+  # The workspace verb regex matches `bash`/`cat`/etc anywhere in the
+  # command, then the path scan picks up `/stasis` from the message body.
+  input='{"tool_name":"Bash","tool_input":{"command":"git commit -m \"fix bash hook for /stasis path\""}}'
+  run bash -c "echo '$input' | '$WORKSPACE_HOOK'"
+  [ "$status" -eq 0 ]
+}
+
+@test "BTS-151 AC-3: both hooks allow git commit -am with /tmp/foo in body" {
+  input='{"tool_name":"Bash","tool_input":{"command":"git commit -am \"msg with /tmp/foo\""}}'
+  run bash -c "echo '$input' | '$DESTRUCTIVE_HOOK'"
+  [ "$status" -eq 0 ]
+  run bash -c "echo '$input' | '$WORKSPACE_HOOK'"
+  [ "$status" -eq 0 ]
+}
+
+@test "BTS-151 AC-4: guard-workspace allows git commit -F /tmp/msg.txt" {
+  input='{"tool_name":"Bash","tool_input":{"command":"git commit -F /tmp/msg.txt"}}'
+  run bash -c "echo '$input' | '$WORKSPACE_HOOK'"
+  [ "$status" -eq 0 ]
+}
+
+@test "BTS-151 AC-5: cat /etc/passwd still blocks (unchanged contract)" {
+  input='{"tool_name":"Bash","tool_input":{"command":"cat /etc/passwd"}}'
+  run bash -c "echo '$input' | '$WORKSPACE_HOOK'"
+  [ "$status" -eq 2 ]
+}
+
+@test "BTS-151 AC-6: rm -rf still blocks (unchanged contract)" {
+  input='{"tool_name":"Bash","tool_input":{"command":"rm -rf /tmp/foo"}}'
+  run bash -c "echo '$input' | '$DESTRUCTIVE_HOOK'"
+  [ "$status" -eq 2 ]
+}
+
+@test "BTS-151 AC-7: git status (no commit, no path scan) exits 0" {
+  input='{"tool_name":"Bash","tool_input":{"command":"git status"}}'
+  run bash -c "echo '$input' | '$WORKSPACE_HOOK'"
+  [ "$status" -eq 0 ]
+  run bash -c "echo '$input' | '$DESTRUCTIVE_HOOK'"
+  [ "$status" -eq 0 ]
+}
+
+@test "BTS-151 AC-8: git commit (no flags, opens editor) exits 0 from both hooks" {
+  input='{"tool_name":"Bash","tool_input":{"command":"git commit"}}'
+  run bash -c "echo '$input' | '$WORKSPACE_HOOK'"
+  [ "$status" -eq 0 ]
+  run bash -c "echo '$input' | '$DESTRUCTIVE_HOOK'"
+  [ "$status" -eq 0 ]
+}
+
+@test "BTS-151 AC-9 (known gap): git commit chained with rm -rf bypasses destructive check" {
+  # Documented trade-off — chaining destructive ops after commit is rare.
+  # If this test ever needs to flip to exit 2, the early-exit pattern
+  # should be tightened to forbid chain operators in the command.
+  input='{"tool_name":"Bash","tool_input":{"command":"git commit -m \"x\" && rm -rf /tmp/foo"}}'
+  run bash -c "echo '$input' | '$DESTRUCTIVE_HOOK'"
+  [ "$status" -eq 0 ]
+}
+
+@test "BTS-151 AC-10: env-prefix before git commit allowed" {
+  input='{"tool_name":"Bash","tool_input":{"command":"LANG=en_US git commit -m \"msg with /tmp\""}}'
+  run bash -c "echo '$input' | '$WORKSPACE_HOOK'"
+  [ "$status" -eq 0 ]
+}
+
+@test "BTS-151 AC-10b: quoted env-prefix value with spaces still skipped" {
+  # GIT_AUTHOR_NAME and GIT_COMMITTER_DATE are common automation prefixes
+  # whose values contain spaces. The early-exit regex must accept the
+  # quoted form.
+  input='{"tool_name":"Bash","tool_input":{"command":"GIT_AUTHOR_NAME=\"Foo Bar\" git commit -m \"msg with /stasis\""}}'
+  run bash -c "echo '$input' | '$WORKSPACE_HOOK'"
+  [ "$status" -eq 0 ]
+}
+
+@test "BTS-151 AC-10c: single-quoted env-prefix value also skipped" {
+  input='{"tool_name":"Bash","tool_input":{"command":"GIT_COMMITTER_DATE='\''2024-01-01 12:00:00'\'' git commit -m \"msg with /stasis\""}}'
+  run bash -c "echo '$input' | '$WORKSPACE_HOOK'"
+  [ "$status" -eq 0 ]
+}
+
+@test "BTS-151: git commit-tree (different verb, same prefix) is NOT auto-skipped" {
+  # `commit-tree` is a plumbing command; the early-exit must word-anchor
+  # on `commit` to avoid masking it. This test confirms the boundary.
+  # Today commit-tree wouldn't trigger any path scan anyway (git isn't a
+  # gated verb), so exit 0. The test value is in pinning the regex
+  # boundary if future verbs make the contrast load-bearing.
+  input='{"tool_name":"Bash","tool_input":{"command":"git commit-tree HEAD^{tree}"}}'
+  run bash -c "echo '$input' | '$WORKSPACE_HOOK'"
+  [ "$status" -eq 0 ]
+}
+
+# =========================================================================
 # guard-workspace.sh — workspace fence (BTS-146)
 # =========================================================================
 

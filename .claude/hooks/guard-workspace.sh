@@ -42,6 +42,20 @@ if [[ "$COMMAND" =~ ALLOW_OUTSIDE_WORKSPACE=1 ]]; then
   exit 0
 fi
 
+# BTS-151: skip git commit. The verb-leading regex below matches gated
+# verbs anywhere in the command, so a commit message body that mentions
+# `bash`/`cat`/etc activates the path scan, which then catches any
+# path-shaped narrative string (`/stasis`, `/tmp/...`). Constant false
+# positives; the workaround was always `commit -F` to a tmpfile. Same
+# trade-off as guard-destructive: chained commands bypass.
+#
+# Env-prefix value can be unquoted (no spaces), double-quoted, or single-
+# quoted — covers GIT_AUTHOR_NAME="Foo Bar" / GIT_COMMITTER_DATE="..."
+# in addition to plain LANG=en_US.
+if [[ "$COMMAND" =~ ^([A-Z_][A-Z0-9_]*=([^[:space:]\"\']*|\"[^\"]*\"|\'[^\']*\')[[:space:]]+)*git[[:space:]]+commit($|[[:space:]]) ]]; then
+  exit 0
+fi
+
 # Only enforce for commands containing a gated file-mutation verb.
 # Word-boundary match: verb must be at start, or after whitespace/;/|/&.
 if [[ ! "$COMMAND" =~ (^|[[:space:]\;\|\&])(rm|cp|mv|chmod|chown|bash|find|sort|cat)([[:space:]]|$) ]]; then
