@@ -7,12 +7,14 @@ Walk the user through pending permissions-review candidates interactively, colle
 ### 1. Gather state
 
 ```bash
-bash .ccanvil/scripts/permissions-audit.sh promote-review --json > /tmp/pr-promote.json
-bash .ccanvil/scripts/permissions-audit.sh check --json > /tmp/pr-check.json
+PR_PROMOTE=$(mktemp /tmp/pr-promote.XXXXXX.json)
+PR_CHECK=$(mktemp /tmp/pr-check.XXXXXX.json)
+bash .ccanvil/scripts/permissions-audit.sh promote-review --json > "$PR_PROMOTE"
+bash .ccanvil/scripts/permissions-audit.sh check --json > "$PR_CHECK"
 ```
 
-Parse `.candidates[]` from `pr-promote.json` (delta entries from `settings.local.json`, classified DELETE / TRIAGE).
-Parse `.entries[]` from `pr-check.json` and filter to those with `.status == "DANGER"` (broad wildcards lacking `accept_danger:true`).
+Parse `.candidates[]` from `$PR_PROMOTE` (delta entries from `settings.local.json`, classified DELETE / TRIAGE).
+Parse `.entries[]` from `$PR_CHECK` and filter to those with `.status == "DANGER"` (broad wildcards lacking `accept_danger:true`). Use `mktemp` to avoid races between concurrent `/permissions-review` invocations.
 
 ### 2. No-op fast path (AC-9)
 
@@ -73,7 +75,7 @@ Applied: <applied> | Skipped: <skipped> | Errors: <errors-len>
 
 ### 6. Cleanup
 
-`rm /tmp/pr-promote.json /tmp/pr-check.json <tmpfile>`.
+`rm "$PR_PROMOTE" "$PR_CHECK" <decisions-tmpfile>`.
 
 ## Rules
 

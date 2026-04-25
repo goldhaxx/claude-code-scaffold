@@ -1179,6 +1179,10 @@ JSONL
   run bash "$SCRIPT" apply --decisions "$FIXTURE/decisions.jsonl" \
     --settings-dir "$FIXTURE" --log "$FIXTURE/permissions-log.json"
   [ "$status" -eq 0 ]
+  # Documented semantic: promote increments `applied` whenever local was
+  # mutated, even when main was already up-to-date (idempotent on main).
+  echo "$output" | jq -e '.applied == 1'
+  echo "$output" | jq -e '.skipped == 0'
   # main list should not contain duplicate
   count=$(jq -r '[.permissions.allow[] | select(. == "Bash(promoteme:*)")] | length' "$FIXTURE/settings.json")
   [ "$count" -eq 1 ]

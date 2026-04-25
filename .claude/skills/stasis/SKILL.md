@@ -31,10 +31,10 @@ Collect these inputs via scripts — all deterministic, all cheap:
 5. `bash .ccanvil/scripts/docs-check.sh audit-session --since <last-stasis-commit>` — scan git diffs for stochastic patterns (fallback to last 20 commits if no prior stasis).
 6. `bash .ccanvil/scripts/docs-check.sh legacy-refs-scan --respect-allowlist hub/tests/legacy-refs-allowlist.txt` — check for stale references to legacy verbs/artifacts, pre-filtered by the allowlist (BTS-132) so only REAL drift surfaces in Cross-Session Patterns. On downstream nodes without `hub/tests/`, omit the flag — the raw output is fine.
 7. `bash .ccanvil/scripts/permissions-audit.sh check --json` (if available) — classify any DANGER or UNREVIEWED permissions. Read `.danger` count.
-7a. `bash .ccanvil/scripts/permissions-audit.sh promote-review --json` (BTS-149, if available) — list `settings.local.json` delta candidates classified as DELETE/TRIAGE. Read `.counts.total`.
-8. `bash .ccanvil/scripts/context-budget.sh check` (if available) — context budget HEALTHY/WARNING/CRITICAL.
-9. `git log --oneline -20` — recent commit history.
-10. `git show HEAD~1:docs/stasis.md 2>/dev/null || true` — the prior stasis snapshot, if any. If the command fails (no prior), proceed and note "First stasis — no prior state to compare" in the Cross-Session Patterns section.
+8. `bash .ccanvil/scripts/permissions-audit.sh promote-review --json` (BTS-149, if available) — list `settings.local.json` delta candidates classified as DELETE/TRIAGE. Read `.counts.total`.
+9. `bash .ccanvil/scripts/context-budget.sh check` (if available) — context budget HEALTHY/WARNING/CRITICAL.
+10. `git log --oneline -20` — recent commit history.
+11. `git show HEAD~1:docs/stasis.md 2>/dev/null || true` — the prior stasis snapshot, if any. If the command fails (no prior), proceed and note "First stasis — no prior state to compare" in the Cross-Session Patterns section.
 
 ## Determine stasis kind — feature vs session
 
@@ -113,7 +113,7 @@ If none: "No candidates this session."
 
 ## Commit the snapshot
 
-11. Stage and commit `docs/stasis.md`:
+12. Stage and commit `docs/stasis.md`:
     ```bash
     ALLOW_MAIN=1 git add docs/stasis.md
     ALLOW_MAIN=1 git -c commit.gpgsign=false commit -m "docs: stasis <feature-id>"
@@ -122,7 +122,7 @@ If none: "No candidates this session."
 
 ## Close
 
-12. Final output must end with a single explicit next-action directive:
+13. Final output must end with a single explicit next-action directive:
     ```
     Run `/compact` to wrap session.
     ```

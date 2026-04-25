@@ -632,16 +632,18 @@ cmd_apply() {
   fi
 
   # Create backups for the files we're about to mutate. Skip if the
-  # source file doesn't exist (no need to back up nothing).
+  # source file doesn't exist (no need to back up nothing). Install the
+  # ERR trap BEFORE the cp commands so a partial-backup failure (e.g.,
+  # second cp fails after first succeeds) is restored, not orphaned.
   _APPLY_LOCAL_FILE="$local_file"
   _APPLY_MAIN_FILE="$main_file"
+  trap apply_restore_and_exit ERR
   if [[ "$needs_local_bak" -eq 1 && -f "$local_file" ]]; then
     cp "$local_file" "$local_file.bak"
   fi
   if [[ "$needs_main_bak" -eq 1 && -f "$main_file" ]]; then
     cp "$main_file" "$main_file.bak"
   fi
-  trap apply_restore_and_exit ERR
 
   # Execution pass. delete is implemented in step 4; promote/accept-danger
   # land in steps 5-6.
