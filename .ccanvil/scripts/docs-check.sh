@@ -805,17 +805,21 @@ cmd_list_specs() {
 # Fails if: feature-id not found, another spec is In Progress, worktree dirty.
 # ---------------------------------------------------------------------------
 cmd_activate() {
-  # Parse args: <feature-id> [--force-local-ahead|--force-sync] [docs-dir]
+  # Parse args: <feature-id> [--force-local-ahead|--force-sync] [--no-auto-push] [docs-dir]
   # Flag can appear in any position among the positionals.
   # BTS-122: --force-sync is the canonical name; --force-local-ahead is the
   # legacy alias kept for backward compatibility. Both bypass ahead AND
   # behind checks (union semantics — "I know main has drifted, I want it").
+  # BTS-145: --no-auto-push opts out of the auto-push-main behavior; default
+  # is to auto-push when on main with unpushed commits (saves a manual step).
   local feature_id=""
   local docs_dir=""
   local force_sync=false
+  local auto_push=true
   while [[ $# -gt 0 ]]; do
     case "$1" in
       --force-local-ahead|--force-sync) force_sync=true; shift ;;
+      --no-auto-push) auto_push=false; shift ;;
       *)
         if [[ -z "$feature_id" ]]; then feature_id="$1"
         elif [[ -z "$docs_dir" ]]; then docs_dir="$1"
@@ -824,7 +828,7 @@ cmd_activate() {
         ;;
     esac
   done
-  [[ -n "$feature_id" ]] || { echo "Usage: activate <feature-id> [--force-sync] [docs-dir]" >&2; exit 1; }
+  [[ -n "$feature_id" ]] || { echo "Usage: activate <feature-id> [--force-sync] [--no-auto-push] [docs-dir]" >&2; exit 1; }
   [[ -n "$docs_dir" ]] || docs_dir="$DEFAULT_DOCS_DIR"
   local specs_dir="$docs_dir/specs"
   local repo_root
@@ -839,6 +843,32 @@ cmd_activate() {
   if ! $force_sync; then
     local sc_rc=0
     cmd_sync_check "$repo_root" || sc_rc=$?
+
+    # BTS-145: when AHEAD and on main, auto-push origin main (most common
+    # friction point — write spec on main → activate fails → push → retry).
+    # Only fires on `main` so unpushed feature-branch commits still error.
+    if [[ "$sc_rc" -eq 1 ]] && $auto_push; then
+      local current_branch
+      current_branch=$(git -C "$repo_root" branch --show-current 2>/dev/null || echo "")
+      if [[ "$current_branch" == "main" ]]; then
+        echo "" >&2
+        echo "AUTO-PUSH: local main is ahead of origin; pushing first..." >&2
+        if git -C "$repo_root" push origin main 2>&1 >&2; then
+          echo "AUTO-PUSH: success — proceeding with activation." >&2
+          sc_rc=0
+        else
+          echo "ERROR: auto-push to origin/main failed." >&2
+          echo "" >&2
+          echo "Resolve manually and retry:" >&2
+          echo "  git push origin main" >&2
+          echo "  bash .ccanvil/scripts/docs-check.sh activate $feature_id" >&2
+          echo "" >&2
+          echo "Or skip auto-push: --no-auto-push" >&2
+          exit 1
+        fi
+      fi
+    fi
+
     if [[ "$sc_rc" -ne 0 ]]; then
       echo "" >&2
       echo "Or, if you know the drift is intentional:" >&2
