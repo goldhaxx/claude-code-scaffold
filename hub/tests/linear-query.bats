@@ -327,3 +327,107 @@ JSON
   [ "$status" -eq 3 ]
   [[ "$stderr" =~ "Field is required" ]]
 }
+
+# ===========================================================================
+# BTS-166 AC-1: --input-json -  reads JSON from stdin and merges into input
+# ===========================================================================
+# The stdin-JSON path lets callers supply dynamic content (title, description)
+# without shell-quoting friction. CLI flags take precedence on key collision.
+
+@test "BTS-166 AC-1: save-issue --input-json - reads stdin JSON into input" {
+  set -e
+  _setup_stub
+  cat > "$LINEAR_STUB_RESPONSE" <<'JSON'
+{"data":{"issueCreate":{"success":true,"issue":{"id":"u1","identifier":"BTS-201","title":"from-stdin"}}}}
+JSON
+  local stdin_json='{"title":"from-stdin","description":"body via stdin"}'
+  run bash -c "source '$STUB_FIXTURE' && echo '$stdin_json' | bash '$LQ' save-issue --team-id team-uuid --project-id proj-uuid --input-json -"
+  [ "$status" -eq 0 ]
+  local body
+  body=$(_get_body)
+  echo "$body" | jq -e '.variables.input.title == "from-stdin"'
+  echo "$body" | jq -e '.variables.input.description == "body via stdin"'
+  echo "$body" | jq -e '.variables.input.teamId == "team-uuid"'
+}
+
+@test "BTS-166 AC-1: CLI flags override stdin-JSON fields on collision" {
+  set -e
+  _setup_stub
+  cat > "$LINEAR_STUB_RESPONSE" <<'JSON'
+{"data":{"issueCreate":{"success":true,"issue":{"id":"u1","identifier":"BTS-202","title":"cli-wins"}}}}
+JSON
+  # stdin says title=stdin-title, but --title cli-wins on the command line should win.
+  local stdin_json='{"title":"stdin-title","description":"shared body"}'
+  run bash -c "source '$STUB_FIXTURE' && echo '$stdin_json' | bash '$LQ' save-issue --team-id t --project-id p --title cli-wins --input-json -"
+  [ "$status" -eq 0 ]
+  local body
+  body=$(_get_body)
+  echo "$body" | jq -e '.variables.input.title == "cli-wins"'
+  echo "$body" | jq -e '.variables.input.description == "shared body"'
+}
+
+# ===========================================================================
+# BTS-166 AC-3: stdin-JSON preserves special characters verbatim
+# ===========================================================================
+# Newlines, double-quotes, single-quotes, backticks, $VAR, $(cmd) all
+# need to round-trip without shell re-interpretation. jq -n owns the
+# escaping; the wrapper must NOT interpolate the value through bash.
+
+@test "BTS-166 AC-3: stdin-JSON preserves newlines, quotes, backticks, dollar-substitution" {
+  set -e
+  _setup_stub
+  cat > "$LINEAR_STUB_RESPONSE" <<'JSON'
+{"data":{"issueCreate":{"success":true,"issue":{"id":"u1","identifier":"BTS-203","title":"t"}}}}
+JSON
+  # Build the fixture via jq so escaping is deterministic. Description has:
+  #  - embedded newline
+  #  - double-quote
+  #  - single-quote
+  #  - backtick
+  #  - literal $VAR (no expansion expected)
+  #  - literal $(cmd) (no expansion expected)
+  local stdin_json
+  stdin_json=$(jq -n --arg desc "line1
+line2 \"dq\" 'sq' \`bt\` \$VAR \$(cmd)" '{title:"t", description:$desc}')
+  # Pipe via tmpfile so the shell layer doesn't see the metacharacters.
+  local fixture="$BATS_TEST_TMPDIR/stdin.json"
+  printf '%s' "$stdin_json" > "$fixture"
+  run bash -c "source '$STUB_FIXTURE' && bash '$LQ' save-issue --team-id t --project-id p --input-json - < '$fixture'"
+  [ "$status" -eq 0 ]
+  local body
+  body=$(_get_body)
+  # Round-trip: the description in the request body must equal the description in the input fixture.
+  local input_desc body_desc
+  input_desc=$(jq -r '.description' "$fixture")
+  body_desc=$(echo "$body" | jq -r '.variables.input.description')
+  [ "$input_desc" = "$body_desc" ]
+}
+
+# ===========================================================================
+# BTS-166 AC-12: 6-byte UTF-8 emoji + triple-backtick markdown fence round-trip
+# ===========================================================================
+
+@test "BTS-166 AC-12: stdin-JSON preserves 6-byte UTF-8 sequence and triple-backtick fence" {
+  set -e
+  _setup_stub
+  cat > "$LINEAR_STUB_RESPONSE" <<'JSON'
+{"data":{"issueCreate":{"success":true,"issue":{"id":"u1","identifier":"BTS-204","title":"t"}}}}
+JSON
+  # 🚀 (U+1F680) is a 4-byte UTF-8 sequence; pair with another emoji for >6 bytes total.
+  # Triple backticks for markdown-fence preservation.
+  local stdin_json
+  stdin_json=$(jq -n --arg desc 'before 🚀✨ after
+\`\`\`bash
+echo hi
+\`\`\`' '{title:"t", description:$desc}')
+  local fixture="$BATS_TEST_TMPDIR/stdin.json"
+  printf '%s' "$stdin_json" > "$fixture"
+  run bash -c "source '$STUB_FIXTURE' && bash '$LQ' save-issue --team-id t --project-id p --input-json - < '$fixture'"
+  [ "$status" -eq 0 ]
+  local body
+  body=$(_get_body)
+  local input_desc body_desc
+  input_desc=$(jq -r '.description' "$fixture")
+  body_desc=$(echo "$body" | jq -r '.variables.input.description')
+  [ "$input_desc" = "$body_desc" ]
+}

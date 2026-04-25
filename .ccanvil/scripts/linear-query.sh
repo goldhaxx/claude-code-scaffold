@@ -309,6 +309,7 @@ cmd_save_issue() {
   local id="" title="" description="" state=""
   local team_id="" project_id="" parent_id="" duplicate_of=""
   local priority="" label_ids=""
+  local input_json=""
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -322,13 +323,32 @@ cmd_save_issue() {
       --duplicate-of)  duplicate_of="$2"; shift 2 ;;
       --priority)      priority="$2";     shift 2 ;;
       --label-ids)     label_ids="$2";    shift 2 ;;
+      --input-json)    input_json="$2";   shift 2 ;;
       *) _die 2 "save-issue: unknown flag: $1" ;;
     esac
   done
 
+  # BTS-166 AC-1: --input-json -  reads a JSON object from stdin and seeds the
+  # input object. CLI flags layered on top, so command-line values override
+  # stdin fields on key collision (matches the typical "config + override" UX).
+  local stdin_input='{}'
+  if [[ -n "$input_json" ]]; then
+    if [[ "$input_json" == "-" ]]; then
+      stdin_input=$(cat)
+    else
+      _die 2 "save-issue: --input-json currently supports only '-' (stdin)"
+    fi
+    # Validate it's a JSON object before merging.
+    if ! printf '%s' "$stdin_input" | jq -e 'type == "object"' >/dev/null 2>&1; then
+      _die 2 "save-issue: --input-json - did not receive a valid JSON object on stdin"
+    fi
+  fi
+
   # Build the input object incrementally — Linear's IssueCreateInput and
   # IssueUpdateInput share the same field names for everything we set.
-  local input='{}'
+  # BTS-166: seed the input object from stdin-JSON when present. CLI flags
+  # below merge on top, so flag values override stdin fields on collision.
+  local input="$stdin_input"
   if [[ -n "$title" ]]; then
     input=$(printf '%s' "$input" | jq --arg v "$title" '. + {title:$v}')
   fi
@@ -361,12 +381,14 @@ cmd_save_issue() {
   fi
 
   if [[ -z "$id" ]]; then
-    # Create mode. Required: title. team_id is required by Linear's schema
-    # but emitting a clear error here surfaces the gap before the API call.
-    if [[ -z "$title" ]]; then
+    # Create mode. Required: title (in $title or stdin-JSON), team_id (same).
+    # Linear's schema requires both; emitting a clear error here surfaces the
+    # gap before the API call. Check the merged input, not just the flag vars,
+    # so stdin-JSON-only callers (BTS-166) aren't flagged spuriously.
+    if [[ -z "$(echo "$input" | jq -r '.title // ""')" ]]; then
       _die 2 "save-issue create requires --title"
     fi
-    if [[ -z "$team_id" ]]; then
+    if [[ -z "$(echo "$input" | jq -r '.teamId // ""')" ]]; then
       _die 2 "save-issue create requires --team-id (use list-teams to discover)"
     fi
 
