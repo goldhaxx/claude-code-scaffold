@@ -43,25 +43,21 @@ If the first arg is not `list`, `triage`, `review-icebox`, or `sync`, treat ever
 bash .ccanvil/scripts/operations.sh resolve idea.add --project-dir .
 ```
 
-### Step 3a — Linear path (`mechanism == "mcp"`)
+### Step 3a — Linear path (`mechanism == "http"`)
 
-Extract `.invocation.tool`, `.invocation.params.project`, `.invocation.params.team`, `.invocation.params.labels`, and `.invocation.params.state` (present when `state_ids.triage` is configured) from the resolution. Pass `state` through to `save_issue` when present — this routes the capture into Linear's Triage state deterministically. When unconfigured, omit `state` entirely; Linear will fall through to the team's default state (usually Backlog, **not** Triage — the earlier "auto-routes API-created issues to Triage" assumption was falsified empirically).
+BTS-166: capture rides the http substrate. The resolver returns `.invocation.command` carrying a complete `linear-query.sh save-issue` invocation with `--team`, `--project`, `--labels`, and (when `state_ids.triage` is configured) `--state`. Title and description are passed via stdin-JSON so embedded newlines, quotes, backticks, `$VAR`, and `$(cmd)` round-trip without shell interpretation.
 
-Call the MCP tool directly:
-
-```
-mcp__claude_ai_Linear__save_issue
-  team:        <params.team>
-  project:     <params.project>
-  labels:      <params.labels>      # typically ["idea"]
-  state:     <params.state>     # only when present in resolver output
-  title:       <generated title>
-  description: <original raw text, verbatim>
+```bash
+RESOLUTION=$(bash .ccanvil/scripts/operations.sh resolve idea.add --project-dir .)
+cmd=$(echo "$RESOLUTION" | jq -r '.invocation.command')
+jq -n --arg title "$TITLE" --arg description "$BODY" \
+  '{title:$title, description:$description}' \
+  | eval "$cmd --input-json -"
 ```
 
-On success: echo `Captured: <identifier> — <title>`.
+On success: parse the resolver's output (`{id, title}` from the GraphQL `issueCreate` response — `linear-query.sh` reshapes it) and echo `Captured: <identifier> — <title>`.
 
-**On failure** (network, auth, server error): append to pending log via the deterministic helper (BTS-123 — never hand-roll JSON via `echo` + interpolation):
+**On failure** (non-zero exit from `eval`: network, missing `LINEAR_API_KEY`, GraphQL error): append to pending log via the deterministic helper (BTS-123 — never hand-roll JSON via `echo` + interpolation):
 
 ```bash
 bash .ccanvil/scripts/docs-check.sh idea-pending-append \
@@ -93,20 +89,24 @@ Echo a one-line confirmation. Return to whatever was in progress.
 ## List: `/idea list`
 
 1. Resolve: `bash .ccanvil/scripts/operations.sh resolve idea.list --project-dir .`
-2. If `.mechanism == "mcp"`: call `mcp__claude_ai_Linear__list_issues` with the returned params.
-3. If `.mechanism == "bash"`: run the returned command (`docs-check.sh idea-list`).
-4. Render as a table: `ID | Created | Title | Status`.
+2. Run the resolved command:
+   ```bash
+   eval "$(echo "$RESOLUTION" | jq -r '.invocation.command')"
+   ```
+   Both mechanisms (`http` for Linear-routed, `bash` for local) return a JSON array shaped `[{id, title, status, createdAt}, ...]`. No mechanism-specific branching needed at the consumer layer.
+3. Render as a table: `ID | Created | Title | Status`.
 
 Default view excludes terminal (Canceled, Duplicate) and deferred (Icebox) states. Pass `--status icebox` / `--status canceled` / etc. to surface them explicitly.
 
 ## Triage: `/idea triage`
 
-Batched review of items in Triage state. **Fully agentic** — every outcome is a programmatic state-ID transition via MCP (Linear) or local bash (log rewrite). No Linear UI interaction.
+Batched review of items in Triage state. **Fully agentic** — every outcome is a programmatic state-ID transition via http (Linear) or local bash (log rewrite). No Linear UI interaction.
 
 1. **Resolve:** `bash .ccanvil/scripts/operations.sh resolve idea.triage --project-dir .`
-2. **List Triage items:**
-   - mcp: call `mcp__claude_ai_Linear__list_issues` with `.invocation.params` (includes `state` when configured — disambiguation-proof).
-   - bash: run `docs-check.sh idea-list --status triage`.
+2. **List Triage items:** eval the resolved command. Both mechanisms (`http` for Linear, `bash` for local) return a JSON array of issues — no branching at the consumer layer.
+   ```bash
+   eval "$(echo "$RESOLUTION" | jq -r '.invocation.command')"
+   ```
 3. **Load context:** read `docs/roadmap.md` (if present); run `bash .ccanvil/scripts/operations.sh exec backlog.list` for existing backlog.
 4. **Present a table of recommendations.** One row per item. Ask for approval.
 5. **For each approved outcome, resolve via `ticket.transition` and dispatch:**
@@ -163,9 +163,10 @@ Exit 0 per item. `/idea sync` replays these later.
 Re-evaluate Icebox items older than 60d. Prevents graveyard drift.
 
 1. Resolve: `bash .ccanvil/scripts/operations.sh resolve idea.review-icebox --project-dir .`
-2. Pull stale items:
-   - mcp: `mcp__claude_ai_Linear__list_issues` with `params.state` (icebox); filter locally by `createdAt <= now - 60d`.
-   - bash: run `docs-check.sh idea-review-icebox`.
+2. Pull stale items: eval the resolved command. http path filters by `--state icebox` (or the configured icebox state-id) on Linear; local path runs `docs-check.sh idea-review-icebox`. Filter locally by `createdAt <= now - 60d`.
+   ```bash
+   eval "$(echo "$RESOLUTION" | jq -r '.invocation.command')"
+   ```
 3. Present a table. For each, ask: **promote back to Backlog**, **keep in Icebox** (re-stamp review timestamp — future), **dismiss** (canceled), or **merge** into another issue.
 4. Dispatch outcomes using the same rubric as `/idea triage` above.
 
@@ -174,13 +175,13 @@ Re-evaluate Icebox items older than 60d. Prevents graveyard drift.
 Only meaningful when the Linear provider is configured and `.ccanvil/ideas-pending.log` has entries.
 
 1. Resolve: `bash .ccanvil/scripts/operations.sh resolve idea.sync --project-dir .`
-2. Run the returned command (always local bash: `docs-check.sh idea-sync`).
-3. For each entry, dispatch by `op`:
-   - `add` → `save_issue` with title/body/labels (capture).
-   - `promote` → `save_issue` with id + state(backlog) + priority.
-   - `defer` / `dismiss` → `save_issue` with id + target state.
-   - `merge` → `save_issue` with id + state(duplicate) + duplicateOf.
-   - `ticket.transition` → re-resolve `ticket.transition <args.id> <args.role>` via `operations.sh`; dispatch the returned `save_issue` with `id + state` from `.invocation.params`. Queued by `/land` (BTS-119) when auto-close MCP fails. Idempotent — Linear's API accepts transitions to the current state without error.
+2. Run the returned command (always local bash: `docs-check.sh idea-sync`) to enumerate pending entries.
+3. For each entry, dispatch by `op` via the http substrate (BTS-166):
+   - `add` → re-resolve `idea.add` via `operations.sh`; pipe `{title, description}` JSON to `eval "$cmd --input-json -"`. Idempotency caveat: Linear creates aren't deduped server-side, so a replayed `add` could double-capture if the original earlier-replay actually succeeded but the `--ack` failed. Acceptable risk for capture (rare); operator can dismiss the dup via `/idea triage`.
+   - `promote` → re-resolve `ticket.transition <args.id> backlog`; eval `"$cmd --priority $priority"`.
+   - `defer` / `dismiss` → re-resolve `ticket.transition <args.id> {icebox|canceled}`; eval `"$cmd"`.
+   - `merge` → re-resolve `ticket.transition <args.id> duplicate`; eval `"$cmd --duplicate-of $target"`.
+   - `ticket.transition` → re-resolve `ticket.transition <args.id> <args.role>`; eval the returned command. Queued by `/land` (BTS-119) when auto-close fails. Idempotent — Linear's API accepts transitions to the current state without error.
 4. On success per entry: `docs-check.sh idea-sync --ack <ts>`.
 5. Report: `SYNCED: N / PENDING: M`.
 

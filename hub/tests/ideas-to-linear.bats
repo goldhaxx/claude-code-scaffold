@@ -449,15 +449,20 @@ SKILL_FILE="$BATS_TEST_DIRNAME/../../.claude/skills/idea/SKILL.md"
   grep -q 'operations.sh resolve idea.sync' "$SKILL_FILE"
 }
 
-@test "AC-23: skill branches on the mechanism field" {
-  grep -qE 'mechanism.*(mcp|bash)|\.mechanism' "$SKILL_FILE"
-  grep -q 'mcp' "$SKILL_FILE"
+@test "AC-23: skill describes mechanism field (BTS-166: http for Linear, bash for local)" {
+  grep -qE 'mechanism.*(http|bash)|\.mechanism' "$SKILL_FILE"
+  grep -q 'http' "$SKILL_FILE"
   grep -q 'bash' "$SKILL_FILE"
 }
 
-@test "AC-23: skill calls Linear MCP tools by exact name" {
-  grep -q 'mcp__claude_ai_Linear__save_issue' "$SKILL_FILE"
-  grep -q 'mcp__claude_ai_Linear__list_issues' "$SKILL_FILE"
+@test "AC-23: skill dispatches Linear ops via linear-query.sh substrate (BTS-166)" {
+  # BTS-166 migrated capture/list/triage/review-icebox from MCP to the http
+  # substrate. Skill prose must reference the wrapper and the eval pattern,
+  # not the legacy mcp__claude_ai_Linear__* tool names on the linear path.
+  grep -q 'linear-query.sh' "$SKILL_FILE"
+  grep -qE 'eval .*invocation\.command' "$SKILL_FILE"
+  # Negative guard: capture/list paths must NOT call MCP tools directly.
+  ! grep -qE 'mcp__claude_ai_Linear__(save_issue|list_issues)' "$SKILL_FILE"
 }
 
 @test "AC-23: skill writes to .ccanvil/ideas.log for the local path" {

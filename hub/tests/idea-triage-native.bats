@@ -214,8 +214,9 @@ EOF
   # single wrapper (`ticket.transition <id> <role>`) rather than four
   # separate idea.* resolvers.
   grep -q 'ticket\.transition' "$skill"
-  # Agentic: state, not state names.
-  grep -qE 'params\.state|state:' "$skill"
+  # BTS-166: Linear path now uses --state on the linear-query.sh command line.
+  # Agentic: state-id dispatch, never name-based.
+  grep -qE -- '--state|state-id|state_id' "$skill"
   grep -q 'review-icebox' "$skill"
 }
 

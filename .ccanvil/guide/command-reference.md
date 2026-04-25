@@ -135,7 +135,7 @@ The `/idea` skill routes captures through `operations.sh` based on the node's pr
 | `docs-check.sh idea-update <uid> <status> [project-dir]` | Update an entry's status by UID. Accepts five-state vocab + legacy aliases. Unknown status values are rejected. |
 | `docs-check.sh idea-review-icebox [project-dir]` | List Icebox entries (status `icebox` or legacy `parked`) older than 60 days. Feeds `/idea review-icebox` and the `/radar` ambient icebox-stale surface. |
 | `docs-check.sh idea-migrate-state [project-dir]` | One-shot translation of legacy status vocab (`new`/`promoted`/`parked`/`dismissed`/`merged`) to new vocab (`triage`/`backlog`/`icebox`/`canceled`/`duplicate`) in `.ccanvil/ideas.log`. Timestamped backup preserved (`ideas.log.YYYYMMDD-HHMMSS.bak`). Idempotent: re-running on a migrated log reports `0 entries migrated`. |
-| `docs-check.sh idea-sync [--ack <ts>] [project-dir]` | Without args → emit `{pending, entries}` from `.ccanvil/ideas-pending.log`. With `--ack <ts>` → remove the matching pending entry. Replay is driven by `/idea sync` (Linear MCP orchestration in the skill). |
+| `docs-check.sh idea-sync [--ack <ts>] [project-dir]` | Without args → emit `{pending, entries}` from `.ccanvil/ideas-pending.log`. With `--ack <ts>` → remove the matching pending entry. Replay is driven by `/idea sync` (BTS-166: http-substrate orchestration in the skill — supported ops: `add`, `promote`, `defer`, `dismiss`, `merge`, `ticket.transition`). |
 | `docs-check.sh idea-migrate [--extract\|--finalize] [project-dir]` | Move legacy `docs/ideas.md` entries to `.ccanvil/ideas.log`, `git rm` the source, update `.gitignore`. `--extract` emits JSONL intents for skill-level Linear dispatch; `--finalize` does the filesystem cleanup alone. Idempotent. |
 | `docs-check.sh idea-setup --provider local\|linear [--team TEAM --project PROJECT] [project-dir]` | One-shot per-node scaffolder. Deep-merges `integrations.routing.idea` + `integrations.providers.linear` into `.claude/ccanvil.local.json` and adds the `.gitignore` entries. Idempotent; safe to re-run to change providers. |
 | `docs-check.sh idea-upgrade --provider local\|linear [--team TEAM --project PROJECT] [--from-legacy] [--create-project] [--dry-run] [project-dir]` | One-command downstream adoption. Wraps `idea-setup` + (optional) `idea-migrate` + a single commit. `--from-legacy` parses `docs/ideas.md`, generates concise titles via `title-from-body`, writes JSONL, and `git rm`s the source — all in the same commit as the config write. `--create-project` emits a `save_project` JSON intent on stdout for the skill layer to dispatch. `--dry-run` prints the plan without mutating. Idempotent: re-running on an already-upgraded node exits 0 with `Already upgraded`. On `--provider linear`, also prepends a `# ARCHIVE: read-only after <ISO>` header to `.ccanvil/ideas.log` so the log's archive-only role is self-documenting. |
@@ -151,6 +151,23 @@ The `/idea` skill routes captures through `operations.sh` based on the node's pr
 **Archive-only semantic (Linear nodes):** on nodes with `routing.idea = "linear"`, `.ccanvil/ideas.log` is read-only after `idea-upgrade`. New captures route through Linear via the `/idea` skill; `cmd_idea_add` refuses direct writes. The pending log (`.ccanvil/ideas-pending.log`) remains the MCP-failure fallback, drained by `/idea sync`.
 
 **Migration guide:** `.ccanvil/guide/ideas-migration.md` walks a downstream node through the full migration. Prefer `idea-upgrade` for new adoptions; the 4-step manual path (`idea-setup` → `idea-migrate` → commit) remains documented under "Manual alternative".
+
+### `linear-query.sh` (BTS-164/166 — Linear GraphQL substrate)
+
+`.ccanvil/scripts/linear-query.sh` is the http transport layer that backs the Linear provider. It speaks GraphQL via curl + jq, authed by `LINEAR_API_KEY` (auto-sourced from `.env` per BTS-167). The resolver (`operations.sh`) returns `mechanism: http` for Linear-routed verbs and emits a complete `linear-query.sh` invocation in `.invocation.command` — consumers `eval` it.
+
+| Subcommand | What it does |
+|------------|-------------|
+| `viewer` | Identity smoke test (`{ viewer { id, name } }`). |
+| `list-issues [--project NAME] [--team NAME] [--state NAME-or-TYPE-or-ID] [--label NAME] [--limit N]` | List issues with name-based or ID-based filters. State filter accepts type ("triage"), name ("Triage"), or UUID. Returns `[{id, title, status, statusType, priority, createdAt, ...}]`. |
+| `get-issue <ID>` | Fetch one issue including description. |
+| `list-states [--team NAME]` | Workflow states for a team — returns `[{id, name, type}]`. Useful for populating `state_ids` config. |
+| `list-labels [--team NAME]` / `list-teams [--name NAME]` / `list-projects [--name NAME]` | Lookup helpers — return `[{id, name, ...}]`. BTS-166's name-based create flags (`--team`, `--project`, `--labels`) call these internally to resolve NAME → ID before dispatching `save-issue`. |
+| `save-issue [--id ID] [--title TITLE] [--description BODY] [--state STATE-NAME-or-ID] [--team NAME or --team-id UUID] [--project NAME or --project-id UUID] [--labels NAME[,NAME] or --label-ids UUID[,UUID]] [--priority N] [--duplicate-of ID] [--input-json -]` | Create (no `--id`) or update (with `--id`) an issue. Mode selector by `--id`. BTS-166: `--input-json -` reads a JSON object from stdin and merges it into the input — title/description with embedded newlines, quotes, backticks, `$VAR`, `$(cmd)` round-trip without shell-quoting friction (jq owns the escaping). CLI flags layer on top, so flag values override stdin fields on collision. |
+
+**Auth:** `LINEAR_API_KEY` env var. BTS-167 auto-sources it from `.env` files walked from `$PWD` upward. Never check the key into git — `.env` files are gitignored.
+
+**Error contract:** exit 0 success, exit 2 invalid args / missing creds, exit 3 GraphQL errors (Linear server response carried `errors[]`).
 
 ## Radar Scripts
 
