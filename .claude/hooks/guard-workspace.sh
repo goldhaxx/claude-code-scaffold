@@ -28,7 +28,7 @@ fi
 
 # Only enforce for commands containing a gated file-mutation verb.
 # Word-boundary match: verb must be at start, or after whitespace/;/|/&.
-if [[ ! "$COMMAND" =~ (^|[[:space:]\;\|\&])(rm|cp|mv|chmod|chown|bash)([[:space:]]|$) ]]; then
+if [[ ! "$COMMAND" =~ (^|[[:space:]\;\|\&])(rm|cp|mv|chmod|chown|bash|find)([[:space:]]|$) ]]; then
   exit 0
 fi
 

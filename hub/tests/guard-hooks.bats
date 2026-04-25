@@ -400,6 +400,103 @@ WORKSPACE_HOOK="$BATS_TEST_DIRNAME/../../.claude/hooks/guard-workspace.sh"
 }
 
 # =========================================================================
+# guard-destructive.sh — find traverse-and-mutate patterns (BTS-155)
+# =========================================================================
+
+@test "BTS-155 AC-1: blocks find . -delete" {
+  set -e   # BTS-127
+  input='{"tool_name":"Bash","tool_input":{"command":"find . -delete"}}'
+  run bash -c "echo '$input' | '$DESTRUCTIVE_HOOK'"
+  [ "$status" -eq 2 ]
+  echo "$output" | grep -q "BLOCKED"
+  echo "$output" | grep -q "ALLOW_DESTRUCTIVE=1"
+}
+
+@test "BTS-155 AC-2: blocks find . -exec rm {} +" {
+  input='{"tool_name":"Bash","tool_input":{"command":"find . -exec rm {} +"}}'
+  run bash -c "echo '$input' | '$DESTRUCTIVE_HOOK'"
+  [ "$status" -eq 2 ]
+}
+
+@test "BTS-155 AC-3: blocks find . -exec rm {} \\;" {
+  input='{"tool_name":"Bash","tool_input":{"command":"find . -exec rm {} \\;"}}'
+  run bash -c "echo '$input' | '$DESTRUCTIVE_HOOK'"
+  [ "$status" -eq 2 ]
+}
+
+@test "BTS-155 AC-4: blocks find . -execdir chmod" {
+  input='{"tool_name":"Bash","tool_input":{"command":"find . -execdir chmod 644 {} +"}}'
+  run bash -c "echo '$input' | '$DESTRUCTIVE_HOOK'"
+  [ "$status" -eq 2 ]
+}
+
+@test "BTS-155 AC-5: blocks find . -okdir rm" {
+  input='{"tool_name":"Bash","tool_input":{"command":"find . -okdir rm {} \\;"}}'
+  run bash -c "echo '$input' | '$DESTRUCTIVE_HOOK'"
+  [ "$status" -eq 2 ]
+}
+
+@test "BTS-155 AC-6: bypass via ALLOW_DESTRUCTIVE=1" {
+  input='{"tool_name":"Bash","tool_input":{"command":"ALLOW_DESTRUCTIVE=1 find . -delete"}}'
+  run bash -c "echo '$input' | '$DESTRUCTIVE_HOOK'"
+  [ "$status" -eq 0 ]
+}
+
+@test "BTS-155 AC-7: allows find with -name (read-only)" {
+  input='{"tool_name":"Bash","tool_input":{"command":"find . -name \"*.log\""}}'
+  run bash -c "echo '$input' | '$DESTRUCTIVE_HOOK'"
+  [ "$status" -eq 0 ]
+}
+
+@test "BTS-155 AC-7: allows find with -type" {
+  input='{"tool_name":"Bash","tool_input":{"command":"find . -type f"}}'
+  run bash -c "echo '$input' | '$DESTRUCTIVE_HOOK'"
+  [ "$status" -eq 0 ]
+}
+
+@test "BTS-155 AC-7: allows find with -print" {
+  input='{"tool_name":"Bash","tool_input":{"command":"find . -print"}}'
+  run bash -c "echo '$input' | '$DESTRUCTIVE_HOOK'"
+  [ "$status" -eq 0 ]
+}
+
+@test "BTS-155 AC-8: allows find with -name '-delete' as pattern (quoted)" {
+  # The single-quoted '-delete' is a name pattern, not the action.
+  # Bats' inline-JSON-via-echo pipe re-parses single quotes during
+  # bash -c, stripping them — so we feed the input via a tmpfile to
+  # preserve the literal quotes the way Claude Code passes tool_input.
+  tmp=$(mktemp -t bts155-ac8)
+  cat > "$tmp" <<'JSON'
+{"tool_name":"Bash","tool_input":{"command":"find . -name '-delete' -print"}}
+JSON
+  run bash -c "cat '$tmp' | '$DESTRUCTIVE_HOOK'"
+  rm -f "$tmp"
+  [ "$status" -eq 0 ]
+}
+
+@test "BTS-155 AC-9: allows xfind . -delete (find substring in another verb)" {
+  input='{"tool_name":"Bash","tool_input":{"command":"xfind . -delete"}}'
+  run bash -c "echo '$input' | '$DESTRUCTIVE_HOOK'"
+  [ "$status" -eq 0 ]
+}
+
+@test "BTS-155 AC-10: workspace fence blocks find /etc traversal" {
+  input='{"tool_name":"Bash","tool_input":{"command":"find /etc -name \"*.conf\""}}'
+  run bash -c "echo '$input' | '$WORKSPACE_HOOK'"
+  [ "$status" -eq 2 ]
+  echo "$output" | grep -q "/etc"
+}
+
+@test "BTS-155 AC-11: workspace fence allows find /tmp/scratch" {
+  # Whitelist prefix is "/tmp/" (with trailing slash); bare "/tmp" doesn't
+  # match the case-glob pattern. Operators traversing inside /tmp use a
+  # subpath. (Same convention as the BTS-146 AC-8 test for rm in /tmp.)
+  input='{"tool_name":"Bash","tool_input":{"command":"find /tmp/scratch -name \"*.log\""}}'
+  run bash -c "echo '$input' | '$WORKSPACE_HOOK'"
+  [ "$status" -eq 0 ]
+}
+
+# =========================================================================
 # guard-workspace.sh — workspace fence (BTS-146)
 # =========================================================================
 
