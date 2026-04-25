@@ -442,19 +442,19 @@ WORKSPACE_HOOK="$BATS_TEST_DIRNAME/../../.claude/hooks/guard-workspace.sh"
   [ "$status" -eq 0 ]
 }
 
-@test "BTS-155 AC-7: allows find with -name (read-only)" {
+@test "BTS-155 AC-7a: allows find . -name (read-only)" {
   input='{"tool_name":"Bash","tool_input":{"command":"find . -name \"*.log\""}}'
   run bash -c "echo '$input' | '$DESTRUCTIVE_HOOK'"
   [ "$status" -eq 0 ]
 }
 
-@test "BTS-155 AC-7: allows find with -type" {
+@test "BTS-155 AC-7b: allows find . -type f (read-only)" {
   input='{"tool_name":"Bash","tool_input":{"command":"find . -type f"}}'
   run bash -c "echo '$input' | '$DESTRUCTIVE_HOOK'"
   [ "$status" -eq 0 ]
 }
 
-@test "BTS-155 AC-7: allows find with -print" {
+@test "BTS-155 AC-7c: allows find . -print (read-only)" {
   input='{"tool_name":"Bash","tool_input":{"command":"find . -print"}}'
   run bash -c "echo '$input' | '$DESTRUCTIVE_HOOK'"
   [ "$status" -eq 0 ]
@@ -481,6 +481,7 @@ JSON
 }
 
 @test "BTS-155 AC-10: workspace fence blocks find /etc traversal" {
+  set -e   # BTS-127
   input='{"tool_name":"Bash","tool_input":{"command":"find /etc -name \"*.conf\""}}'
   run bash -c "echo '$input' | '$WORKSPACE_HOOK'"
   [ "$status" -eq 2 ]

@@ -85,11 +85,12 @@ fi
 # fence enforcement on out-of-workspace traversal is handled by guard-workspace
 # (find added to its verb regex). (BTS-155)
 #
-# Word-anchor `find` to avoid xfind/findutils-substring false positives. The
-# action-operator boundary class includes quote chars so a `-name '-delete'`
-# pattern argument doesn't trigger.
+# Word-anchor `find` to avoid xfind/findutils-substring false positives.
+# The action-operator boundary uses plain whitespace; quoted name patterns
+# like `-name '-delete'` are protected by the space *after* the closing
+# quote, not by quote chars in the boundary class.
 if [[ "$COMMAND" =~ (^|[[:space:]\;\|\&])find[[:space:]] ]] \
-   && [[ "$COMMAND" =~ (^|[[:space:]\"\'])(-delete|-exec|-execdir|-okdir)([[:space:]]|$) ]]; then
+   && [[ "$COMMAND" =~ (^|[[:space:]])(-delete|-exec|-execdir|-okdir)([[:space:]]|$) ]]; then
   echo "BLOCKED: find with -delete or -exec/-execdir/-okdir traverses then mutates." >&2
   echo "  To bypass: ALLOW_DESTRUCTIVE=1 find ..." >&2
   exit 2

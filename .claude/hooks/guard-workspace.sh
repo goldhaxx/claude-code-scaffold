@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # guard-workspace.sh — PreToolUse hook for Bash
-# Blocks file-mutation verbs (rm, cp, mv, chmod, chown, bash) when any
+# Blocks file-mutation verbs (rm, cp, mv, chmod, chown, bash, find) when any
 # absolute or tilde-prefixed path argument falls outside the workspace
 # ($HOME/projects/) or whitelisted system temp dirs.
 #
