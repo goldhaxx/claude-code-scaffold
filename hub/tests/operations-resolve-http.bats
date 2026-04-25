@@ -163,6 +163,42 @@ JSON
   echo "$output" | jq -e '.invocation.command | contains("--description") | not'
 }
 
+@test "BTS-166: idea.add @sh-quoted command-line values handle team name with apostrophe" {
+  set -e
+  # Defensive regression — none of our current providers have apostrophes
+  # in their names, but the resolver builds a shell-eval'd command string
+  # and a future workspace name like "Blocktech's Solutions" must not break
+  # the eval. The @sh filter generates valid POSIX-quoted output:
+  #   Blocktech's Solutions  →  'Blocktech'\''s Solutions'
+  # which eval's back to the original string verbatim.
+  mkdir -p "$PROJECT/.claude"
+  cat > "$PROJECT/.claude/ccanvil.json" <<'JSON'
+{"integrations":{"providers":{"linear":{"mechanism":"mcp"}}}}
+JSON
+  cat > "$PROJECT/.claude/ccanvil.local.json" <<'JSON'
+{"integrations":{"routing":{"idea":"linear"},"providers":{"linear":{"project":"ccanvil","team":"Acme's Team","idea_label":"idea"}}}}
+JSON
+  run bash "$OPS" resolve idea.add --project-dir "$PROJECT"
+  [ "$status" -eq 0 ]
+  # The command is a complete shell-eval'd string. Extract it and run it
+  # through bash's word-splitter (printf %q is the inverse of @sh) to
+  # confirm the team token round-trips to the original string.
+  local cmd
+  cmd=$(echo "$output" | jq -r '.invocation.command')
+  # Use eval to parse the quoting; "$@" then gives us the actual tokens.
+  # We never actually invoke linear-query.sh — we just confirm the parse.
+  eval "set -- $cmd"
+  local found="false"
+  while [ $# -gt 0 ]; do
+    if [ "$1" = "--team" ]; then
+      [ "$2" = "Acme's Team" ] && found="true"
+      break
+    fi
+    shift
+  done
+  [ "$found" = "true" ]
+}
+
 @test "BTS-166 AC-8: idea.{list,triage,add,review-icebox} on local-routed project still emit mechanism=bash" {
   set -e
   _with_local_routing

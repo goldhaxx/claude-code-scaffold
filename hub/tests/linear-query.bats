@@ -431,10 +431,16 @@ EOF
   run bash -c "source '$BATS_TEST_TMPDIR/seq-stub.sh' && bash '$LQ' save-issue --team 'Blocktech Solutions' --project-id proj-uuid --title 'new' --description 'body'"
   [ "$status" -eq 0 ]
   echo "$output" | jq -e '.id == "BTS-300"'
-  # The LAST captured BODY is the issueCreate; assert teamId resolved correctly.
-  local last_body
-  last_body=$(grep '^BODY:' "$LINEAR_STUB_CAPTURE" | tail -1 | sed 's/^BODY://')
-  echo "$last_body" | jq -e '.variables.input.teamId == "team-uuid"'
+  # Find the issueCreate body structurally rather than by line position —
+  # multiple curl calls land in $LINEAR_STUB_CAPTURE; assert against the
+  # body whose query contains "issueCreate", not "the last line". Robust
+  # to future test additions that issue more lookup roundtrips.
+  local create_body
+  create_body=$(grep '^BODY:' "$LINEAR_STUB_CAPTURE" | sed 's/^BODY://' | while read -r line; do
+    echo "$line" | jq -e '.query | contains("issueCreate")' >/dev/null 2>&1 && echo "$line"
+  done)
+  [ -n "$create_body" ]
+  echo "$create_body" | jq -e '.variables.input.teamId == "team-uuid"'
 }
 
 @test "BTS-166 AC-2: save-issue --team-id wins when both --team and --team-id are passed" {

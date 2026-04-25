@@ -275,16 +275,23 @@ cmd_list_states() {
 
 cmd_list_labels() {
   _require_api_key
-  local team=""
+  local team="" team_id=""
   while [[ $# -gt 0 ]]; do
     case "$1" in
-      --team) team="$2"; shift 2 ;;
+      --team)    team="$2";    shift 2 ;;
+      --team-id) team_id="$2"; shift 2 ;;
       *) _die 2 "list-labels: unknown flag: $1" ;;
     esac
   done
 
+  # BTS-166: --team-id wins over --team for scoping (mirrors save-issue
+  # precedence). Allows multi-team-aware callers to pass the already-known
+  # UUID and skip a name-resolution roundtrip while still scoping the label
+  # filter precisely.
   local filter='{}'
-  if [[ -n "$team" ]]; then
+  if [[ -n "$team_id" ]]; then
+    filter=$(printf '%s' "$filter" | jq --arg v "$team_id" '. + {team:{id:{eq:$v}}}')
+  elif [[ -n "$team" ]]; then
     filter=$(printf '%s' "$filter" | jq --arg v "$team" '. + {team:{name:{eq:$v}}}')
   fi
 
@@ -393,6 +400,11 @@ cmd_save_issue() {
   # BTS-166 AC-2: name-based create flags. Resolve NAME→ID via list-teams /
   # list-projects / list-labels when --*-id wasn't passed. -id flags take
   # precedence on collision (caller knows the UUID; skip the extra roundtrip).
+  #
+  # Round-trip cost for the all-names-no-ids path: 3 GraphQL calls before
+  # the issueCreate (teams → projects → labels [+ optional teams again
+  # internal to list-labels' team-name filter]). For high-frequency callers
+  # that already have IDs in config, prefer --*-id to skip the lookups.
   if [[ -z "$team_id" && -n "$team_name" ]]; then
     team_id=$(cmd_list_teams --name "$team_name" | jq -r '.[0].id // ""')
     if [[ -z "$team_id" ]]; then
@@ -406,12 +418,17 @@ cmd_save_issue() {
     fi
   fi
   if [[ -z "$label_ids" && -n "$labels_csv" ]]; then
-    # Resolve each NAME → ID; --team filter scopes the lookup if available.
+    # Resolve each NAME → ID with proper team scoping. Prefer the resolved
+    # team_id (UUID) when present; fall back to team_name. Without scoping,
+    # multi-team workspaces could silently pick the wrong label when two
+    # teams share a label name.
     local resolved_ids=""
     local IFS_old="$IFS"; IFS=,
     for label_name in $labels_csv; do
       local label_filter=()
-      if [[ -n "$team_name" ]]; then
+      if [[ -n "$team_id" ]]; then
+        label_filter=(--team-id "$team_id")
+      elif [[ -n "$team_name" ]]; then
         label_filter=(--team "$team_name")
       fi
       local lid

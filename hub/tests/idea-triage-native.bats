@@ -361,6 +361,39 @@ EOF
   echo "$output" | jq -e '.invocation.command | contains("--state") and contains("cccccccc-0000-0000-0000-000000000003")'
 }
 
+@test "BTS-166: idea.review-icebox falls through to type-name 'icebox' when state_ids.icebox is empty string" {
+  # Mirror of BTS-121 AC-5 for the icebox path. Empty string must be treated
+  # as unconfigured to avoid filtering by --state '' (server-side error or
+  # silent no-op). Falls through to the literal "icebox" type-name filter.
+  mkdir -p "$PROJECT/.claude"
+  cat > "$PROJECT/.claude/ccanvil.json" <<'JSON'
+{
+  "integrations": {
+    "providers": {
+      "linear": {
+        "mechanism": "mcp",
+        "project": "Test Project",
+        "team": "Test Team",
+        "idea_label": "idea",
+        "state_ids": {
+          "triage": "aaaaaaaa-0000-0000-0000-000000000001",
+          "icebox": ""
+        }
+      }
+    },
+    "routing": { "idea": "linear" }
+  }
+}
+JSON
+  run bash "$OPS" resolve idea.review-icebox --project-dir "$PROJECT"
+  [ "$status" -eq 0 ]
+  # Empty-string state_id MUST fall through to the type-name "icebox" filter.
+  echo "$output" | jq -e '.invocation.command | contains("--state") and contains("icebox")'
+  # And NOT pass --state '' literally (which would surface as a server error
+  # or silent no-op on Linear's side).
+  echo "$output" | jq -e ".invocation.command | contains(\"--state ''\") | not"
+}
+
 # =========================================================================
 # Step 7 — Default idea-list excludes terminal + deferred states (AC-9).
 # =========================================================================
