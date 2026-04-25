@@ -34,7 +34,7 @@ is_valid_operation() {
     status.get|status.update) return 0 ;;
     pr.create|pr.list) return 0 ;;
     review.run) return 0 ;;
-    idea.add|idea.list|idea.triage|idea.sync) return 0 ;;
+    idea.add|idea.list|idea.count|idea.triage|idea.sync) return 0 ;;
     idea.promote|idea.defer|idea.dismiss|idea.merge) return 0 ;;
     idea.review-icebox) return 0 ;;
     work.resolve) return 0 ;;
@@ -60,7 +60,7 @@ Operations:
   status.{get,update}
   pr.{create,list}
   review.run
-  idea.{add,list,triage,sync,promote,defer,dismiss,merge,review-icebox}
+  idea.{add,list,count,triage,sync,promote,defer,dismiss,merge,review-icebox}
   work.resolve <ref>
   ticket.transition <id> <role>
 EOF
@@ -330,6 +330,14 @@ local_adapter() {
       cmd=".ccanvil/scripts/docs-check.sh idea-list"
       output_contract='["uid","created","title","status"]'
       ;;
+    idea.count)
+      # BTS-164: local-routed idea.count points at idea-count-local — a
+      # rename of the original cmd_idea_count internal in Step 5. Until that
+      # step lands, the command is invocable but resolves to an undefined
+      # subcommand; tests cover the resolver shape, not execution.
+      cmd=".ccanvil/scripts/docs-check.sh idea-count-local ${PROJECT_DIR}"
+      output_contract='["total","triage","backlog","icebox","canceled","duplicate"]'
+      ;;
     idea.triage)
       # Uses new-vocab "triage" filter; cmd_idea_list translation table
       # folds legacy status="new" entries in transparently.
@@ -515,6 +523,30 @@ linear_mcp_adapter() {
         --arg label "$idea_label" \
         --argjson output "$output_contract" \
         '{"provider":"linear","mechanism":"mcp","invocation":{"tool":$tool,"params":{"project":$project,"team":$team,"label":$label}},"contract":{"output":$output}}'
+      ;;
+    idea.count)
+      # BTS-164: emit mechanism=http with a linear-query.sh invocation. The
+      # consumer (Step 5's cmd_idea_count) shells out to the wrapper, parses
+      # the resulting list, and aggregates counts by status. linear-query.sh
+      # handles auth + transport; the resolver only carries enough info for
+      # the consumer to invoke the wrapper and pre-flight LINEAR_API_KEY.
+      output_contract='["id","status","statusType"]'
+      jq -n --arg project "$project" --arg team "$team" --arg label "$idea_label" \
+        --argjson output "$output_contract" \
+        '{
+          provider: "linear",
+          mechanism: "http",
+          invocation: {
+            command: ("bash .ccanvil/scripts/linear-query.sh list-issues" +
+                      " --project " + ($project | @sh) +
+                      " --team " + ($team | @sh) +
+                      " --label " + ($label | @sh) +
+                      " --limit 250"),
+            endpoint: "https://api.linear.app/graphql",
+            auth_env: "LINEAR_API_KEY"
+          },
+          contract: { output: $output }
+        }'
       ;;
     idea.triage)
       # state takes precedence over name-based state dispatch — when
