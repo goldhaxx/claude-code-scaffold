@@ -561,6 +561,11 @@ JSON
   [ "$status" -eq 0 ]
 }
 
+# AC-10 ("existing gates intact") is validated by the full bats-report.sh
+# --parallel run, not a named per-AC test. Counted as covered when the
+# pre-BTS-157 test count rises by exactly the number of new BTS-157 tests
+# with no failures elsewhere.
+
 # =========================================================================
 # guard-workspace.sh — workspace fence (BTS-146)
 # =========================================================================

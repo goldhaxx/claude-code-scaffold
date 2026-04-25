@@ -17,6 +17,9 @@
 #   - Relative-path traversal (../../etc/x) — bypasses absolute-path check.
 #   - Subshell expansion ($(cmd)) — literal substrings inside $(...) ARE
 #     scanned, so most cases (like rm $(find /)) still trip on the literal /.
+#   - Aliased / case-variant verbs (gsort, gfind on macOS Homebrew; Sort
+#     capitalized) — the alternation is literal and case-sensitive. Add
+#     to the verb list if/when they become operationally relevant.
 
 set -uo pipefail
 
