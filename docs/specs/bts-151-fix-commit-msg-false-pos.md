@@ -3,7 +3,7 @@
 > Feature: bts-151-fix-commit-msg-false-pos
 > Work: linear:BTS-151
 > Created: 1777155446
-> Status: In Progress
+> Status: Complete
 
 ## Summary
 
