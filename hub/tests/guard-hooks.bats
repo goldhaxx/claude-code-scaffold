@@ -239,6 +239,167 @@ WORKSPACE_HOOK="$BATS_TEST_DIRNAME/../../.claude/hooks/guard-workspace.sh"
 }
 
 # =========================================================================
+# guard-destructive.sh — rm recursive+force patterns (BTS-156)
+# =========================================================================
+
+@test "BTS-156 AC-1: blocks rm -rf" {
+  set -e   # BTS-127: halt on any assertion failure
+  input='{"tool_name":"Bash","tool_input":{"command":"rm -rf /tmp/foo"}}'
+  run bash -c "echo '$input' | '$DESTRUCTIVE_HOOK'"
+  [ "$status" -eq 2 ]
+  echo "$output" | grep -q "BLOCKED"
+  echo "$output" | grep -q "ALLOW_DESTRUCTIVE=1"
+}
+
+@test "BTS-156 AC-2: blocks rm -fr" {
+  input='{"tool_name":"Bash","tool_input":{"command":"rm -fr /tmp/foo"}}'
+  run bash -c "echo '$input' | '$DESTRUCTIVE_HOOK'"
+  [ "$status" -eq 2 ]
+}
+
+@test "BTS-156 AC-2: blocks rm -rfv" {
+  input='{"tool_name":"Bash","tool_input":{"command":"rm -rfv /tmp/foo"}}'
+  run bash -c "echo '$input' | '$DESTRUCTIVE_HOOK'"
+  [ "$status" -eq 2 ]
+}
+
+@test "BTS-156 AC-2: blocks rm -fR" {
+  input='{"tool_name":"Bash","tool_input":{"command":"rm -fR /tmp/foo"}}'
+  run bash -c "echo '$input' | '$DESTRUCTIVE_HOOK'"
+  [ "$status" -eq 2 ]
+}
+
+@test "BTS-156 AC-2: blocks rm -Rfv" {
+  input='{"tool_name":"Bash","tool_input":{"command":"rm -Rfv /tmp/foo"}}'
+  run bash -c "echo '$input' | '$DESTRUCTIVE_HOOK'"
+  [ "$status" -eq 2 ]
+}
+
+@test "BTS-156 AC-3: blocks rm --recursive --force" {
+  input='{"tool_name":"Bash","tool_input":{"command":"rm --recursive --force /tmp/foo"}}'
+  run bash -c "echo '$input' | '$DESTRUCTIVE_HOOK'"
+  [ "$status" -eq 2 ]
+}
+
+@test "BTS-156 AC-3: blocks rm --force --recursive (reverse order)" {
+  input='{"tool_name":"Bash","tool_input":{"command":"rm --force --recursive /tmp/foo"}}'
+  run bash -c "echo '$input' | '$DESTRUCTIVE_HOOK'"
+  [ "$status" -eq 2 ]
+}
+
+@test "BTS-156 AC-2: blocks rm -r -f (split short flags)" {
+  # Split flags are equivalent to -rf at the OS level; an agent might emit
+  # this form as a natural variation. Without independent flag detection,
+  # the cluster regex would miss this. Surfaced by code review.
+  input='{"tool_name":"Bash","tool_input":{"command":"rm -r -f /tmp/foo"}}'
+  run bash -c "echo '$input' | '$DESTRUCTIVE_HOOK'"
+  [ "$status" -eq 2 ]
+}
+
+@test "BTS-156 AC-3: blocks rm -r --force (mixed short+long)" {
+  input='{"tool_name":"Bash","tool_input":{"command":"rm -r --force /tmp/foo"}}'
+  run bash -c "echo '$input' | '$DESTRUCTIVE_HOOK'"
+  [ "$status" -eq 2 ]
+}
+
+@test "BTS-156 AC-3: blocks rm --recursive -f (mixed long+short)" {
+  input='{"tool_name":"Bash","tool_input":{"command":"rm --recursive -f /tmp/foo"}}'
+  run bash -c "echo '$input' | '$DESTRUCTIVE_HOOK'"
+  [ "$status" -eq 2 ]
+}
+
+@test "BTS-156: blocks sudo rm -rf" {
+  # sudo prefix is a space-separated word boundary; rm is still anchored.
+  input='{"tool_name":"Bash","tool_input":{"command":"sudo rm -rf /tmp/foo"}}'
+  run bash -c "echo '$input' | '$DESTRUCTIVE_HOOK'"
+  [ "$status" -eq 2 ]
+}
+
+@test "BTS-156 AC-4: rm -rf bypasses with ALLOW_DESTRUCTIVE=1" {
+  input='{"tool_name":"Bash","tool_input":{"command":"ALLOW_DESTRUCTIVE=1 rm -rf /tmp/foo"}}'
+  run bash -c "echo '$input' | '$DESTRUCTIVE_HOOK'"
+  [ "$status" -eq 0 ]
+}
+
+@test "BTS-156 AC-5: allows rm -r (no -f)" {
+  input='{"tool_name":"Bash","tool_input":{"command":"rm -r dir/"}}'
+  run bash -c "echo '$input' | '$DESTRUCTIVE_HOOK'"
+  [ "$status" -eq 0 ]
+}
+
+@test "BTS-156 AC-5: allows rm -R (no -f)" {
+  input='{"tool_name":"Bash","tool_input":{"command":"rm -R dir/"}}'
+  run bash -c "echo '$input' | '$DESTRUCTIVE_HOOK'"
+  [ "$status" -eq 0 ]
+}
+
+@test "BTS-156 AC-6: allows rm -f (no recursive)" {
+  input='{"tool_name":"Bash","tool_input":{"command":"rm -f file.txt"}}'
+  run bash -c "echo '$input' | '$DESTRUCTIVE_HOOK'"
+  [ "$status" -eq 0 ]
+}
+
+@test "BTS-156 AC-6: allows rm --force (no recursive)" {
+  input='{"tool_name":"Bash","tool_input":{"command":"rm --force file.txt"}}'
+  run bash -c "echo '$input' | '$DESTRUCTIVE_HOOK'"
+  [ "$status" -eq 0 ]
+}
+
+@test "BTS-156 AC-7: allows plain rm (no flags)" {
+  input='{"tool_name":"Bash","tool_input":{"command":"rm file1 file2"}}'
+  run bash -c "echo '$input' | '$DESTRUCTIVE_HOOK'"
+  [ "$status" -eq 0 ]
+}
+
+@test "BTS-156 AC-8: allows rm -i -f (interactive+force, no recursive)" {
+  input='{"tool_name":"Bash","tool_input":{"command":"rm -i -f file.txt"}}'
+  run bash -c "echo '$input' | '$DESTRUCTIVE_HOOK'"
+  [ "$status" -eq 0 ]
+}
+
+@test "BTS-156 AC-8: allows rm -v -r (verbose+recursive, no force)" {
+  input='{"tool_name":"Bash","tool_input":{"command":"rm -v -r dir/"}}'
+  run bash -c "echo '$input' | '$DESTRUCTIVE_HOOK'"
+  [ "$status" -eq 0 ]
+}
+
+@test "BTS-156 AC-9: allows form -rf (rm-substring in another verb)" {
+  # Not a real command, but tests that the rm regex anchors as a word.
+  input='{"tool_name":"Bash","tool_input":{"command":"form -rf /tmp/foo"}}'
+  run bash -c "echo '$input' | '$DESTRUCTIVE_HOOK'"
+  [ "$status" -eq 0 ]
+}
+
+@test "BTS-156 AC-9: allows arm -rf (rm-substring at end of word)" {
+  input='{"tool_name":"Bash","tool_input":{"command":"arm -rf /tmp/foo"}}'
+  run bash -c "echo '$input' | '$DESTRUCTIVE_HOOK'"
+  [ "$status" -eq 0 ]
+}
+
+@test "BTS-156 AC-10: blocks rm -rf with relative path" {
+  input='{"tool_name":"Bash","tool_input":{"command":"rm -rf ./foo"}}'
+  run bash -c "echo '$input' | '$DESTRUCTIVE_HOOK'"
+  [ "$status" -eq 2 ]
+}
+
+@test "BTS-156 AC-10: blocks rm -rf with workspace-relative path" {
+  input='{"tool_name":"Bash","tool_input":{"command":"rm -rf ~/projects/x"}}'
+  run bash -c "echo '$input' | '$DESTRUCTIVE_HOOK'"
+  [ "$status" -eq 2 ]
+}
+
+@test "BTS-156: catches rm -rf reached via xargs (literal string in command)" {
+  # The hook is a literal-string check, not a parser. Pipelines like
+  # `find . | xargs rm -rf` are caught because `rm -rf` appears verbatim.
+  # The real blind spot is rm composed at runtime where the literal string
+  # never contains `rm -rf` — e.g. `bash -c "$(printf 'rm %s' '-rf')"`.
+  # Out of scope per spec; documented in hook comment.
+  input='{"tool_name":"Bash","tool_input":{"command":"find . -type d | xargs rm -rf"}}'
+  run bash -c "echo '$input' | '$DESTRUCTIVE_HOOK'"
+  [ "$status" -eq 2 ]
+}
+
+# =========================================================================
 # guard-workspace.sh — workspace fence (BTS-146)
 # =========================================================================
 

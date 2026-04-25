@@ -89,6 +89,7 @@ graph TD
 | Script | Event | Exit 2 blocks | What it checks |
 |--------|-------|---------------|----------------|
 | `protect-files.sh` | PreToolUse | Yes | `.env`, `*credentials*`, `*secret*`, `*.pem`, `*.key`, `foundations.md`, `node_modules/`, `dist/`, `generated/`, `.git/` |
+| `guard-destructive.sh` | PreToolUse (Bash) | Yes | `git reset --hard`, `git branch -D`, `git push --delete`, `git clean -f`, `chmod 777/666/000`, `rm -rf` (recursive+force, any flag form). Bypass: prefix with `ALLOW_DESTRUCTIVE=1`. |
 | `lint-on-write.sh` | PostToolUse | Yes | Syntax validation: `bash -n` for `.sh`, `jq empty` for `.json`, python yaml check for `.yaml`. Blocks writes with syntax errors. |
 | `format-on-write.sh` | PostToolUse | No | Detects file type, runs appropriate formatter (uncomment for your stack) |
 
