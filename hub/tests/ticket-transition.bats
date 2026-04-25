@@ -117,19 +117,21 @@ _local_config() {
 # Step 3 — Happy-path resolver on Linear provider (AC-2)
 # ===========================================================================
 
-@test "BTS-128 AC-2: resolver emits Linear save_issue payload with id + state" {
+@test "BTS-128 AC-2: resolver emits http save-issue command with id + state (BTS-164 migration)" {
   set -e
   _linear_config_with_state_ids
   run bash "$OPS" resolve ticket.transition BTS-1 backlog --project-dir "$PROJECT"
   [ "$status" -eq 0 ]
-  # Single combined jq -e — asserts every field at once, avoiding the
-  # BTS-127 pattern where only the final jq -e governs test exit status.
+  # BTS-164: ticket.transition migrated from mcp to http. The resolver now
+  # emits a complete linear-query.sh save-issue invocation as a command
+  # string. Caller eval's it; no MCP indirection.
   echo "$output" | jq -e '
     .provider == "linear"
-    and .mechanism == "mcp"
-    and .invocation.tool == "mcp__claude_ai_Linear__save_issue"
-    and .invocation.params.id == "BTS-1"
-    and .invocation.params.state == "fixture-backlog-uuid"
+    and .mechanism == "http"
+    and .invocation.auth_env == "LINEAR_API_KEY"
+    and (.invocation.command | contains("linear-query.sh save-issue"))
+    and (.invocation.command | contains("BTS-1"))
+    and (.invocation.command | contains("fixture-backlog-uuid"))
   '
 }
 
@@ -141,35 +143,35 @@ _local_config() {
   _linear_config_with_state_ids
   run bash "$OPS" resolve ticket.transition BTS-1 triage --project-dir "$PROJECT"
   [ "$status" -eq 0 ]
-  echo "$output" | jq -e '.invocation.params.id == "BTS-1" and .invocation.params.state == "fixture-triage-uuid"'
+  echo "$output" | jq -e '(.invocation.command | contains("BTS-1")) and (.invocation.command | contains("fixture-triage-uuid"))'
 }
 
 @test "BTS-128 AC-3: role=icebox resolves to fixture-icebox-uuid" {
   _linear_config_with_state_ids
   run bash "$OPS" resolve ticket.transition BTS-1 icebox --project-dir "$PROJECT"
   [ "$status" -eq 0 ]
-  echo "$output" | jq -e '.invocation.params.id == "BTS-1" and .invocation.params.state == "fixture-icebox-uuid"'
+  echo "$output" | jq -e '(.invocation.command | contains("BTS-1")) and (.invocation.command | contains("fixture-icebox-uuid"))'
 }
 
 @test "BTS-128 AC-3: role=canceled resolves to fixture-canceled-uuid" {
   _linear_config_with_state_ids
   run bash "$OPS" resolve ticket.transition BTS-1 canceled --project-dir "$PROJECT"
   [ "$status" -eq 0 ]
-  echo "$output" | jq -e '.invocation.params.id == "BTS-1" and .invocation.params.state == "fixture-canceled-uuid"'
+  echo "$output" | jq -e '(.invocation.command | contains("BTS-1")) and (.invocation.command | contains("fixture-canceled-uuid"))'
 }
 
 @test "BTS-128 AC-3: role=duplicate resolves to fixture-duplicate-uuid" {
   _linear_config_with_state_ids
   run bash "$OPS" resolve ticket.transition BTS-1 duplicate --project-dir "$PROJECT"
   [ "$status" -eq 0 ]
-  echo "$output" | jq -e '.invocation.params.id == "BTS-1" and .invocation.params.state == "fixture-duplicate-uuid"'
+  echo "$output" | jq -e '(.invocation.command | contains("BTS-1")) and (.invocation.command | contains("fixture-duplicate-uuid"))'
 }
 
 @test "BTS-128 AC-3: role=done resolves to fixture-done-uuid" {
   _linear_config_with_state_ids
   run bash "$OPS" resolve ticket.transition BTS-1 done --project-dir "$PROJECT"
   [ "$status" -eq 0 ]
-  echo "$output" | jq -e '.invocation.params.id == "BTS-1" and .invocation.params.state == "fixture-done-uuid"'
+  echo "$output" | jq -e '(.invocation.command | contains("BTS-1")) and (.invocation.command | contains("fixture-done-uuid"))'
 }
 
 # ===========================================================================
@@ -219,8 +221,9 @@ _local_config() {
   [[ "$output" =~ "done" ]]
   [[ "$output" =~ "state_ids" ]]
   # No silent-success payload when the lookup fails — config gap must
-  # surface as an error the user can action.
-  [[ ! "$output" =~ "mcp__claude_ai_Linear__save_issue" ]]
+  # surface as an error the user can action. BTS-164: emission is now a
+  # linear-query.sh command, so check that no command leaks.
+  [[ ! "$output" =~ "linear-query.sh save-issue" ]]
 }
 
 # ===========================================================================
@@ -233,6 +236,7 @@ _local_config() {
   [ "$status" -ne 0 ]
   [[ "$output" =~ "local" ]]
   [[ "$output" =~ "ticket.transition" ]]
-  # No MCP payload leaks through — capability gap is explicit.
-  [[ ! "$output" =~ "mcp__claude_ai_Linear__save_issue" ]]
+  # No payload leaks through — capability gap is explicit. BTS-164:
+  # check no linear-query.sh command emits either.
+  [[ ! "$output" =~ "linear-query.sh save-issue" ]]
 }

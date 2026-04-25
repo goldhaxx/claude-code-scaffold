@@ -10,26 +10,29 @@ Return the working tree to main after a PR merge, then auto-close the linked Lin
 4. If `provider != "linear"`: this should not happen (the script only emits the marker for `linear:`), but be defensive — log `auto-close: unexpected provider '<p>' — skipping` and exit 0 without dispatching.
 5. Resolve the transition intent:
    ```bash
-   bash .ccanvil/scripts/operations.sh resolve ticket.transition <id> <role> --project-dir .
+   RESOLUTION=$(bash .ccanvil/scripts/operations.sh resolve ticket.transition <id> <role> --project-dir .)
    ```
-   The resolver returns `.invocation.tool` (`mcp__claude_ai_Linear__save_issue`) and `.invocation.params` (`{id, state}`).
-6. Dispatch the MCP call with the resolved params. The tool is `mcp__claude_ai_Linear__save_issue`; pass `id` and `state` from `.invocation.params`.
-7. **On MCP success:** echo `Auto-closed <id> → Done`. Done.
-8. **On MCP failure** (network/auth/server error): append one JSONL line to `.ccanvil/ideas-pending.log`:
+   BTS-164 migrated `ticket.transition` to `mechanism: http` — the resolver returns `.invocation.command` containing a complete `linear-query.sh save-issue` invocation (no MCP indirection).
+6. Dispatch by eval'ing the resolved command:
    ```bash
-   echo '{"op":"ticket.transition","args":{"id":"<id>","role":"<role>"},"ts":'"$(date +%s)"'}' \
-     >> .ccanvil/ideas-pending.log
+   eval "$(echo "$RESOLUTION" | jq -r '.invocation.command')"
+   ```
+7. **On success:** echo `Auto-closed <id> → Done`. Done.
+8. **On failure** (network/auth/server error, exit non-zero): enqueue a pending entry deterministically:
+   ```bash
+   bash .ccanvil/scripts/docs-check.sh idea-pending-append \
+     --op ticket.transition --id <id> --role <role>
    ```
    Echo `PENDING: auto-close queued for /idea sync`. Exit 0 — auto-close failure NEVER blocks the post-merge cleanup.
 
 ## Idempotency
 
-If the Linear issue is already in `Done` (e.g. manually transitioned, or replayed from an earlier pending-log entry), Linear's `save_issue` accepts the transition without error. No duplicate handling needed on the client side.
+If the Linear issue is already in `Done` (e.g. manually transitioned, or replayed from an earlier pending-log entry), Linear's `issueUpdate` mutation accepts the transition without error. No duplicate handling needed on the client side.
 
 ## Rules
 
-- `/land` is the post-merge canonical flow. Users who run `docs-check.sh land` directly bypass the MCP dispatch — the `AUTO-CLOSE: {...}` marker prints on stdout, but nothing parses it, nothing writes to the pending log, and nothing transitions the issue. In that case the Linear issue stays open and must be closed manually (via `/idea triage`, direct `ticket.transition <id> done`, or the Linear UI).
-- `/land` NEVER fails the land step because of MCP/Linear errors — the pending-log fallback guarantees forward progress.
+- `/land` is the post-merge canonical flow. Users who run `docs-check.sh land` directly bypass the dispatch — the `AUTO-CLOSE: {...}` marker prints on stdout, but nothing parses it, nothing writes to the pending log, and nothing transitions the issue. In that case the Linear issue stays open and must be closed manually (via `/idea triage`, direct `ticket.transition <id> done`, or the Linear UI).
+- `/land` NEVER fails the land step because of Linear errors — the pending-log fallback guarantees forward progress.
 - When no AUTO-CLOSE marker is emitted (legacy spec, local provider, non-claude branch, etc.), `/land` is a transparent passthrough over `docs-check.sh land`.
 - **Known gap:** if the user has already switched to main (e.g. after `gh pr merge --squash --delete-branch` which switches + deletes in one step) before invoking `/land`, `cmd_land`'s "already on main" early-return path runs the fast-forward but skips the branch-regex safety net, so no AUTO-CLOSE marker is emitted and no auto-close fires. Workaround: run `/land` from the feature branch BEFORE `gh pr merge` switches you to main. A future ship can add squash-commit-subject parsing to recover the feature-id on the already-on-main path.
 

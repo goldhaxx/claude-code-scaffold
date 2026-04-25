@@ -10,12 +10,16 @@ Activate a Draft spec — create the feature branch, copy the spec to active, pu
 4. If `provider != "linear"`: this should not happen (the script only emits the marker for `linear:`), but be defensive — log `auto-transition: unexpected provider '<p>' — skipping` and exit 0 without dispatching.
 5. Resolve the transition intent:
    ```bash
-   bash .ccanvil/scripts/operations.sh resolve ticket.transition <id> <role> --project-dir .
+   RESOLUTION=$(bash .ccanvil/scripts/operations.sh resolve ticket.transition <id> <role> --project-dir .)
    ```
-   The resolver returns `.invocation.tool` (`mcp__claude_ai_Linear__save_issue`) and `.invocation.params` (`{id, state}`).
-6. Dispatch the MCP call with the resolved params. The tool is `mcp__claude_ai_Linear__save_issue`; pass `id` and `state` from `.invocation.params`.
-7. **On MCP success:** echo `Auto-transitioned <id> → <role>`. Done — nothing was enqueued, nothing to ack.
-8. **On MCP failure** (network/auth/server error): enqueue a pending entry deterministically:
+   BTS-164 migrated `ticket.transition` to `mechanism: http` — the resolver returns `.invocation.command` containing a complete `linear-query.sh save-issue` invocation (no MCP indirection).
+6. Dispatch by eval'ing the resolved command:
+   ```bash
+   eval "$(echo "$RESOLUTION" | jq -r '.invocation.command')"
+   ```
+   The wrapper handles auth (via `LINEAR_API_KEY`) and surfaces GraphQL errors as exit 3.
+7. **On success:** echo `Auto-transitioned <id> → <role>`. Done — nothing was enqueued, nothing to ack.
+8. **On failure** (network/auth/server error, exit non-zero): enqueue a pending entry deterministically:
    ```bash
    bash .ccanvil/scripts/docs-check.sh idea-pending-append \
      --op ticket.transition --id <id> --role <role>
@@ -24,12 +28,12 @@ Activate a Draft spec — create the feature branch, copy the spec to active, pu
 
 ## BTS-149 — enqueue-on-failure-only
 
-The script no longer pre-enqueues. The success path writes nothing to `.ccanvil/ideas-pending.log` and requires no ack — eliminating the write+ack churn (and the stochastic jq pipeline) that BTS-148 introduced. The failure path uses the deterministic `idea-pending-append` helper (BTS-123) — one command, no hand-rolled JSON, no predicate queries. Linear's `save_issue` is idempotent on already-transitioned states, so duplicate entries from past failures (or sync replays) are no-ops.
+The script no longer pre-enqueues. The success path writes nothing to `.ccanvil/ideas-pending.log` and requires no ack — eliminating the write+ack churn (and the stochastic jq pipeline) that BTS-148 introduced. The failure path uses the deterministic `idea-pending-append` helper (BTS-123) — one command, no hand-rolled JSON, no predicate queries. Linear's `issueUpdate` mutation is idempotent on already-transitioned states, so duplicate entries from past failures (or sync replays) are no-ops.
 
 ## Rules
 
-- `/activate` is the canonical pre-TDD entry point. Users who run `docs-check.sh activate` directly bypass the MCP dispatch — the `AUTO-TRANSITION: {...}` marker prints on stdout, but nothing is enqueued and nothing dispatches. The user can dispatch manually or accept the missed transition (Linear stays in Triage until manually moved).
-- `/activate` NEVER fails the activation step because of MCP/Linear errors — the failure-path enqueue guarantees forward progress via `/idea sync`.
+- `/activate` is the canonical pre-TDD entry point. Users who run `docs-check.sh activate` directly bypass the dispatch — the `AUTO-TRANSITION: {...}` marker prints on stdout, but nothing is enqueued and nothing dispatches. The user can dispatch manually or accept the missed transition (Linear stays in Triage until manually moved).
+- `/activate` NEVER fails the activation step because of Linear errors — the failure-path enqueue guarantees forward progress via `/idea sync`.
 - When no AUTO-TRANSITION marker is emitted (legacy spec, local provider, non-claude branch), `/activate` is a transparent passthrough over `docs-check.sh activate`.
 - The `--no-auto-push` flag (BTS-145) is passed through to the script if specified by the user.
 

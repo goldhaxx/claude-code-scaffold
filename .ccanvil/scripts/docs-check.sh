@@ -1650,17 +1650,31 @@ cmd_radar_gather() {
   fi
   result=$(echo "$result" | jq --argjson c "$completed" '. + {"completed_recent": $c}')
 
-  # Idea count — ideas.log lives at <project>/.ccanvil/ideas.log (one level above docs_dir).
+  # Idea count — cmd_idea_count is now provider-aware (BTS-164). It dispatches
+  # to local log read or Linear API query based on routing.idea config. The
+  # previous gate `[[ -f .ccanvil/ideas.log ]]` was wrong because it
+  # presupposed local routing; on Linear-routed projects the local log is
+  # absent but cmd_idea_count works against Linear via linear-query.sh.
+  # On any failure (missing LINEAR_API_KEY, network, etc.) fall back to the
+  # zero-count default so radar stays useful even when the count path is
+  # broken.
   local idea_counts='{"total":0,"new":0,"icebox_stale_count":0}'
   local project_dir
   project_dir=$(dirname "$docs_dir")
-  if [[ -f "$project_dir/.ccanvil/ideas.log" ]]; then
-    idea_counts=$(cmd_idea_count "$project_dir")
-    # Augment with icebox-stale count (icebox items older than 60d) so
-    # /radar can surface re-evaluation candidates ambiently.
-    local stale_count
-    stale_count=$(cmd_idea_review_icebox "$project_dir" | jq 'length')
-    idea_counts=$(echo "$idea_counts" | jq --argjson n "$stale_count" '. + {"icebox_stale_count": $n}')
+  local fresh_counts
+  if fresh_counts=$(cmd_idea_count "$project_dir" 2>/dev/null) && [[ -n "$fresh_counts" ]]; then
+    idea_counts="$fresh_counts"
+    # Icebox-stale augmentation only makes sense for local routing today
+    # (cmd_idea_review_icebox reads the JSONL log). On Linear-routed
+    # projects the icebox_stale_count stays at 0 until Step 7 migrates the
+    # review-icebox path to the http substrate. Guard on file presence.
+    if [[ -f "$project_dir/.ccanvil/ideas.log" ]]; then
+      local stale_count
+      stale_count=$(cmd_idea_review_icebox "$project_dir" | jq 'length')
+      idea_counts=$(echo "$idea_counts" | jq --argjson n "$stale_count" '. + {"icebox_stale_count": $n}')
+    else
+      idea_counts=$(echo "$idea_counts" | jq '. + {"icebox_stale_count": 0}')
+    fi
   fi
   result=$(echo "$result" | jq --argjson i "$idea_counts" '. + {"ideas": $i}')
 
@@ -1838,7 +1852,11 @@ cmd_idea_list() {
   fi
 }
 
-cmd_idea_count() {
+cmd_idea_count_local() {
+  # Reads the gitignored .ccanvil/ideas.log JSONL and aggregates by status.
+  # Renamed from cmd_idea_count in BTS-164 — cmd_idea_count is now a thin
+  # dispatcher that resolves the routing and calls this for the local path
+  # or shells out to linear-query.sh for the http path.
   local project_dir="${1:-.}"
   local ideas_log="$project_dir/.ccanvil/ideas.log"
 
@@ -1872,6 +1890,74 @@ cmd_idea_count() {
       dismissed: [.[] | select(.status as $s | canceled_set  | index($s))] | length,
       merged:    [.[] | select(.status as $s | duplicate_set | index($s))] | length
     }'
+}
+
+cmd_idea_count() {
+  # BTS-164: provider-aware idea counter. Resolves idea.count to determine
+  # whether to read the local JSONL log (mechanism=bash) or shell out to
+  # linear-query.sh and aggregate Linear state (mechanism=http). Same
+  # output shape regardless of mechanism so radar-gather and /recall stay
+  # provider-neutral.
+  local project_dir="${1:-.}"
+  local ops="$(dirname "$0")/operations.sh"
+
+  local resolution
+  resolution=$(bash "$ops" resolve idea.count --project-dir "$project_dir" 2>/dev/null) || {
+    # Resolver failure → fall back to local-log read. Keeps radar-gather
+    # working on projects without an operations.sh contract update.
+    cmd_idea_count_local "$project_dir"
+    return $?
+  }
+
+  local mechanism
+  mechanism=$(printf '%s' "$resolution" | jq -r '.mechanism')
+
+  case "$mechanism" in
+    bash)
+      cmd_idea_count_local "$project_dir"
+      ;;
+    http)
+      local auth_env
+      auth_env=$(printf '%s' "$resolution" | jq -r '.invocation.auth_env')
+      if [[ -z "${!auth_env:-}" ]]; then
+        echo "ERROR: idea-count requires $auth_env (env var not set). Set it via your shell rc or run /onboard linear (BTS-165) when that workflow ships." >&2
+        return 2
+      fi
+
+      local cmd
+      cmd=$(printf '%s' "$resolution" | jq -r '.invocation.command')
+
+      local issues
+      issues=$(eval "$cmd") || {
+        echo "ERROR: idea-count: linear-query.sh invocation failed" >&2
+        return 3
+      }
+
+      # Aggregate by status NAME (matching the five-state vocab in Linear's
+      # workspace: Triage, Backlog, Icebox, Canceled, Duplicate). Other
+      # workflow states (Todo, In Progress, Done) are not idea-state vocab
+      # and don't roll up into these counts.
+      printf '%s' "$issues" | jq '
+        def by_status(name): map(select(.status == name)) | length;
+        {
+          total:     length,
+          triage:    by_status("Triage"),
+          backlog:   by_status("Backlog"),
+          icebox:    by_status("Icebox"),
+          canceled:  by_status("Canceled"),
+          duplicate: by_status("Duplicate"),
+          new:       by_status("Triage"),
+          promoted:  by_status("Backlog"),
+          parked:    by_status("Icebox"),
+          dismissed: by_status("Canceled"),
+          merged:    by_status("Duplicate")
+        }'
+      ;;
+    *)
+      echo "ERROR: idea-count: unknown mechanism '$mechanism'" >&2
+      return 1
+      ;;
+  esac
 }
 
 # cmd_idea_migrate_state — rewrite legacy-vocab status values in ideas.log.
@@ -2854,6 +2940,7 @@ case "$cmd" in
   idea-add)          cmd_idea_add "$@" ;;
   idea-list)         cmd_idea_list "$@" ;;
   idea-count)        cmd_idea_count "$@" ;;
+  idea-count-local)  cmd_idea_count_local "$@" ;;
   idea-update)       cmd_idea_update "$@" ;;
   idea-sync)         cmd_idea_sync "$@" ;;
   idea-review-icebox) cmd_idea_review_icebox "$@" ;;

@@ -3,7 +3,7 @@
 > Feature: bts-164-linear-api-substrate
 > Work: linear:BTS-164
 > Created: 1777141479
-> Status: Draft
+> Status: Complete
 
 ## Summary
 

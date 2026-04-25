@@ -63,7 +63,10 @@ JSON
 JSON
   run bash "$OPS" resolve ticket.transition BTS-X todo --project-dir "$PROJECT"
   [ "$status" -eq 0 ]
-  echo "$output" | jq -e '.invocation.params.state == "todo-uuid"'
+  # BTS-164: ticket.transition migrated to mechanism=http; state ID lands
+  # in the linear-query.sh save-issue command's --state flag instead of
+  # invocation.params.state.
+  echo "$output" | jq -e '.invocation.command | contains("todo-uuid")'
 }
 
 @test "BTS-136 AC-2: ticket.transition accepts role=in_progress" {
@@ -76,7 +79,7 @@ JSON
 JSON
   run bash "$OPS" resolve ticket.transition BTS-X in_progress --project-dir "$PROJECT"
   [ "$status" -eq 0 ]
-  echo "$output" | jq -e '.invocation.params.state == "prog-uuid"'
+  echo "$output" | jq -e '.invocation.command | contains("prog-uuid")'
 }
 
 @test "BTS-136 AC-2: error message lists todo + in_progress in the valid roles" {

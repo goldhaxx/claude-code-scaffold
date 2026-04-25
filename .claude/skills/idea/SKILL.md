@@ -111,16 +111,38 @@ Batched review of items in Triage state. **Fully agentic** — every outcome is 
 4. **Present a table of recommendations.** One row per item. Ask for approval.
 5. **For each approved outcome, resolve via `ticket.transition` and dispatch:**
 
-| Outcome | `operations.sh resolve` | Linear dispatch (`save_issue`) | Local dispatch |
-|---------|-------------------------|--------------------------------|----------------|
-| **promote** | `ticket.transition <id> backlog` → params.{id, state} | `{...params, priority: <1-4>}` | `idea-update <uid> backlog` |
-| **defer**   | `ticket.transition <id> icebox`  → params.{id, state} | `{...params}`                  | `idea-update <uid> icebox` |
-| **dismiss** | `ticket.transition <id> canceled` → params.{id, state} | `{...params}`                 | `idea-update <uid> canceled` |
-| **merge**   | `ticket.transition <id> duplicate` → params.{id, state} | `{...params, duplicateOf: <target>}` | `idea-update <uid> duplicate` |
+| Outcome | `operations.sh resolve` | Linear dispatch (eval + extra flags) | Local dispatch |
+|---------|-------------------------|--------------------------------------|----------------|
+| **promote** | `ticket.transition <id> backlog` | `eval "$cmd --priority <1-4>"` | `idea-update <uid> backlog` |
+| **defer**   | `ticket.transition <id> icebox`  | `eval "$cmd"`                  | `idea-update <uid> icebox` |
+| **dismiss** | `ticket.transition <id> canceled` | `eval "$cmd"`                 | `idea-update <uid> canceled` |
+| **merge**   | `ticket.transition <id> duplicate` | `eval "$cmd --duplicate-of <target>"` | `idea-update <uid> duplicate` |
 
-The `ticket.transition` wrapper (BTS-128) returns both `id` and `state` pre-populated, collapsing the previous "resolve state → manually stitch id → dispatch" pattern into a single resolver call. Always pass `state` from the resolver — never pass `state: "<name>"`. State names collide with type names in Linear's workflow resolver and silently become no-ops.
+BTS-164 migrated `ticket.transition` to `mechanism: http` — the resolver now returns `.invocation.command` carrying a complete `linear-query.sh save-issue --id <id> --state <state-id>` invocation. The skill stores that command in `$cmd` and appends outcome-specific flags (`--priority` for promote, `--duplicate-of` for merge) before eval'ing. The wrapper handles auth via `LINEAR_API_KEY` and surfaces GraphQL errors as exit 3.
 
-**On MCP failure for any outcome**, append to pending log via the deterministic helper (BTS-123):
+```bash
+# Per-row dispatcher pattern. Quote variable values via jq @sh before
+# appending to the eval string — protects against any future case where
+# input bleeds in (priority is numeric and target IDs are ticket keys
+# today, but the pattern shouldn't teach unsafe append).
+RESOLUTION=$(bash .ccanvil/scripts/operations.sh resolve ticket.transition "$ID" "$ROLE" --project-dir .)
+cmd=$(echo "$RESOLUTION" | jq -r '.invocation.command')
+case "$OUTCOME" in
+  promote)
+    p=$(printf '%s' "$PRIORITY" | jq -R @sh)
+    eval "$cmd --priority $p"
+    ;;
+  merge)
+    t=$(printf '%s' "$TARGET_ID" | jq -R @sh)
+    eval "$cmd --duplicate-of $t"
+    ;;
+  *)
+    eval "$cmd"
+    ;;
+esac
+```
+
+**On dispatch failure for any outcome** (network, missing `LINEAR_API_KEY`, GraphQL error), append to pending log via the deterministic helper (BTS-123):
 
 ```bash
 # promote

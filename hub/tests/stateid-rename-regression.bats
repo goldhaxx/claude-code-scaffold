@@ -72,52 +72,52 @@ teardown() {
 # AC-2: ticket.transition for every role uses `state` (not `stateId`)
 # ---------------------------------------------------------------------------
 
-@test "BTS-139 AC-2: ticket.transition BTS-X triage emits params.state" {
+# BTS-164 migration: ticket.transition now emits mechanism=http with a
+# linear-query.sh save-issue command instead of mcp params. The original
+# BTS-139 concern was that state ID landed correctly in the dispatch
+# payload (regardless of param key spelling). Updated assertions verify
+# the state ID appears in the --state flag of the resolved command.
+
+@test "BTS-139 AC-2: ticket.transition BTS-X triage embeds triage state ID in command" {
   set -e
   run bash "$OPS" resolve ticket.transition BTS-X triage --project-dir "$PROJECT"
   [ "$status" -eq 0 ]
-  echo "$output" | jq -e '.invocation.params.state == "11111111-1111-1111-1111-111111111111"'
-  echo "$output" | jq -e '.invocation.params | has("stateId") | not'
+  echo "$output" | jq -e '.invocation.command | contains("11111111-1111-1111-1111-111111111111")'
 }
 
-@test "BTS-139 AC-2: ticket.transition BTS-X backlog emits params.state" {
+@test "BTS-139 AC-2: ticket.transition BTS-X backlog embeds backlog state ID" {
   set -e
   run bash "$OPS" resolve ticket.transition BTS-X backlog --project-dir "$PROJECT"
   [ "$status" -eq 0 ]
-  echo "$output" | jq -e '.invocation.params.state == "22222222-2222-2222-2222-222222222222"'
-  echo "$output" | jq -e '.invocation.params | has("stateId") | not'
+  echo "$output" | jq -e '.invocation.command | contains("22222222-2222-2222-2222-222222222222")'
 }
 
-@test "BTS-139 AC-2: ticket.transition BTS-X icebox emits params.state" {
+@test "BTS-139 AC-2: ticket.transition BTS-X icebox embeds icebox state ID" {
   set -e
   run bash "$OPS" resolve ticket.transition BTS-X icebox --project-dir "$PROJECT"
   [ "$status" -eq 0 ]
-  echo "$output" | jq -e '.invocation.params.state == "33333333-3333-3333-3333-333333333333"'
-  echo "$output" | jq -e '.invocation.params | has("stateId") | not'
+  echo "$output" | jq -e '.invocation.command | contains("33333333-3333-3333-3333-333333333333")'
 }
 
-@test "BTS-139 AC-2: ticket.transition BTS-X canceled emits params.state" {
+@test "BTS-139 AC-2: ticket.transition BTS-X canceled embeds canceled state ID" {
   set -e
   run bash "$OPS" resolve ticket.transition BTS-X canceled --project-dir "$PROJECT"
   [ "$status" -eq 0 ]
-  echo "$output" | jq -e '.invocation.params.state == "44444444-4444-4444-4444-444444444444"'
-  echo "$output" | jq -e '.invocation.params | has("stateId") | not'
+  echo "$output" | jq -e '.invocation.command | contains("44444444-4444-4444-4444-444444444444")'
 }
 
-@test "BTS-139 AC-2: ticket.transition BTS-X duplicate emits params.state" {
+@test "BTS-139 AC-2: ticket.transition BTS-X duplicate embeds duplicate state ID" {
   set -e
   run bash "$OPS" resolve ticket.transition BTS-X duplicate --project-dir "$PROJECT"
   [ "$status" -eq 0 ]
-  echo "$output" | jq -e '.invocation.params.state == "55555555-5555-5555-5555-555555555555"'
-  echo "$output" | jq -e '.invocation.params | has("stateId") | not'
+  echo "$output" | jq -e '.invocation.command | contains("55555555-5555-5555-5555-555555555555")'
 }
 
-@test "BTS-139 AC-2: ticket.transition BTS-X done emits params.state" {
+@test "BTS-139 AC-2: ticket.transition BTS-X done embeds done state ID" {
   set -e
   run bash "$OPS" resolve ticket.transition BTS-X done --project-dir "$PROJECT"
   [ "$status" -eq 0 ]
-  echo "$output" | jq -e '.invocation.params.state == "66666666-6666-6666-6666-666666666666"'
-  echo "$output" | jq -e '.invocation.params | has("stateId") | not'
+  echo "$output" | jq -e '.invocation.command | contains("66666666-6666-6666-6666-666666666666")'
 }
 
 # ---------------------------------------------------------------------------
