@@ -7,8 +7,9 @@ Walk the user through pending permissions-review candidates interactively, colle
 ### 1. Gather state
 
 ```bash
-PR_PROMOTE=$(mktemp /tmp/pr-promote.XXXXXX.json)
-PR_CHECK=$(mktemp /tmp/pr-check.XXXXXX.json)
+PR_PROMOTE=$(mktemp -t pr-promote)
+PR_CHECK=$(mktemp -t pr-check)
+DECISIONS=$(mktemp -t pr-decisions)
 bash .ccanvil/scripts/permissions-audit.sh promote-review --json > "$PR_PROMOTE"
 bash .ccanvil/scripts/permissions-audit.sh check --json > "$PR_CHECK"
 ```
@@ -61,10 +62,10 @@ If `skip`: don't append anything. The DANGER entry stays unreviewed (will surfac
 
 ### 5. Dispatch
 
-Write the JSONL buffer to a tmpfile and run:
+By this point, steps 3 and 4 have appended one JSONL record per approved decision into `$DECISIONS` (created up front in step 1). Now dispatch:
 
 ```bash
-bash .ccanvil/scripts/permissions-audit.sh apply --decisions <tmpfile>
+bash .ccanvil/scripts/permissions-audit.sh apply --decisions "$DECISIONS"
 ```
 
 Capture the JSON envelope `{applied, skipped, errors}`. On exit code 2 (validation), 3 (atomicity restore), or non-zero, surface the error to the user — `apply` will have already restored `.bak` files. On success (exit 0), echo:
@@ -75,7 +76,7 @@ Applied: <applied> | Skipped: <skipped> | Errors: <errors-len>
 
 ### 6. Cleanup
 
-`rm "$PR_PROMOTE" "$PR_CHECK" <decisions-tmpfile>`.
+`rm "$PR_PROMOTE" "$PR_CHECK" "$DECISIONS"`.
 
 ## Rules
 
