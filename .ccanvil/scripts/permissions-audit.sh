@@ -30,20 +30,23 @@ LOG_FILE=""  # set after parsing args; defaults to SETTINGS_DIR/permissions-log.
 CMD=""
 TEXT_MODE=false
 VERBOSE=false
+DECISIONS_FILE=""
 
 usage() {
-  echo "Usage: permissions-audit.sh <check|init> [--settings-dir DIR] [--log FILE] [--text|--json] [--verbose]" >&2
+  echo "Usage: permissions-audit.sh <check|init|promote-review|apply> [--settings-dir DIR] [--log FILE] [--decisions FILE] [--text|--json] [--verbose]" >&2
   exit 2
 }
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    check|init|promote-review)
+    check|init|promote-review|apply)
       CMD="$1"; shift ;;
     --settings-dir)
       SETTINGS_DIR="$2"; shift 2 ;;
     --log)
       LOG_FILE="$2"; shift 2 ;;
+    --decisions)
+      DECISIONS_FILE="$2"; shift 2 ;;
     --text)
       TEXT_MODE=true; shift ;;
     --json)
@@ -541,6 +544,70 @@ cmd_promote_review() {
 }
 
 # ---------------------------------------------------------------------------
+# BTS-149 — apply --decisions <jsonl>: interactive triage substrate
+# ---------------------------------------------------------------------------
+
+cmd_apply() {
+  if [[ -z "$DECISIONS_FILE" ]]; then
+    emit_error_envelope "apply requires --decisions <file>" 2
+  fi
+  if [[ ! -f "$DECISIONS_FILE" ]]; then
+    emit_error_envelope "decisions file not found: $DECISIONS_FILE" 2
+  fi
+
+  # Pre-flight validation: parse every non-blank line as JSON, check for
+  # required `permission` field, and verify `decision` is in the known set.
+  # Any error → exit 2 BEFORE any backup or mutation. AC-2: no partial
+  # mutation on validation errors.
+  local line_no=0
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    line_no=$((line_no+1))
+    [[ -z "$line" ]] && continue
+
+    if ! echo "$line" | jq -e . >/dev/null 2>&1; then
+      emit_error_envelope "decisions:$line_no: malformed JSON" 2
+    fi
+
+    local perm dec
+    perm=$(echo "$line" | jq -r '.permission // ""')
+    dec=$(echo "$line" | jq -r '.decision // ""')
+
+    if [[ -z "$perm" ]]; then
+      emit_error_envelope "decisions:$line_no: missing 'permission' field" 2
+    fi
+
+    case "$dec" in
+      delete|promote|keep-local|accept-danger) ;;
+      "")
+        emit_error_envelope "decisions:$line_no: missing 'decision' field" 2 ;;
+      *)
+        emit_error_envelope "decisions:$line_no: unknown decision '$dec' (expected delete|promote|keep-local|accept-danger)" 2 ;;
+    esac
+  done < "$DECISIONS_FILE"
+
+  # Execution pass. Steps 4-6 add real delete/promote/accept-danger logic;
+  # step 3 scaffolding only counts keep-local as skipped. No mutations
+  # mean no backup files needed.
+  local applied=0 skipped=0
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    [[ -z "$line" ]] && continue
+    local dec
+    dec=$(echo "$line" | jq -r '.decision')
+    case "$dec" in
+      keep-local)
+        skipped=$((skipped+1)) ;;
+      delete|promote|accept-danger)
+        # Step 4-6 implement these. For now treat as no-op so scaffolding
+        # tests pass; later steps flip the counter.
+        : ;;
+    esac
+  done < "$DECISIONS_FILE"
+
+  jq -n --argjson a "$applied" --argjson s "$skipped" \
+    '{applied: $a, skipped: $s, errors: []}'
+}
+
+# ---------------------------------------------------------------------------
 # Dispatch
 # ---------------------------------------------------------------------------
 
@@ -548,5 +615,6 @@ case "$CMD" in
   check)          cmd_check ;;
   init)           cmd_init ;;
   promote-review) cmd_promote_review ;;
+  apply)          cmd_apply ;;
   *)              usage ;;
 esac

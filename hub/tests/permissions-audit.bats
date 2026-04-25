@@ -951,3 +951,102 @@ EOF
   [ "$status" -eq 0 ]
   jq -e '.entries | length == 1' "$FIXTURE/permissions-log.json"
 }
+
+# =========================================================================
+# BTS-149: apply --decisions <jsonl> — interactive triage substrate
+# Step 3: scaffolding (AC-1, AC-2, AC-4 partial — empty/invalid input,
+# decision validation, envelope shape, no-mutation no-backup)
+# =========================================================================
+
+@test "BTS-149 AC-1: apply with empty decisions file returns zero envelope" {
+  set -e
+  cat > "$FIXTURE/settings.json" <<'JSON'
+{"permissions":{"allow":["Bash(ls:*)"]}}
+JSON
+  : > "$FIXTURE/decisions.jsonl"
+  run bash "$SCRIPT" apply --decisions "$FIXTURE/decisions.jsonl" \
+    --settings-dir "$FIXTURE" --log "$FIXTURE/permissions-log.json"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '.applied == 0'
+  echo "$output" | jq -e '.skipped == 0'
+  echo "$output" | jq -e '.errors == []'
+}
+
+@test "BTS-149 AC-1: apply emits skipped count for keep-local decisions" {
+  set -e
+  cat > "$FIXTURE/settings.json" <<'JSON'
+{"permissions":{"allow":["Bash(ls:*)"]}}
+JSON
+  cat > "$FIXTURE/decisions.jsonl" <<'JSONL'
+{"permission":"Bash(ls:*)","decision":"keep-local"}
+{"permission":"Bash(ls:*)","decision":"keep-local"}
+JSONL
+  run bash "$SCRIPT" apply --decisions "$FIXTURE/decisions.jsonl" \
+    --settings-dir "$FIXTURE" --log "$FIXTURE/permissions-log.json"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '.applied == 0'
+  echo "$output" | jq -e '.skipped == 2'
+}
+
+@test "BTS-149 AC-2: apply rejects malformed JSONL with exit 2" {
+  cat > "$FIXTURE/settings.json" <<'JSON'
+{"permissions":{"allow":["Bash(ls:*)"]}}
+JSON
+  cat > "$FIXTURE/decisions.jsonl" <<'JSONL'
+{"permission":"Bash(ls:*)","decision":"keep-local"}
+not-valid-json-here
+JSONL
+  run bash "$SCRIPT" apply --decisions "$FIXTURE/decisions.jsonl" \
+    --settings-dir "$FIXTURE" --log "$FIXTURE/permissions-log.json"
+  [ "$status" -eq 2 ]
+}
+
+@test "BTS-149 AC-2: apply rejects unknown decision verb with exit 2" {
+  cat > "$FIXTURE/settings.json" <<'JSON'
+{"permissions":{"allow":["Bash(ls:*)"]}}
+JSON
+  cat > "$FIXTURE/decisions.jsonl" <<'JSONL'
+{"permission":"Bash(ls:*)","decision":"banana"}
+JSONL
+  run bash "$SCRIPT" apply --decisions "$FIXTURE/decisions.jsonl" \
+    --settings-dir "$FIXTURE" --log "$FIXTURE/permissions-log.json"
+  [ "$status" -eq 2 ]
+}
+
+@test "BTS-149 AC-2: apply rejects decision missing 'permission' field with exit 2" {
+  cat > "$FIXTURE/settings.json" <<'JSON'
+{"permissions":{"allow":["Bash(ls:*)"]}}
+JSON
+  cat > "$FIXTURE/decisions.jsonl" <<'JSONL'
+{"decision":"delete"}
+JSONL
+  run bash "$SCRIPT" apply --decisions "$FIXTURE/decisions.jsonl" \
+    --settings-dir "$FIXTURE" --log "$FIXTURE/permissions-log.json"
+  [ "$status" -eq 2 ]
+}
+
+@test "BTS-149 AC-4: apply with no mutating decisions creates no .bak files" {
+  set -e
+  cat > "$FIXTURE/settings.json" <<'JSON'
+{"permissions":{"allow":["Bash(ls:*)"]}}
+JSON
+  cat > "$FIXTURE/settings.local.json" <<'JSON'
+{"permissions":{"allow":["Bash(rm:*)"]}}
+JSON
+  cat > "$FIXTURE/decisions.jsonl" <<'JSONL'
+{"permission":"Bash(ls:*)","decision":"keep-local"}
+JSONL
+  run bash "$SCRIPT" apply --decisions "$FIXTURE/decisions.jsonl" \
+    --settings-dir "$FIXTURE" --log "$FIXTURE/permissions-log.json"
+  [ "$status" -eq 0 ]
+  [ ! -f "$FIXTURE/settings.json.bak" ]
+  [ ! -f "$FIXTURE/settings.local.json.bak" ]
+}
+
+@test "BTS-149: apply requires --decisions argument" {
+  cat > "$FIXTURE/settings.json" <<'JSON'
+{"permissions":{"allow":["Bash(ls:*)"]}}
+JSON
+  run bash "$SCRIPT" apply --settings-dir "$FIXTURE" --log "$FIXTURE/permissions-log.json"
+  [ "$status" -ne 0 ]
+}
