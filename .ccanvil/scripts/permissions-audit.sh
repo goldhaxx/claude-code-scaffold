@@ -589,7 +589,18 @@ cmd_apply() {
     fi
 
     case "$dec" in
-      delete|promote|keep-local|accept-danger) ;;
+      delete|promote|keep-local) ;;
+      accept-danger)
+        # AC-5: all 4 required fields must be non-empty and not "TODO".
+        local _f
+        for _f in risk rationale efficiency_justification reviewer; do
+          local _v
+          _v=$(echo "$line" | jq -r --arg k "$_f" '.[$k] // ""')
+          if [[ -z "$_v" || "$_v" == "TODO" ]]; then
+            emit_error_envelope "decisions:$line_no: accept-danger requires non-empty '$_f' (got empty or 'TODO')" 2
+          fi
+        done
+        ;;
       "")
         emit_error_envelope "decisions:$line_no: missing 'decision' field" 2 ;;
       *)
@@ -684,8 +695,25 @@ cmd_apply() {
         applied=$((applied+1))
         ;;
       accept-danger)
-        # Step 6 implements this; for now counted as skipped.
-        skipped=$((skipped+1))
+        # AC-3: write log entry with accept_danger:true and the four
+        # required fields (already validated pre-flight). Merge into
+        # .entries; existing entries are overwritten by design (re-running
+        # accept-danger updates the rationale).
+        local _risk _rat _eff _rev tmp_log
+        _risk=$(echo "$line" | jq -r '.risk')
+        _rat=$(echo "$line" | jq -r '.rationale')
+        _eff=$(echo "$line" | jq -r '.efficiency_justification')
+        _rev=$(echo "$line" | jq -r '.reviewer')
+        if [[ ! -f "$LOG_FILE" ]]; then
+          jq -n '{entries:{}}' > "$LOG_FILE"
+        fi
+        tmp_log=$(mktemp)
+        jq --arg p "$perm" --arg risk "$_risk" --arg rat "$_rat" \
+           --arg eff "$_eff" --arg rev "$_rev" \
+           '.entries[$p] = {risk: $risk, rationale: $rat, efficiency_justification: $eff, reviewer: $rev, accept_danger: true}' \
+           "$LOG_FILE" > "$tmp_log"
+        mv "$tmp_log" "$LOG_FILE"
+        applied=$((applied+1))
         ;;
     esac
   done < "$DECISIONS_FILE"

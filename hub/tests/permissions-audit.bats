@@ -1221,3 +1221,85 @@ JSONL
   [ ! -f "$FIXTURE/settings.json.bak" ]
   [ ! -f "$FIXTURE/settings.local.json.bak" ]
 }
+
+# Step 6: AC-3 + AC-5 (accept-danger decision)
+
+@test "BTS-149 AC-3: accept-danger writes log entry with accept_danger:true" {
+  set -e
+  cat > "$FIXTURE/settings.json" <<'JSON'
+{"permissions":{"allow":["Bash(rm:*)"]}}
+JSON
+  cat > "$FIXTURE/decisions.jsonl" <<'JSONL'
+{"permission":"Bash(rm:*)","decision":"accept-danger","risk":"data loss","rationale":"used for cleanup scripts","efficiency_justification":"saves 5 prompts/day","reviewer":"zach"}
+JSONL
+  run bash "$SCRIPT" apply --decisions "$FIXTURE/decisions.jsonl" \
+    --settings-dir "$FIXTURE" --log "$FIXTURE/permissions-log.json"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '.applied == 1'
+  jq -e '.entries["Bash(rm:*)"].accept_danger == true' "$FIXTURE/permissions-log.json"
+  jq -e '.entries["Bash(rm:*)"].risk == "data loss"' "$FIXTURE/permissions-log.json"
+  jq -e '.entries["Bash(rm:*)"].rationale == "used for cleanup scripts"' "$FIXTURE/permissions-log.json"
+  jq -e '.entries["Bash(rm:*)"].efficiency_justification == "saves 5 prompts/day"' "$FIXTURE/permissions-log.json"
+  jq -e '.entries["Bash(rm:*)"].reviewer == "zach"' "$FIXTURE/permissions-log.json"
+}
+
+@test "BTS-149 AC-5: accept-danger missing risk field exits 2 with no mutation" {
+  cat > "$FIXTURE/settings.json" <<'JSON'
+{"permissions":{"allow":["Bash(rm:*)"]}}
+JSON
+  cat > "$FIXTURE/decisions.jsonl" <<'JSONL'
+{"permission":"Bash(rm:*)","decision":"accept-danger","rationale":"x","efficiency_justification":"y","reviewer":"z"}
+JSONL
+  run bash "$SCRIPT" apply --decisions "$FIXTURE/decisions.jsonl" \
+    --settings-dir "$FIXTURE" --log "$FIXTURE/permissions-log.json"
+  [ "$status" -eq 2 ]
+  # log untouched (no entry added)
+  jq -e '.entries == {}' "$FIXTURE/permissions-log.json"
+}
+
+@test "BTS-149 AC-5: accept-danger with TODO sentinel field exits 2" {
+  cat > "$FIXTURE/settings.json" <<'JSON'
+{"permissions":{"allow":["Bash(rm:*)"]}}
+JSON
+  cat > "$FIXTURE/decisions.jsonl" <<'JSONL'
+{"permission":"Bash(rm:*)","decision":"accept-danger","risk":"TODO","rationale":"x","efficiency_justification":"y","reviewer":"z"}
+JSONL
+  run bash "$SCRIPT" apply --decisions "$FIXTURE/decisions.jsonl" \
+    --settings-dir "$FIXTURE" --log "$FIXTURE/permissions-log.json"
+  [ "$status" -eq 2 ]
+  jq -e '.entries == {}' "$FIXTURE/permissions-log.json"
+}
+
+@test "BTS-149 AC-5: accept-danger with empty-string field exits 2" {
+  cat > "$FIXTURE/settings.json" <<'JSON'
+{"permissions":{"allow":["Bash(rm:*)"]}}
+JSON
+  cat > "$FIXTURE/decisions.jsonl" <<'JSONL'
+{"permission":"Bash(rm:*)","decision":"accept-danger","risk":"","rationale":"x","efficiency_justification":"y","reviewer":"z"}
+JSONL
+  run bash "$SCRIPT" apply --decisions "$FIXTURE/decisions.jsonl" \
+    --settings-dir "$FIXTURE" --log "$FIXTURE/permissions-log.json"
+  [ "$status" -eq 2 ]
+  jq -e '.entries == {}' "$FIXTURE/permissions-log.json"
+}
+
+@test "BTS-149 AC-3: accept-danger then check classifies as REVIEWED risk-accepted" {
+  set -e
+  # Use a permission that would normally classify as DANGER (matches "rm" pattern)
+  cat > "$FIXTURE/settings.json" <<'JSON'
+{"permissions":{"allow":["Bash(rm:*)"]}}
+JSON
+  cat > "$FIXTURE/decisions.jsonl" <<'JSONL'
+{"permission":"Bash(rm:*)","decision":"accept-danger","risk":"deletes files","rationale":"cleanup","efficiency_justification":"daily use","reviewer":"zach"}
+JSONL
+  run bash "$SCRIPT" apply --decisions "$FIXTURE/decisions.jsonl" \
+    --settings-dir "$FIXTURE" --log "$FIXTURE/permissions-log.json"
+  [ "$status" -eq 0 ]
+
+  # Now check should classify as REVIEWED with risk_accepted:true
+  run bash "$SCRIPT" check --settings-dir "$FIXTURE" --log "$FIXTURE/permissions-log.json"
+  echo "$output" | jq -e '.danger == 0'
+  echo "$output" | jq -e '.reviewed == 1'
+  echo "$output" | jq -e '.entries[0].status == "REVIEWED"'
+  echo "$output" | jq -e '.entries[0].risk_accepted == true'
+}
