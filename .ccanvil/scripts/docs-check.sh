@@ -1187,18 +1187,12 @@ cmd_auto_transition_emit() {
 
   case "$provider" in
     linear)
-      # BTS-148: enqueue ticket.transition into ideas-pending.log so the
-      # /activate skill (immediate dispatch) or /idea sync (retry path)
-      # can drain it deterministically. Mirrors BTS-119's auto-close
-      # pending-log fallback. The stdout marker below is the agentic
-      # signal for the wrapper skill; the enqueue is the deterministic
-      # backup that survives any path that doesn't read the marker.
-      local project_dir
-      project_dir=$(dirname "$docs_dir")
-      cmd_idea_pending_append \
-        --op ticket.transition --id "$id" --role "$role" \
-        --project-dir "$project_dir" >/dev/null
-
+      # BTS-149 AC-10: emit the AUTO-TRANSITION marker only — no pre-enqueue.
+      # The /activate skill enqueues to .ccanvil/ideas-pending.log only on
+      # MCP failure (via idea-pending-append). Inverts the BTS-148
+      # enqueue-on-every-call pattern, eliminating success-path write+ack
+      # churn (~99% of activate runs succeed). Idempotency on Linear's side
+      # makes failure-only enqueue safe — duplicate transitions are no-ops.
       jq -cn --arg id "$id" --arg role "$role" \
         '{provider:"linear",id:$id,role:$role}' | \
         sed 's/^/AUTO-TRANSITION: /'

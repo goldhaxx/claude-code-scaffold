@@ -137,52 +137,50 @@ JSON
 }
 
 # ===========================================================================
-# BTS-148: auto-transition-emit also enqueues ticket.transition into
-# .ccanvil/ideas-pending.log so /idea sync (or the /activate skill) can
-# dispatch deterministically. Mirrors BTS-119's pending-log fallback for
-# auto-close.
+# BTS-149 AC-10/12: auto-transition-emit no longer pre-enqueues. The marker
+# is the sole side effect; the /activate skill enqueues only on MCP failure
+# via idea-pending-append. Inverts the BTS-148 "enqueue on every call"
+# behavior to "enqueue only on dispatch failure" — eliminates write+ack
+# churn on the success path.
 # ===========================================================================
 
-@test "BTS-148 AC-1: auto-transition-emit enqueues ticket.transition entry for linear Work" {
-  set -e
-  _spec_linear "BTS-148" "bts-148-foo"
-  run bash -c "cd \"$PROJECT\" && bash \"$DOCS\" auto-transition-emit claude/feat/bts-148-foo in_progress"
+@test "BTS-149 AC-10: auto-transition-emit does NOT enqueue for linear Work (success path)" {
+  _spec_linear "BTS-149" "bts-149-foo"
+  run bash -c "cd \"$PROJECT\" && bash \"$DOCS\" auto-transition-emit claude/feat/bts-149-foo in_progress"
   [ "$status" -eq 0 ]
-  pending="$PROJECT/.ccanvil/ideas-pending.log"
-  [ -f "$pending" ]
-  [ "$(wc -l < "$pending" | tr -d ' ')" -eq 1 ]
-  jq -e '.op == "ticket.transition" and .args.id == "BTS-148" and .args.role == "in_progress" and (.ts | type == "number")' "$pending"
+  [[ "$output" =~ "AUTO-TRANSITION: " ]]
+  [ ! -f "$PROJECT/.ccanvil/ideas-pending.log" ] || [ "$(wc -c < "$PROJECT/.ccanvil/ideas-pending.log" | tr -d ' ')" -eq 0 ]
 }
 
-@test "BTS-148 AC-6: auto-transition-emit does NOT enqueue for local-provider Work" {
+@test "BTS-149 AC-10: auto-transition-emit does NOT enqueue for local-provider Work" {
   _spec_local "idea-29" "bts-local-foo"
   run bash -c "cd \"$PROJECT\" && bash \"$DOCS\" auto-transition-emit claude/feat/bts-local-foo in_progress"
   [ "$status" -eq 0 ]
   [ ! -f "$PROJECT/.ccanvil/ideas-pending.log" ] || [ "$(wc -c < "$PROJECT/.ccanvil/ideas-pending.log" | tr -d ' ')" -eq 0 ]
 }
 
-@test "BTS-148 AC-7: auto-transition-emit does NOT enqueue for legacy spec without Work:" {
+@test "BTS-149 AC-10: auto-transition-emit does NOT enqueue for legacy spec without Work:" {
   _spec_no_work "legacy-foo"
   run bash -c "cd \"$PROJECT\" && bash \"$DOCS\" auto-transition-emit claude/feat/legacy-foo in_progress"
   [ "$status" -eq 0 ]
   [ ! -f "$PROJECT/.ccanvil/ideas-pending.log" ] || [ "$(wc -c < "$PROJECT/.ccanvil/ideas-pending.log" | tr -d ' ')" -eq 0 ]
 }
 
-@test "BTS-148 AC-8: two consecutive emits produce two entries (sync handles dedup at dispatch)" {
-  set -e
-  _spec_linear "BTS-148" "bts-148-foo"
-  run bash -c "cd \"$PROJECT\" && bash \"$DOCS\" auto-transition-emit claude/feat/bts-148-foo in_progress"
+@test "BTS-149 AC-12: two consecutive emits still leave pending log empty" {
+  _spec_linear "BTS-149" "bts-149-foo"
+  run bash -c "cd \"$PROJECT\" && bash \"$DOCS\" auto-transition-emit claude/feat/bts-149-foo in_progress"
   [ "$status" -eq 0 ]
-  run bash -c "cd \"$PROJECT\" && bash \"$DOCS\" auto-transition-emit claude/feat/bts-148-foo in_progress"
+  run bash -c "cd \"$PROJECT\" && bash \"$DOCS\" auto-transition-emit claude/feat/bts-149-foo in_progress"
   [ "$status" -eq 0 ]
-  pending="$PROJECT/.ccanvil/ideas-pending.log"
-  [ "$(wc -l < "$pending" | tr -d ' ')" -eq 2 ]
+  [ ! -f "$PROJECT/.ccanvil/ideas-pending.log" ] || [ "$(wc -c < "$PROJECT/.ccanvil/ideas-pending.log" | tr -d ' ')" -eq 0 ]
 }
 
-@test "BTS-148: enqueue carries role=todo when activate is later generalized" {
+@test "BTS-149 AC-10: marker carries role=todo without enqueue side-effect" {
   set -e
-  _spec_linear "BTS-148" "bts-148-foo"
-  run bash -c "cd \"$PROJECT\" && bash \"$DOCS\" auto-transition-emit claude/feat/bts-148-foo todo"
+  _spec_linear "BTS-149" "bts-149-foo"
+  run bash -c "cd \"$PROJECT\" && bash \"$DOCS\" auto-transition-emit claude/feat/bts-149-foo todo"
   [ "$status" -eq 0 ]
-  jq -e '.args.role == "todo"' "$PROJECT/.ccanvil/ideas-pending.log"
+  echo "$output" | grep "^AUTO-TRANSITION: " | sed 's/^AUTO-TRANSITION: //' | \
+    jq -e '.role == "todo"'
+  [ ! -f "$PROJECT/.ccanvil/ideas-pending.log" ] || [ "$(wc -c < "$PROJECT/.ccanvil/ideas-pending.log" | tr -d ' ')" -eq 0 ]
 }
