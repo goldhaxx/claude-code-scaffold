@@ -3,7 +3,7 @@
 > Feature: bts-173-fence-slashword-exemption
 > Work: linear:BTS-173
 > Created: 1777179134
-> Status: In Progress
+> Status: Complete
 
 ## Summary
 
