@@ -2075,13 +2075,19 @@ cmd_idea_update() {
 # script exposes op-agnostic read + remove primitives; the skill dispatches
 # each entry's `op` to the matching MCP tool.
 #
-# Supported ops (written by /idea skill when the corresponding MCP call
-# fails; replayed by /idea sync):
-#   add       — failed capture: args = {title, body}
-#   promote   — failed triage-promote: args = {id, priority}
-#   defer     — failed triage-defer: args = {id}
-#   dismiss   — failed triage-dismiss: args = {id}
-#   merge     — failed triage-merge: args = {id, duplicateOf}
+# Supported ops (written by /idea or /land skills when the corresponding
+# Linear call fails; replayed by /idea sync):
+#   add               — failed capture: args = {title, body}
+#                       (BTS-166: replayed via http substrate — re-resolve
+#                       idea.add and pipe stdin-JSON {title, description})
+#   promote           — failed triage-promote: args = {id, priority}
+#   defer             — failed triage-defer: args = {id}
+#   dismiss           — failed triage-dismiss: args = {id}
+#   merge             — failed triage-merge: args = {id, duplicateOf}
+#   ticket.transition — failed auto-close from /land (BTS-119) or auto-
+#                       transition from /spec/activate (BTS-136):
+#                       args = {id, role}. Idempotent — replaying a
+#                       transition to the current state is a no-op.
 #
 # Each entry has shape: {op, args, ts}
 #

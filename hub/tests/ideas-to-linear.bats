@@ -114,44 +114,44 @@ JSON
 # AC-15: linear_mcp_adapter — idea.* → correct MCP tool + params
 # =========================================================================
 
-@test "AC-15: idea.add with Linear routing → save_issue MCP tool" {
+@test "AC-15: idea.add with Linear routing → save-issue http command (BTS-166)" {
   set -e
   _linear_config
   run bash "$SCRIPT" resolve idea.add --project-dir "$PROJECT"
   [ "$status" -eq 0 ]
   echo "$output" | jq -e '.provider == "linear"'
-  echo "$output" | jq -e '.mechanism == "mcp"'
-  echo "$output" | jq -e '.invocation.tool == "mcp__claude_ai_Linear__save_issue"'
-  echo "$output" | jq -e '.invocation.params.team == "Test Team"'
-  echo "$output" | jq -e '.invocation.params.project == "Test Project"'
-  # state (name) forbidden — name-based dispatch collides with state types
-  # in Linear's workflow resolver. (Superseded by idea-triage-native AC-1.)
-  echo "$output" | jq -e '.invocation.params | has("state") | not'
-  # This fixture lacks state_ids, so state is also absent here.
-  # The BTS-121 block in idea-triage-native.bats asserts the positive path
-  # (state_ids configured → state present) and the empty-string guard.
-  echo "$output" | jq -e '.invocation.params | has("state") | not'
-  echo "$output" | jq -e '.invocation.params.labels[0] == "idea"'
+  echo "$output" | jq -e '.mechanism == "http"'
+  echo "$output" | jq -e '.invocation.command | contains("save-issue")'
+  echo "$output" | jq -e '.invocation.command | contains("Test Team")'
+  echo "$output" | jq -e '.invocation.command | contains("Test Project")'
+  echo "$output" | jq -e '.invocation.command | contains("idea")'
+  # This fixture lacks state_ids, so --state is absent. idea-triage-native AC-1
+  # asserts the positive path (state_ids configured → --state present) and
+  # the empty-string guard.
+  echo "$output" | jq -e '.invocation.command | contains("--state") | not'
 }
 
-@test "AC-15: idea.list with Linear routing → list_issues MCP tool" {
+@test "AC-15: idea.list with Linear routing → list-issues http command (BTS-166)" {
   set -e
   _linear_config
   run bash "$SCRIPT" resolve idea.list --project-dir "$PROJECT"
   [ "$status" -eq 0 ]
-  echo "$output" | jq -e '.invocation.tool == "mcp__claude_ai_Linear__list_issues"'
-  echo "$output" | jq -e '.invocation.params.label == "idea"'
-  echo "$output" | jq -e '.invocation.params.project == "Test Project"'
+  echo "$output" | jq -e '.mechanism == "http"'
+  echo "$output" | jq -e '.invocation.command | contains("list-issues")'
+  echo "$output" | jq -e '.invocation.command | contains("idea")'
+  echo "$output" | jq -e '.invocation.command | contains("Test Project")'
 }
 
-@test "AC-15: idea.triage with Linear routing → list_issues filtered to Idea state" {
+@test "AC-15: idea.triage with Linear routing → list-issues http command with --state triage (BTS-166)" {
   set -e
   _linear_config
   run bash "$SCRIPT" resolve idea.triage --project-dir "$PROJECT"
   [ "$status" -eq 0 ]
-  echo "$output" | jq -e '.invocation.tool == "mcp__claude_ai_Linear__list_issues"'
-  echo "$output" | jq -e '.invocation.params.state == "Idea"'
-  echo "$output" | jq -e '.invocation.params.label == "idea"'
+  echo "$output" | jq -e '.mechanism == "http"'
+  echo "$output" | jq -e '.invocation.command | contains("list-issues")'
+  # No state_ids in this fixture → falls through to the type-name "triage".
+  echo "$output" | jq -e '.invocation.command | contains("--state") and contains("triage")'
+  echo "$output" | jq -e '.invocation.command | contains("idea")'
 }
 
 @test "AC-15: idea.sync with Linear routing → local bash orchestration" {
@@ -396,7 +396,7 @@ EOF
   echo "$merged" | jq -e '.integrations.providers.linear.team == "Blocktech Solutions"'
 }
 
-@test "AC-3: resolve idea.add on hub config → Linear MCP with full params" {
+@test "AC-3: resolve idea.add on hub config → Linear http save-issue with full params (BTS-166)" {
   set -e
   mkdir -p "$PROJECT/.claude"
   cp "$BATS_TEST_DIRNAME/../../.claude/ccanvil.json" "$PROJECT/.claude/ccanvil.json"
@@ -405,18 +405,15 @@ EOF
   run bash "$SCRIPT" resolve idea.add --project-dir "$PROJECT"
   [ "$status" -eq 0 ]
   echo "$output" | jq -e '.provider == "linear"'
-  echo "$output" | jq -e '.invocation.tool == "mcp__claude_ai_Linear__save_issue"'
-  echo "$output" | jq -e '.invocation.params.project == "ccanvil"'
-  echo "$output" | jq -e '.invocation.params.team == "Blocktech Solutions"'
-  # Post-BTS-121 + BTS-139: state is PRESENT (the Triage UUID from
-  # state_ids.triage in ccanvil.local.json). Earlier assumption that
-  # Linear auto-routes unspecified-state captures to Triage was falsified
-  # empirically (BTS-121). The BTS-139 rename ensures we emit `state`
-  # (matching Linear MCP's schema), not the legacy `stateId` (which
-  # silently no-ops).
-  echo "$output" | jq -e '.invocation.params | has("state")'
-  echo "$output" | jq -e '.invocation.params | has("stateId") | not'
-  echo "$output" | jq -e '.invocation.params.labels[0] == "idea"'
+  echo "$output" | jq -e '.mechanism == "http"'
+  echo "$output" | jq -e '.invocation.command | contains("save-issue")'
+  echo "$output" | jq -e '.invocation.command | contains("ccanvil")'
+  echo "$output" | jq -e '.invocation.command | contains("Blocktech Solutions")'
+  # Post-BTS-121 + BTS-166: --state is PRESENT (the Triage UUID from
+  # state_ids.triage in ccanvil.local.json). The legacy stateId / --state-id
+  # form must never appear (BTS-139 guard).
+  echo "$output" | jq -e '.invocation.command | contains("--state") and (contains("--state-id") | not) and (contains("stateId") | not)'
+  echo "$output" | jq -e '.invocation.command | contains("--labels") and contains("idea")'
 }
 
 @test "AC-29: shared ccanvil.json alone (no local override) → local provider" {
@@ -452,15 +449,20 @@ SKILL_FILE="$BATS_TEST_DIRNAME/../../.claude/skills/idea/SKILL.md"
   grep -q 'operations.sh resolve idea.sync' "$SKILL_FILE"
 }
 
-@test "AC-23: skill branches on the mechanism field" {
-  grep -qE 'mechanism.*(mcp|bash)|\.mechanism' "$SKILL_FILE"
-  grep -q 'mcp' "$SKILL_FILE"
+@test "AC-23: skill describes mechanism field (BTS-166: http for Linear, bash for local)" {
+  grep -qE 'mechanism.*(http|bash)|\.mechanism' "$SKILL_FILE"
+  grep -q 'http' "$SKILL_FILE"
   grep -q 'bash' "$SKILL_FILE"
 }
 
-@test "AC-23: skill calls Linear MCP tools by exact name" {
-  grep -q 'mcp__claude_ai_Linear__save_issue' "$SKILL_FILE"
-  grep -q 'mcp__claude_ai_Linear__list_issues' "$SKILL_FILE"
+@test "AC-23: skill dispatches Linear ops via linear-query.sh substrate (BTS-166)" {
+  # BTS-166 migrated capture/list/triage/review-icebox from MCP to the http
+  # substrate. Skill prose must reference the wrapper and the eval pattern,
+  # not the legacy mcp__claude_ai_Linear__* tool names on the linear path.
+  grep -q 'linear-query.sh' "$SKILL_FILE"
+  grep -qE 'eval .*invocation\.command' "$SKILL_FILE"
+  # Negative guard: capture/list paths must NOT call MCP tools directly.
+  ! grep -qE 'mcp__claude_ai_Linear__(save_issue|list_issues)' "$SKILL_FILE"
 }
 
 @test "AC-23: skill writes to .ccanvil/ideas.log for the local path" {
@@ -735,8 +737,10 @@ JSON
   run bash "$SCRIPT" resolve idea.add --project-dir "$PROJECT"
   [ "$status" -eq 0 ]
   echo "$output" | jq -e '.provider == "linear"'
-  echo "$output" | jq -e '.invocation.params.team == "BTS Team"'
-  echo "$output" | jq -e '.invocation.params.project == "my-project"'
+  # BTS-166: idea.add now emits mechanism=http with team/project on the command.
+  echo "$output" | jq -e '.mechanism == "http"'
+  echo "$output" | jq -e '.invocation.command | contains("BTS Team")'
+  echo "$output" | jq -e '.invocation.command | contains("my-project")'
 }
 
 @test "AC-25: activate halts when docs/ideas.md is uncommitted (no longer allowlisted)" {

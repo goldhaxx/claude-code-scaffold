@@ -97,6 +97,118 @@ JSON
   echo "$output" | jq -e '.invocation.command | contains("idea-count-local")'
 }
 
+# ===========================================================================
+# BTS-166 AC-4..AC-7: idea.{add,list,triage,review-icebox} migrated to http
+# ===========================================================================
+
+@test "BTS-166 AC-5: idea.list on linear-routed project emits mechanism=http" {
+  set -e
+  _with_linear_routing
+  run bash "$OPS" resolve idea.list --project-dir "$PROJECT"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '.provider == "linear" and .mechanism == "http"'
+}
+
+@test "BTS-166 AC-5: idea.list http command carries linear-query.sh list-issues with project/team/label" {
+  set -e
+  _with_linear_routing
+  run bash "$OPS" resolve idea.list --project-dir "$PROJECT"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '.invocation.command | contains("linear-query.sh")'
+  echo "$output" | jq -e '.invocation.command | contains("list-issues")'
+  echo "$output" | jq -e '.invocation.command | contains("ccanvil")'
+  echo "$output" | jq -e '.invocation.command | contains("Blocktech Solutions")'
+  echo "$output" | jq -e '.invocation.command | contains("idea")'
+}
+
+@test "BTS-166 AC-6: idea.triage on linear-routed project emits mechanism=http with --state filter" {
+  set -e
+  _with_linear_routing
+  run bash "$OPS" resolve idea.triage --project-dir "$PROJECT"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '.provider == "linear" and .mechanism == "http"'
+  echo "$output" | jq -e '.invocation.command | contains("list-issues")'
+  echo "$output" | jq -e '.invocation.command | contains("--state")'
+}
+
+@test "BTS-166 AC-7: idea.review-icebox on linear-routed project emits mechanism=http with --state icebox" {
+  set -e
+  _with_linear_routing
+  run bash "$OPS" resolve idea.review-icebox --project-dir "$PROJECT"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '.provider == "linear" and .mechanism == "http"'
+  echo "$output" | jq -e '.invocation.command | contains("list-issues")'
+  echo "$output" | jq -e '.invocation.command | contains("--state")'
+}
+
+@test "BTS-166 AC-4: idea.add on linear-routed project emits mechanism=http with save-issue" {
+  set -e
+  _with_linear_routing
+  run bash "$OPS" resolve idea.add --project-dir "$PROJECT"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '.provider == "linear" and .mechanism == "http"'
+  echo "$output" | jq -e '.invocation.command | contains("save-issue")'
+  echo "$output" | jq -e '.invocation.command | contains("--team")'
+  echo "$output" | jq -e '.invocation.command | contains("--project")'
+  echo "$output" | jq -e '.invocation.command | contains("--labels")'
+  echo "$output" | jq -e '.invocation.command | contains("Blocktech Solutions")'
+}
+
+@test "BTS-166 AC-4: idea.add http command does NOT carry --title or --description (consumer fills via stdin-JSON)" {
+  set -e
+  _with_linear_routing
+  run bash "$OPS" resolve idea.add --project-dir "$PROJECT"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '.invocation.command | contains("--title") | not'
+  echo "$output" | jq -e '.invocation.command | contains("--description") | not'
+}
+
+@test "BTS-166: idea.add @sh-quoted command-line values handle team name with apostrophe" {
+  set -e
+  # Defensive regression — none of our current providers have apostrophes
+  # in their names, but the resolver builds a shell-eval'd command string
+  # and a future workspace name like "Blocktech's Solutions" must not break
+  # the eval. The @sh filter generates valid POSIX-quoted output:
+  #   Blocktech's Solutions  →  'Blocktech'\''s Solutions'
+  # which eval's back to the original string verbatim.
+  mkdir -p "$PROJECT/.claude"
+  cat > "$PROJECT/.claude/ccanvil.json" <<'JSON'
+{"integrations":{"providers":{"linear":{"mechanism":"mcp"}}}}
+JSON
+  cat > "$PROJECT/.claude/ccanvil.local.json" <<'JSON'
+{"integrations":{"routing":{"idea":"linear"},"providers":{"linear":{"project":"ccanvil","team":"Acme's Team","idea_label":"idea"}}}}
+JSON
+  run bash "$OPS" resolve idea.add --project-dir "$PROJECT"
+  [ "$status" -eq 0 ]
+  # The command is a complete shell-eval'd string. Extract it and run it
+  # through bash's word-splitter (printf %q is the inverse of @sh) to
+  # confirm the team token round-trips to the original string.
+  local cmd
+  cmd=$(echo "$output" | jq -r '.invocation.command')
+  # Use eval to parse the quoting; "$@" then gives us the actual tokens.
+  # We never actually invoke linear-query.sh — we just confirm the parse.
+  eval "set -- $cmd"
+  local found="false"
+  while [ $# -gt 0 ]; do
+    if [ "$1" = "--team" ]; then
+      [ "$2" = "Acme's Team" ] && found="true"
+      break
+    fi
+    shift
+  done
+  [ "$found" = "true" ]
+}
+
+@test "BTS-166 AC-8: idea.{list,triage,add,review-icebox} on local-routed project still emit mechanism=bash" {
+  set -e
+  _with_local_routing
+  for op in idea.list idea.triage idea.add idea.review-icebox; do
+    run bash "$OPS" resolve "$op" --project-dir "$PROJECT"
+    [ "$status" -eq 0 ]
+    echo "$output" | jq -e '.mechanism == "bash"'
+  done
+}
+
 @test "BTS-164 AC-10: resolver output shape uniform across mechanisms" {
   # Both mechanisms must return the same top-level keys: provider, mechanism,
   # invocation, contract. Consumers can switch on mechanism without

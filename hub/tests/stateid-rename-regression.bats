@@ -60,12 +60,15 @@ teardown() {
 # AC-1: idea.add resolution uses `state` (not `stateId`)
 # ---------------------------------------------------------------------------
 
-@test "BTS-139 AC-1: idea.add resolve emits params.state, never params.stateId" {
+@test "BTS-139 AC-1: idea.add resolve emits --state, never legacy stateId/--state-id (BTS-166)" {
   set -e
   run bash "$OPS" resolve idea.add --project-dir "$PROJECT"
   [ "$status" -eq 0 ]
-  echo "$output" | jq -e '.invocation.params.state == "11111111-1111-1111-1111-111111111111"'
-  echo "$output" | jq -e '.invocation.params | has("stateId") | not'
+  # BTS-166: idea.add now emits mechanism=http; --state UUID lands on the
+  # save-issue command line. Legacy stateId / --state-id must never appear.
+  echo "$output" | jq -e '.invocation.command | contains("--state") and contains("11111111-1111-1111-1111-111111111111")'
+  echo "$output" | jq -e '.invocation.command | contains("stateId") | not'
+  echo "$output" | jq -e '.invocation.command | contains("--state-id") | not'
 }
 
 # ---------------------------------------------------------------------------

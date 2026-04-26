@@ -488,41 +488,52 @@ linear_mcp_adapter() {
         '{"provider":"linear","mechanism":"mcp","invocation":{"tool":$tool,"params":{"id":$id}},"contract":{"output":$output,"field_map":$fmap}}'
       ;;
     # --- idea operations ---
-    # The skill passes title + description out-of-band; this resolve only
-    # communicates the tool + the invariant params (team, project, state,
-    # label) that the skill stitches into a final MCP call.
+    # BTS-166: migrated from MCP to http. The wrapper (linear-query.sh) emits
+    # GraphQL directly; resolvers describe the structural shape (team/project/
+    # label/state) and the skill or script consumer evals the command. For
+    # idea.add the consumer pipes a stdin-JSON object carrying title +
+    # description (linear-query.sh save-issue --input-json -); for idea.list
+    # / idea.triage / idea.review-icebox the consumer eval's directly.
     idea.add)
-      tool="mcp__claude_ai_Linear__save_issue"
       output_contract='["id","title","status"]'
-      # Explicit state dispatch targets Triage when state_ids.triage is
-      # configured; falls through to team default (typically Backlog) when
-      # unconfigured. The prior assumption that Linear auto-routes
-      # API-created issues to Triage was falsified empirically — team
-      # default wins without an explicit state. Uses the same conditional
-      # merge pattern as idea.{promote,defer,dismiss,merge}; omitting
-      # state keeps backward-compat with nodes that haven't migrated.
       local triage_state_id
       triage_state_id=$(linear_state_id "$provider_config" "triage")
-      jq -n --arg tool "$tool" --arg project "$project" --arg team "$team" \
-        --arg label "$idea_label" --arg state_id "$triage_state_id" \
+      jq -n --arg project "$project" --arg team "$team" --arg label "$idea_label" \
+        --arg state_id "$triage_state_id" \
         --argjson output "$output_contract" \
         '{
-          "provider":"linear","mechanism":"mcp",
-          "invocation":{
-            "tool":$tool,
-            "params":({"project":$project,"team":$team,"labels":[$label]} +
-                      (if $state_id != "" then {"state":$state_id} else {} end))
+          provider: "linear",
+          mechanism: "http",
+          invocation: {
+            command: ("bash .ccanvil/scripts/linear-query.sh save-issue" +
+                      " --team " + ($team | @sh) +
+                      " --project " + ($project | @sh) +
+                      " --labels " + ($label | @sh) +
+                      (if $state_id != "" then " --state " + ($state_id | @sh) else "" end)),
+            endpoint: "https://api.linear.app/graphql",
+            auth_env: "LINEAR_API_KEY"
           },
-          "contract":{"output":$output}
+          contract: { output: $output }
         }'
       ;;
     idea.list)
-      tool="mcp__claude_ai_Linear__list_issues"
       output_contract='["id","title","status","createdAt"]'
-      jq -n --arg tool "$tool" --arg project "$project" --arg team "$team" \
-        --arg label "$idea_label" \
+      jq -n --arg project "$project" --arg team "$team" --arg label "$idea_label" \
         --argjson output "$output_contract" \
-        '{"provider":"linear","mechanism":"mcp","invocation":{"tool":$tool,"params":{"project":$project,"team":$team,"label":$label}},"contract":{"output":$output}}'
+        '{
+          provider: "linear",
+          mechanism: "http",
+          invocation: {
+            command: ("bash .ccanvil/scripts/linear-query.sh list-issues" +
+                      " --project " + ($project | @sh) +
+                      " --team " + ($team | @sh) +
+                      " --label " + ($label | @sh) +
+                      " --limit 250"),
+            endpoint: "https://api.linear.app/graphql",
+            auth_env: "LINEAR_API_KEY"
+          },
+          contract: { output: $output }
+        }'
       ;;
     idea.count)
       # BTS-164: emit mechanism=http with a linear-query.sh invocation. The
@@ -551,31 +562,33 @@ linear_mcp_adapter() {
         }'
       ;;
     idea.triage)
-      # state takes precedence over name-based state dispatch — when
-      # configured, omit `state` to avoid the name/type collision trap
-      # documented in the /idea skill's Rules section.
-      tool="mcp__claude_ai_Linear__list_issues"
+      # BTS-166: state-id when configured (disambiguation-proof), else "triage"
+      # which linear-query.sh list-issues filters by state.type.eq.
       output_contract='["id","title","status","createdAt"]'
-      local triage_state_id
+      local triage_state_id triage_state_arg
       triage_state_id=$(linear_state_id "$provider_config" "triage")
-      jq -n --arg tool "$tool" --arg project "$project" --arg team "$team" \
-        --arg label "$idea_label" --arg state "$idea_status" \
-        --arg state_id "$triage_state_id" \
+      if [[ -n "$triage_state_id" ]]; then
+        triage_state_arg="$triage_state_id"
+      else
+        triage_state_arg="triage"
+      fi
+      jq -n --arg project "$project" --arg team "$team" --arg label "$idea_label" \
+        --arg state "$triage_state_arg" \
         --argjson output "$output_contract" \
         '{
-          "provider":"linear",
-          "mechanism":"mcp",
-          "invocation":{
-            "tool":$tool,
-            "params":(
-              {"project":$project,"team":$team,"label":$label}
-              + (if $state_id != ""
-                  then {"state":$state_id}
-                  else {"state":$state}
-                 end)
-            )
+          provider: "linear",
+          mechanism: "http",
+          invocation: {
+            command: ("bash .ccanvil/scripts/linear-query.sh list-issues" +
+                      " --project " + ($project | @sh) +
+                      " --team " + ($team | @sh) +
+                      " --label " + ($label | @sh) +
+                      " --state " + ($state | @sh) +
+                      " --limit 250"),
+            endpoint: "https://api.linear.app/graphql",
+            auth_env: "LINEAR_API_KEY"
           },
-          "contract":{"output":$output}
+          contract: { output: $output }
         }'
       ;;
     idea.sync)
@@ -662,23 +675,32 @@ linear_mcp_adapter() {
         }'
       ;;
     idea.review-icebox)
-      tool="mcp__claude_ai_Linear__list_issues"
+      # BTS-166: state-id when configured, else literal "icebox" filter.
       output_contract='["id","title","status","createdAt"]'
-      local icebox_state_id
+      local icebox_state_id icebox_state_arg
       icebox_state_id=$(linear_state_id "$provider_config" "icebox")
-      jq -n --arg tool "$tool" --arg project "$project" --arg team "$team" \
-        --arg state_id "$icebox_state_id" --arg label "$idea_label" \
+      if [[ -n "$icebox_state_id" ]]; then
+        icebox_state_arg="$icebox_state_id"
+      else
+        icebox_state_arg="icebox"
+      fi
+      jq -n --arg project "$project" --arg team "$team" --arg label "$idea_label" \
+        --arg state "$icebox_state_arg" \
         --argjson output "$output_contract" \
         '{
-          "provider":"linear","mechanism":"mcp",
-          "invocation":{
-            "tool":$tool,
-            "params":(
-              {"project":$project,"team":$team,"label":$label}
-              + (if $state_id != "" then {"state":$state_id} else {} end)
-            )
+          provider: "linear",
+          mechanism: "http",
+          invocation: {
+            command: ("bash .ccanvil/scripts/linear-query.sh list-issues" +
+                      " --project " + ($project | @sh) +
+                      " --team " + ($team | @sh) +
+                      " --label " + ($label | @sh) +
+                      " --state " + ($state | @sh) +
+                      " --limit 250"),
+            endpoint: "https://api.linear.app/graphql",
+            auth_env: "LINEAR_API_KEY"
           },
-          "contract":{"output":$output}
+          contract: { output: $output }
         }'
       ;;
     ticket.transition)

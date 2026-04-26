@@ -100,11 +100,11 @@ EOF
 # Covers AC-4 foundation: resolve emits params.state when config carries it.
 # =========================================================================
 
-@test "Step 2: idea.triage resolve includes state_ids.triage as params.state" {
+@test "Step 2: idea.triage resolve includes state_ids.triage as --state in http command (BTS-166)" {
   _linear_config_with_state_ids
   run bash "$OPS" resolve idea.triage --project-dir "$PROJECT"
   [ "$status" -eq 0 ]
-  echo "$output" | jq -e '.invocation.params.state == "aaaaaaaa-0000-0000-0000-000000000001"'
+  echo "$output" | jq -e '.invocation.command | contains("--state") and contains("aaaaaaaa-0000-0000-0000-000000000001")'
 }
 
 # =========================================================================
@@ -214,8 +214,9 @@ EOF
   # single wrapper (`ticket.transition <id> <role>`) rather than four
   # separate idea.* resolvers.
   grep -q 'ticket\.transition' "$skill"
-  # Agentic: state, not state names.
-  grep -qE 'params\.state|state:' "$skill"
+  # BTS-166: Linear path now uses --state on the linear-query.sh command line.
+  # Agentic: state-id dispatch, never name-based.
+  grep -qE -- '--state|state-id|state_id' "$skill"
   grep -q 'review-icebox' "$skill"
 }
 
@@ -350,13 +351,47 @@ EOF
   echo "$output" | jq -e '.invocation.command | test("idea-review-icebox")'
 }
 
-@test "Step 8: idea.review-icebox Linear resolver includes icebox state + type filter" {
+@test "Step 8: idea.review-icebox Linear resolver includes icebox state in http command (BTS-166)" {
   set -e
   _linear_config_with_state_ids
   run bash "$OPS" resolve idea.review-icebox --project-dir "$PROJECT"
   [ "$status" -eq 0 ]
-  echo "$output" | jq -e '.invocation.tool == "mcp__claude_ai_Linear__list_issues"'
-  echo "$output" | jq -e '.invocation.params.state == "cccccccc-0000-0000-0000-000000000003"'
+  echo "$output" | jq -e '.mechanism == "http"'
+  echo "$output" | jq -e '.invocation.command | contains("list-issues")'
+  echo "$output" | jq -e '.invocation.command | contains("--state") and contains("cccccccc-0000-0000-0000-000000000003")'
+}
+
+@test "BTS-166: idea.review-icebox falls through to type-name 'icebox' when state_ids.icebox is empty string" {
+  # Mirror of BTS-121 AC-5 for the icebox path. Empty string must be treated
+  # as unconfigured to avoid filtering by --state '' (server-side error or
+  # silent no-op). Falls through to the literal "icebox" type-name filter.
+  mkdir -p "$PROJECT/.claude"
+  cat > "$PROJECT/.claude/ccanvil.json" <<'JSON'
+{
+  "integrations": {
+    "providers": {
+      "linear": {
+        "mechanism": "mcp",
+        "project": "Test Project",
+        "team": "Test Team",
+        "idea_label": "idea",
+        "state_ids": {
+          "triage": "aaaaaaaa-0000-0000-0000-000000000001",
+          "icebox": ""
+        }
+      }
+    },
+    "routing": { "idea": "linear" }
+  }
+}
+JSON
+  run bash "$OPS" resolve idea.review-icebox --project-dir "$PROJECT"
+  [ "$status" -eq 0 ]
+  # Empty-string state_id MUST fall through to the type-name "icebox" filter.
+  echo "$output" | jq -e '.invocation.command | contains("--state") and contains("icebox")'
+  # And NOT pass --state '' literally (which would surface as a server error
+  # or silent no-op on Linear's side).
+  echo "$output" | jq -e ".invocation.command | contains(\"--state ''\") | not"
 }
 
 # =========================================================================
@@ -499,36 +534,36 @@ EOF
 # conditional-merge pattern as idea.{promote,defer,dismiss,merge}.
 # =========================================================================
 
-@test "BTS-121 AC-1: idea.add emits state when state_ids.triage is configured" {
+@test "BTS-121 AC-1: idea.add http command includes --state when state_ids.triage is configured (BTS-166)" {
   _linear_config_with_state_ids
   run bash "$OPS" resolve idea.add --project-dir "$PROJECT"
   [ "$status" -eq 0 ]
-  echo "$output" | jq -e '.invocation.params.state == "aaaaaaaa-0000-0000-0000-000000000001"'
+  echo "$output" | jq -e '.invocation.command | contains("--state") and contains("aaaaaaaa-0000-0000-0000-000000000001")'
 }
 
-@test "BTS-121 AC-2: idea.add state is additive — project/team/labels still present" {
+@test "BTS-121 AC-2: idea.add http command — --state is additive (project/team/labels still present, BTS-166)" {
   set -e
   _linear_config_with_state_ids
   run bash "$OPS" resolve idea.add --project-dir "$PROJECT"
   [ "$status" -eq 0 ]
-  echo "$output" | jq -e '.invocation.params.project == "Test Project"'
-  echo "$output" | jq -e '.invocation.params.team == "Test Team"'
-  echo "$output" | jq -e '.invocation.params.labels == ["idea"]'
-  echo "$output" | jq -e '.invocation.params | has("state")'
+  echo "$output" | jq -e '.invocation.command | contains("Test Project")'
+  echo "$output" | jq -e '.invocation.command | contains("Test Team")'
+  echo "$output" | jq -e '.invocation.command | contains("--labels") and contains("idea")'
+  echo "$output" | jq -e '.invocation.command | contains("--state")'
 }
 
-@test "BTS-121 AC-3: idea.add omits state when state_ids absent" {
+@test "BTS-121 AC-3: idea.add http command omits --state when state_ids absent (BTS-166)" {
   set -e
   _linear_config_no_state_ids
   run bash "$OPS" resolve idea.add --project-dir "$PROJECT"
   [ "$status" -eq 0 ]
-  echo "$output" | jq -e '.invocation.params | has("state") | not'
+  echo "$output" | jq -e '.invocation.command | contains("--state") | not'
   # Existing contract still holds — project/team/labels present.
-  echo "$output" | jq -e '.invocation.params.project == "Test Project"'
-  echo "$output" | jq -e '.invocation.params.labels == ["idea"]'
+  echo "$output" | jq -e '.invocation.command | contains("Test Project")'
+  echo "$output" | jq -e '.invocation.command | contains("--labels") and contains("idea")'
 }
 
-@test "BTS-121 AC-5: idea.add omits state when state_ids.triage is empty string" {
+@test "BTS-121 AC-5: idea.add http command omits --state when state_ids.triage is empty string (BTS-166)" {
   mkdir -p "$PROJECT/.claude"
   cat > "$PROJECT/.claude/ccanvil.json" <<'JSON'
 {
@@ -553,8 +588,8 @@ JSON
   run bash "$OPS" resolve idea.add --project-dir "$PROJECT"
   [ "$status" -eq 0 ]
   # Empty string must be treated as unconfigured to avoid Linear API errors
-  # or silent no-ops from passing state:"".
-  echo "$output" | jq -e '.invocation.params | has("state") | not'
+  # or silent no-ops from passing --state ''.
+  echo "$output" | jq -e '.invocation.command | contains("--state") | not'
 }
 
 # =========================================================================
@@ -565,29 +600,27 @@ JSON
 # labels still present.
 # =========================================================================
 
-@test "Step 3: idea.add Linear resolver does NOT pass legacy stateId key (BTS-139 regression guard)" {
+@test "Step 3: idea.add Linear resolver does NOT pass legacy stateId flag (BTS-139 regression guard, BTS-166)" {
   set -e
   _linear_config_with_state_ids
   run bash "$OPS" resolve idea.add --project-dir "$PROJECT"
   [ "$status" -eq 0 ]
-  # Post-BTS-139: the legacy `stateId` key must never appear. Linear MCP
-  # silently ignores it, causing captures to fall through to the team's
-  # default state (Backlog). Use `state` (UUID) only.
-  echo "$output" | jq -e '.invocation.params | has("stateId") | not'
+  # Post-BTS-139: the legacy `--state-id` / `stateId` form must never appear.
+  # The wrapper accepts only --state.
+  echo "$output" | jq -e '.invocation.command | contains("stateId") | not'
+  echo "$output" | jq -e '.invocation.command | contains("--state-id") | not'
   # Project + team + labels still present.
-  echo "$output" | jq -e '.invocation.params.project == "Test Project"'
-  echo "$output" | jq -e '.invocation.params.labels == ["idea"]'
+  echo "$output" | jq -e '.invocation.command | contains("Test Project")'
+  echo "$output" | jq -e '.invocation.command | contains("--labels") and contains("idea")'
 }
 
-@test "Step 2: idea.triage resolve has no legacy stateId key when config lacks state_ids" {
+@test "Step 2: idea.triage resolve has no legacy stateId flag when config lacks state_ids (BTS-166)" {
   _linear_config_no_state_ids
   run bash "$OPS" resolve idea.triage --project-dir "$PROJECT"
   [ "$status" -eq 0 ]
-  # Post-BTS-139: the stateId key must never appear. idea.triage may fall
-  # back to a name-based `state: "Idea"` filter for list_issues when
-  # state_ids is absent (legitimate — list_issues' state param accepts
-  # "type, name, or ID"). What we must never emit is the legacy stateId.
-  echo "$output" | jq -e '.invocation.params | has("stateId") | not'
+  # Falls through to type-name "triage" via --state when state_ids absent.
+  echo "$output" | jq -e '.invocation.command | contains("stateId") | not'
+  echo "$output" | jq -e '.invocation.command | contains("--state") and contains("triage")'
 }
 
 @test "Step 1: cmd_idea_count sums legacy + new vocab into new-named counters" {

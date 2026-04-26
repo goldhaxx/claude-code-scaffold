@@ -224,6 +224,60 @@ JSON
   _get_body | jq -e '.variables.filter.team.name.eq == "T"'
 }
 
+@test "BTS-166 AC-2: list-teams sends teams query and parses nodes" {
+  set -e
+  _setup_stub
+  cat > "$LINEAR_STUB_RESPONSE" <<'JSON'
+{"data":{"teams":{"nodes":[
+  {"id":"t1","name":"Blocktech Solutions","key":"BTS"},
+  {"id":"t2","name":"Other Team","key":"OTH"}
+]}}}
+JSON
+  run bash -c "source '$STUB_FIXTURE' && bash '$LQ' list-teams"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e 'length == 2'
+  echo "$output" | jq -e '.[0].id == "t1" and .[0].name == "Blocktech Solutions"'
+  _get_body | jq -e '.query | contains("teams")'
+}
+
+@test "BTS-166 AC-2: list-teams --name <NAME> filters by team name" {
+  set -e
+  _setup_stub
+  cat > "$LINEAR_STUB_RESPONSE" <<'JSON'
+{"data":{"teams":{"nodes":[{"id":"t1","name":"Blocktech Solutions","key":"BTS"}]}}}
+JSON
+  run bash -c "source '$STUB_FIXTURE' && bash '$LQ' list-teams --name 'Blocktech Solutions'"
+  [ "$status" -eq 0 ]
+  _get_body | jq -e '.variables.filter.name.eq == "Blocktech Solutions"'
+}
+
+@test "BTS-166 AC-2: list-projects sends projects query and parses nodes" {
+  set -e
+  _setup_stub
+  cat > "$LINEAR_STUB_RESPONSE" <<'JSON'
+{"data":{"projects":{"nodes":[
+  {"id":"p1","name":"ccanvil","slugId":"ccanvil"},
+  {"id":"p2","name":"other","slugId":"other"}
+]}}}
+JSON
+  run bash -c "source '$STUB_FIXTURE' && bash '$LQ' list-projects"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e 'length == 2'
+  echo "$output" | jq -e '.[0].id == "p1" and .[0].name == "ccanvil"'
+  _get_body | jq -e '.query | contains("projects")'
+}
+
+@test "BTS-166 AC-2: list-projects --name <NAME> filters by project name" {
+  set -e
+  _setup_stub
+  cat > "$LINEAR_STUB_RESPONSE" <<'JSON'
+{"data":{"projects":{"nodes":[{"id":"p1","name":"ccanvil","slugId":"ccanvil"}]}}}
+JSON
+  run bash -c "source '$STUB_FIXTURE' && bash '$LQ' list-projects --name ccanvil"
+  [ "$status" -eq 0 ]
+  _get_body | jq -e '.variables.filter.name.eq == "ccanvil"'
+}
+
 @test "BTS-164 AC-1: list-labels --team T sends issueLabels query and parses nodes" {
   set -e
   _setup_stub
@@ -326,4 +380,183 @@ JSON
   run --separate-stderr bash -c "source '$STUB_FIXTURE' && bash '$LQ' save-issue --id BTS-100 --priority 1"
   [ "$status" -eq 3 ]
   [[ "$stderr" =~ "Field is required" ]]
+}
+
+# ===========================================================================
+# BTS-166 AC-2: name-based create flags --team / --project / --labels
+# ===========================================================================
+# When --team / --project / --labels are passed without their -id counterparts,
+# save-issue does a one-shot lookup via the teams / projects / issueLabels
+# queries and substitutes the resolved IDs. -id flags take precedence on collision.
+
+@test "BTS-166 AC-2: save-issue --team NAME resolves NAME→teamId via list-teams query" {
+  set -e
+  _setup_stub
+  # Sequence-aware stub: each curl invocation reads the next response file,
+  # tracked via a counter file in TMPDIR. This lets us serve the team-lookup
+  # response then the issueCreate response from a single test.
+  local responses_dir="$BATS_TEST_TMPDIR/seq"
+  mkdir -p "$responses_dir"
+  cat > "$responses_dir/1.json" <<'JSON'
+{"data":{"teams":{"nodes":[{"id":"team-uuid","name":"Blocktech Solutions","key":"BTS"}]}}}
+JSON
+  cat > "$responses_dir/2.json" <<'JSON'
+{"data":{"issueCreate":{"success":true,"issue":{"id":"u","identifier":"BTS-300","title":"t"}}}}
+JSON
+  # Counter file persists across exported-function calls (linear-query.sh
+  # invokes curl multiple times in a single bash subprocess).
+  local counter="$BATS_TEST_TMPDIR/seq.count"
+  echo 0 > "$counter"
+  # Override LINEAR_STUB_RESPONSE per-call by writing a wrapper that updates
+  # the symlink/path before invoking the real stub's curl. Easier: bypass the
+  # stub fixture entirely with a stand-alone curl override.
+  cat > "$BATS_TEST_TMPDIR/seq-stub.sh" <<EOF
+curl() {
+  local n
+  n=\$(cat '$counter')
+  n=\$((n + 1))
+  echo "\$n" > '$counter'
+  cat '$responses_dir/'"\$n"'.json'
+  local body=""
+  while [ \$# -gt 0 ]; do
+    case "\$1" in
+      --data|--data-raw|-d) body="\$2"; shift 2 ;;
+      *) shift ;;
+    esac
+  done
+  printf 'BODY:%s\n' "\$body" >> "\$LINEAR_STUB_CAPTURE"
+}
+export -f curl
+EOF
+  run bash -c "source '$BATS_TEST_TMPDIR/seq-stub.sh' && bash '$LQ' save-issue --team 'Blocktech Solutions' --project-id proj-uuid --title 'new' --description 'body'"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '.id == "BTS-300"'
+  # Find the issueCreate body structurally rather than by line position —
+  # multiple curl calls land in $LINEAR_STUB_CAPTURE; assert against the
+  # body whose query contains "issueCreate", not "the last line". Robust
+  # to future test additions that issue more lookup roundtrips.
+  local create_body
+  create_body=$(grep '^BODY:' "$LINEAR_STUB_CAPTURE" | sed 's/^BODY://' | while read -r line; do
+    echo "$line" | jq -e '.query | contains("issueCreate")' >/dev/null 2>&1 && echo "$line"
+  done)
+  [ -n "$create_body" ]
+  echo "$create_body" | jq -e '.variables.input.teamId == "team-uuid"'
+}
+
+@test "BTS-166 AC-2: save-issue --team-id wins when both --team and --team-id are passed" {
+  set -e
+  _setup_stub
+  # Only one curl call (no lookup needed) since --team-id short-circuits.
+  cat > "$LINEAR_STUB_RESPONSE" <<'JSON'
+{"data":{"issueCreate":{"success":true,"issue":{"id":"u","identifier":"BTS-301","title":"t"}}}}
+JSON
+  run bash -c "source '$STUB_FIXTURE' && bash '$LQ' save-issue --team 'Some Other Team' --team-id explicit-uuid --project-id p --title 'new' --description 'body'"
+  [ "$status" -eq 0 ]
+  local body
+  body=$(_get_body)
+  echo "$body" | jq -e '.variables.input.teamId == "explicit-uuid"'
+}
+
+# ===========================================================================
+# BTS-166 AC-1: --input-json -  reads JSON from stdin and merges into input
+# ===========================================================================
+# The stdin-JSON path lets callers supply dynamic content (title, description)
+# without shell-quoting friction. CLI flags take precedence on key collision.
+
+@test "BTS-166 AC-1: save-issue --input-json - reads stdin JSON into input" {
+  set -e
+  _setup_stub
+  cat > "$LINEAR_STUB_RESPONSE" <<'JSON'
+{"data":{"issueCreate":{"success":true,"issue":{"id":"u1","identifier":"BTS-201","title":"from-stdin"}}}}
+JSON
+  local stdin_json='{"title":"from-stdin","description":"body via stdin"}'
+  run bash -c "source '$STUB_FIXTURE' && echo '$stdin_json' | bash '$LQ' save-issue --team-id team-uuid --project-id proj-uuid --input-json -"
+  [ "$status" -eq 0 ]
+  local body
+  body=$(_get_body)
+  echo "$body" | jq -e '.variables.input.title == "from-stdin"'
+  echo "$body" | jq -e '.variables.input.description == "body via stdin"'
+  echo "$body" | jq -e '.variables.input.teamId == "team-uuid"'
+}
+
+@test "BTS-166 AC-1: CLI flags override stdin-JSON fields on collision" {
+  set -e
+  _setup_stub
+  cat > "$LINEAR_STUB_RESPONSE" <<'JSON'
+{"data":{"issueCreate":{"success":true,"issue":{"id":"u1","identifier":"BTS-202","title":"cli-wins"}}}}
+JSON
+  # stdin says title=stdin-title, but --title cli-wins on the command line should win.
+  local stdin_json='{"title":"stdin-title","description":"shared body"}'
+  run bash -c "source '$STUB_FIXTURE' && echo '$stdin_json' | bash '$LQ' save-issue --team-id t --project-id p --title cli-wins --input-json -"
+  [ "$status" -eq 0 ]
+  local body
+  body=$(_get_body)
+  echo "$body" | jq -e '.variables.input.title == "cli-wins"'
+  echo "$body" | jq -e '.variables.input.description == "shared body"'
+}
+
+# ===========================================================================
+# BTS-166 AC-3: stdin-JSON preserves special characters verbatim
+# ===========================================================================
+# Newlines, double-quotes, single-quotes, backticks, $VAR, $(cmd) all
+# need to round-trip without shell re-interpretation. jq -n owns the
+# escaping; the wrapper must NOT interpolate the value through bash.
+
+@test "BTS-166 AC-3: stdin-JSON preserves newlines, quotes, backticks, dollar-substitution" {
+  set -e
+  _setup_stub
+  cat > "$LINEAR_STUB_RESPONSE" <<'JSON'
+{"data":{"issueCreate":{"success":true,"issue":{"id":"u1","identifier":"BTS-203","title":"t"}}}}
+JSON
+  # Build the fixture via jq so escaping is deterministic. Description has:
+  #  - embedded newline
+  #  - double-quote
+  #  - single-quote
+  #  - backtick
+  #  - literal $VAR (no expansion expected)
+  #  - literal $(cmd) (no expansion expected)
+  local stdin_json
+  stdin_json=$(jq -n --arg desc "line1
+line2 \"dq\" 'sq' \`bt\` \$VAR \$(cmd)" '{title:"t", description:$desc}')
+  # Pipe via tmpfile so the shell layer doesn't see the metacharacters.
+  local fixture="$BATS_TEST_TMPDIR/stdin.json"
+  printf '%s' "$stdin_json" > "$fixture"
+  run bash -c "source '$STUB_FIXTURE' && bash '$LQ' save-issue --team-id t --project-id p --input-json - < '$fixture'"
+  [ "$status" -eq 0 ]
+  local body
+  body=$(_get_body)
+  # Round-trip: the description in the request body must equal the description in the input fixture.
+  local input_desc body_desc
+  input_desc=$(jq -r '.description' "$fixture")
+  body_desc=$(echo "$body" | jq -r '.variables.input.description')
+  [ "$input_desc" = "$body_desc" ]
+}
+
+# ===========================================================================
+# BTS-166 AC-12: 6-byte UTF-8 emoji + triple-backtick markdown fence round-trip
+# ===========================================================================
+
+@test "BTS-166 AC-12: stdin-JSON preserves 6-byte UTF-8 sequence and triple-backtick fence" {
+  set -e
+  _setup_stub
+  cat > "$LINEAR_STUB_RESPONSE" <<'JSON'
+{"data":{"issueCreate":{"success":true,"issue":{"id":"u1","identifier":"BTS-204","title":"t"}}}}
+JSON
+  # 🚀 (U+1F680) is a 4-byte UTF-8 sequence; pair with another emoji for >6 bytes total.
+  # Triple backticks for markdown-fence preservation.
+  local stdin_json
+  stdin_json=$(jq -n --arg desc 'before 🚀✨ after
+\`\`\`bash
+echo hi
+\`\`\`' '{title:"t", description:$desc}')
+  local fixture="$BATS_TEST_TMPDIR/stdin.json"
+  printf '%s' "$stdin_json" > "$fixture"
+  run bash -c "source '$STUB_FIXTURE' && bash '$LQ' save-issue --team-id t --project-id p --input-json - < '$fixture'"
+  [ "$status" -eq 0 ]
+  local body
+  body=$(_get_body)
+  local input_desc body_desc
+  input_desc=$(jq -r '.description' "$fixture")
+  body_desc=$(echo "$body" | jq -r '.variables.input.description')
+  [ "$input_desc" = "$body_desc" ]
 }
