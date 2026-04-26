@@ -2257,10 +2257,13 @@ cmd_idea_update() {
 # ---------------------------------------------------------------------------
 # cmd_idea_sync — Read/ack primitives for .ccanvil/ideas-pending.log.
 #
-# The pending log holds intents for Linear operations that failed (network,
-# auth, server error). Replay is orchestrated by the /idea skill — this
-# script exposes op-agnostic read + remove primitives; the skill dispatches
-# each entry's `op` to the matching MCP tool.
+# BTS-179: replay orchestration moved to cmd_idea_pending_replay (substrate
+# dispatch primitive). cmd_idea_sync remains as: (a) the enumerate-only
+# primitive (`idea-sync` with no args → `{pending, entries}` JSON for any
+# external consumer that needs to inspect the pending queue) and (b) a
+# standalone operator-callable ack subcommand for manual recovery
+# (`idea-sync --ack <ts>`). Neither is on the normal /idea sync hot path
+# any more; both are preserved for backwards compat and ad-hoc use.
 #
 # Supported ops (written by /idea or /land skills when the corresponding
 # Linear call fails; replayed by /idea sync):
@@ -2314,6 +2317,179 @@ cmd_idea_sync() {
   fi
 
   jq -s '{pending: length, entries: .}' "$pending"
+}
+
+# ---------------------------------------------------------------------------
+# cmd_idea_pending_replay — BTS-179: replay every entry in
+# .ccanvil/ideas-pending.log via the http substrate, ack on success,
+# preserve on failure. Replaces the per-skill shell loop in /idea sync.
+#
+# Each entry is dispatched by op:
+#   add               — resolve idea.add, eval $cmd --input-json - with
+#                       {title, description} piped via stdin-JSON.
+#                       --parent-id appended when args.parent_id present.
+#   promote           — resolve ticket.transition <id> backlog,
+#                       eval $cmd --priority <N>
+#   defer             — resolve ticket.transition <id> icebox, eval $cmd
+#   dismiss           — resolve ticket.transition <id> canceled, eval $cmd
+#   merge             — resolve ticket.transition <id> duplicate,
+#                       eval $cmd --duplicate-of <target>
+#   ticket.transition — resolve ticket.transition <id> <role>, eval $cmd
+#
+# Invocation:
+#   idea-pending-replay [--project-dir <dir>]
+#
+# Output: {synced, failed, pending, entries: [{ts, op, result, error?}]}
+# Exit 0 when failed == 0; non-zero otherwise.
+# ---------------------------------------------------------------------------
+cmd_idea_pending_replay() {
+  local project_dir="."
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --project-dir) project_dir="$2"; shift 2 ;;
+      *) project_dir="$1"; shift ;;
+    esac
+  done
+
+  local pending="$project_dir/.ccanvil/ideas-pending.log"
+
+  # Empty/absent log → empty summary, exit 0.
+  if [[ ! -f "$pending" || ! -s "$pending" ]]; then
+    jq -n '{synced: 0, failed: 0, pending: 0, entries: []}'
+    return 0
+  fi
+
+  local synced=0 failed=0
+  local results_file failed_file entries_file
+  results_file=$(mktemp)
+  failed_file=$(mktemp)
+  entries_file=$(mktemp)
+  trap 'rm -f "$results_file" "$failed_file" "$entries_file"' RETURN
+
+  # Snapshot the pending log; iterate from the snapshot so per-entry ack
+  # rewrites of the live log don't perturb iteration. Also avoids the
+  # ts-collision class (multiple entries appended in the same second share
+  # a ts, and idea-sync --ack removes all matches).
+  cp "$pending" "$entries_file"
+
+  # Iterate JSONL safely: read each line directly, no echo round-trip.
+  # Use fd 3 so dispatched commands can't accidentally consume entries_file
+  # via inherited stdin (e.g., a wrapper that calls `cat` would otherwise
+  # drain the rest of the loop's input).
+  while IFS= read -r entry <&3; do
+    [[ -z "$entry" ]] && continue
+    local op ts
+    op=$(printf '%s' "$entry" | jq -r '.op')
+    ts=$(printf '%s' "$entry" | jq -r '.ts')
+
+    local resolution_op resolution cmd dispatch_status=0 dispatch_err=""
+
+    case "$op" in
+      add)
+        resolution_op="idea.add"
+        ;;
+      promote)
+        resolution_op="ticket.transition"
+        ;;
+      defer)
+        resolution_op="ticket.transition"
+        ;;
+      dismiss)
+        resolution_op="ticket.transition"
+        ;;
+      merge)
+        resolution_op="ticket.transition"
+        ;;
+      ticket.transition)
+        resolution_op="ticket.transition"
+        ;;
+      *)
+        failed=$((failed + 1))
+        jq -n --argjson ts "$ts" --arg op "$op" --arg err "unknown op" \
+          '{ts:$ts, op:$op, result:"failed", error:$err}' >> "$results_file"
+        continue
+        ;;
+    esac
+
+    local script_dir
+    script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+    if [[ "$op" == "add" ]]; then
+      resolution=$(bash "$script_dir/operations.sh" resolve idea.add --project-dir "$project_dir" 2>&1) || {
+        failed=$((failed + 1))
+        jq -n --argjson ts "$ts" --arg op "$op" --arg err "resolve idea.add failed: $resolution" \
+          '{ts:$ts, op:$op, result:"failed", error:$err}' >> "$results_file"
+        continue
+      }
+      cmd=$(printf '%s' "$resolution" | jq -r '.invocation.command')
+      local parent_id title description
+      parent_id=$(printf '%s' "$entry" | jq -r '.args.parent_id // ""')
+      title=$(printf '%s' "$entry" | jq -r '.args.title')
+      description=$(printf '%s' "$entry" | jq -r '.args.body')
+      if [[ -n "$parent_id" ]]; then
+        cmd="$cmd --parent-id $(printf '%s' "$parent_id" | jq -Rr @sh)"
+      fi
+      dispatch_err=$(
+        cd "$project_dir" && \
+        jq -n --arg title "$title" --arg description "$description" \
+          '{title:$title, description:$description}' \
+          | eval "$cmd --input-json -" 2>&1 >/dev/null
+      ) || dispatch_status=$?
+    else
+      local id role priority target
+      id=$(printf '%s' "$entry" | jq -r '.args.id')
+      case "$op" in
+        promote) role="backlog" ;;
+        defer)   role="icebox" ;;
+        dismiss) role="canceled" ;;
+        merge)   role="duplicate" ;;
+        ticket.transition) role=$(printf '%s' "$entry" | jq -r '.args.role') ;;
+      esac
+      resolution=$(bash "$script_dir/operations.sh" resolve ticket.transition "$id" "$role" --project-dir "$project_dir" 2>&1) || {
+        failed=$((failed + 1))
+        jq -n --argjson ts "$ts" --arg op "$op" --arg err "resolve ticket.transition failed: $resolution" \
+          '{ts:$ts, op:$op, result:"failed", error:$err}' >> "$results_file"
+        continue
+      }
+      cmd=$(printf '%s' "$resolution" | jq -r '.invocation.command')
+      if [[ "$op" == "promote" ]]; then
+        priority=$(printf '%s' "$entry" | jq -r '.args.priority')
+        cmd="$cmd --priority $(printf '%s' "$priority" | jq -Rr @sh)"
+      elif [[ "$op" == "merge" ]]; then
+        target=$(printf '%s' "$entry" | jq -r '.args.duplicateOf // .args.duplicate_of')
+        cmd="$cmd --duplicate-of $(printf '%s' "$target" | jq -Rr @sh)"
+      fi
+      dispatch_err=$(cd "$project_dir" && eval "$cmd" </dev/null 2>&1 >/dev/null) || dispatch_status=$?
+    fi
+
+    if [[ "$dispatch_status" -eq 0 ]]; then
+      synced=$((synced + 1))
+      jq -n --argjson ts "$ts" --arg op "$op" '{ts:$ts, op:$op, result:"synced"}' >> "$results_file"
+    else
+      failed=$((failed + 1))
+      printf '%s\n' "$entry" >> "$failed_file"
+      jq -n --argjson ts "$ts" --arg op "$op" --arg err "$dispatch_err" \
+        '{ts:$ts, op:$op, result:"failed", error:$err}' >> "$results_file"
+    fi
+  done 3< "$entries_file"
+
+  # Rewrite pending log with only the failed entries (atomic mv).
+  if [[ -s "$failed_file" ]]; then
+    mv "$failed_file" "$pending"
+  else
+    : > "$pending"
+    rm -f "$failed_file"
+  fi
+
+  local pending_count=0
+  if [[ -f "$pending" && -s "$pending" ]]; then
+    pending_count=$(jq -s 'length' "$pending")
+  fi
+
+  jq -s --argjson synced "$synced" --argjson failed "$failed" --argjson pending "$pending_count" \
+    '{synced:$synced, failed:$failed, pending:$pending, entries:.}' "$results_file"
+
+  [[ "$failed" -eq 0 ]]
 }
 
 # ---------------------------------------------------------------------------
@@ -3155,6 +3331,7 @@ case "$cmd" in
   idea-count-local)  cmd_idea_count_local "$@" ;;
   idea-update)       cmd_idea_update "$@" ;;
   idea-sync)         cmd_idea_sync "$@" ;;
+  idea-pending-replay) cmd_idea_pending_replay "$@" ;;
   idea-review-icebox) cmd_idea_review_icebox "$@" ;;
   idea-migrate-state) cmd_idea_migrate_state "$@" ;;
   idea-migrate)      cmd_idea_migrate "$@" ;;
@@ -3168,7 +3345,7 @@ case "$cmd" in
   idea-pending-validate) cmd_idea_pending_validate "$@" ;;
   remote-presence)   cmd_remote_presence "$@" ;;
   *)
-    echo "Usage: docs-check.sh {status|validate|recommend|audit-session|config-get|list-specs|activate|complete|pr-cleanup|land|idea-add|idea-list|idea-count|idea-update|idea-sync|idea-migrate|idea-setup|idea-upgrade|title-from-body|legacy-refs-scan|stamp-spec|idea-pending-append|idea-pending-validate|remote-presence} [args...]" >&2
+    echo "Usage: docs-check.sh {status|validate|recommend|audit-session|config-get|list-specs|activate|complete|pr-cleanup|land|idea-add|idea-list|idea-count|idea-update|idea-sync|idea-pending-replay|idea-migrate|idea-setup|idea-upgrade|title-from-body|legacy-refs-scan|stamp-spec|idea-pending-append|idea-pending-validate|remote-presence} [args...]" >&2
     exit 1
     ;;
 esac

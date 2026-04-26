@@ -158,12 +158,14 @@ JSON
   set -e
   # sync drains the pending log — orchestration, not a single MCP call.
   # Resolves to local bash even when Linear is configured.
+  # BTS-179: resolver now points at idea-pending-replay (substrate dispatch
+  # primitive), not idea-sync (which stays as enumerate-only).
   _linear_config
   run bash "$SCRIPT" resolve idea.sync --project-dir "$PROJECT"
   [ "$status" -eq 0 ]
   echo "$output" | jq -e '.provider == "local"'
   echo "$output" | jq -e '.mechanism == "bash"'
-  echo "$output" | jq -e '.invocation.command | test("docs-check.sh idea-sync")'
+  echo "$output" | jq -e '.invocation.command | test("docs-check.sh idea-pending-replay")'
 }
 
 # =========================================================================

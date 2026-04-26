@@ -207,16 +207,22 @@ Re-evaluate Icebox items older than 60d. Prevents graveyard drift.
 
 Only meaningful when the Linear provider is configured and `.ccanvil/ideas-pending.log` has entries.
 
-1. Resolve: `bash .ccanvil/scripts/operations.sh resolve idea.sync --project-dir .`
-2. Run the returned command (always local bash: `docs-check.sh idea-sync`) to enumerate pending entries.
-3. For each entry, dispatch by `op` via the http substrate (BTS-166):
-   - `add` → re-resolve `idea.add` via `operations.sh`; if the pending entry has `args.parent_id`, append `--parent-id $(printf '%s' "$parent_id" | jq -Rr @sh)` to `$cmd` before `eval` (BTS-162). Pipe `{title, description}` JSON to `eval "$cmd --input-json -"`. Idempotency caveat: Linear creates aren't deduped server-side, so a replayed `add` could double-capture if the original earlier-replay actually succeeded but the `--ack` failed. Acceptable risk for capture (rare); operator can dismiss the dup via `/idea triage`.
-   - `promote` → re-resolve `ticket.transition <args.id> backlog`; eval `"$cmd --priority $priority"`.
-   - `defer` / `dismiss` → re-resolve `ticket.transition <args.id> {icebox|canceled}`; eval `"$cmd"`.
-   - `merge` → re-resolve `ticket.transition <args.id> duplicate`; eval `"$cmd --duplicate-of $target"`.
-   - `ticket.transition` → re-resolve `ticket.transition <args.id> <args.role>`; eval the returned command. Queued by `/land` (BTS-119) when auto-close fails. Idempotent — Linear's API accepts transitions to the current state without error.
-4. On success per entry: `docs-check.sh idea-sync --ack <ts>`.
-5. Report: `SYNCED: N / PENDING: M`.
+BTS-179 collapsed the per-op dispatch loop into the `idea-pending-replay` substrate primitive. The skill is a one-liner:
+
+```bash
+RESOLUTION=$(bash .ccanvil/scripts/operations.sh resolve idea.sync --project-dir .)
+eval "$(echo "$RESOLUTION" | jq -r '.invocation.command')"
+```
+
+The resolved command (`docs-check.sh idea-pending-replay`) iterates every entry in `.ccanvil/ideas-pending.log`, dispatches each by `op` via the http substrate, ack's on success, preserves on failure, and emits `{synced, failed, pending, entries}` JSON. Render the summary as `SYNCED: N / FAILED: M / PENDING: K`.
+
+**Per-op dispatch (now substrate-owned, documented for reference):**
+
+- `add` → re-resolves `idea.add` and pipes `{title, description}` JSON via `eval "$cmd --input-json -"`. When `args.parent_id` is present, `--parent-id` is appended via `jq -Rr @sh`. Idempotency caveat: Linear creates aren't deduped server-side, so a replayed `add` could double-capture if the original succeeded but ack failed. Acceptable risk; operator dismisses dups via `/idea triage`.
+- `promote` → re-resolves `ticket.transition <args.id> backlog`; eval's `$cmd --priority <N>`.
+- `defer` / `dismiss` → re-resolves `ticket.transition <args.id> {icebox|canceled}`; eval's `$cmd`.
+- `merge` → re-resolves `ticket.transition <args.id> duplicate`; eval's `$cmd --duplicate-of <target>`.
+- `ticket.transition` → re-resolves `ticket.transition <args.id> <args.role>`; eval's `$cmd`. Queued by `/land` (BTS-119) when auto-close fails. Idempotent — Linear accepts transitions to the current state without error.
 
 ## Legacy migration (one-shot)
 

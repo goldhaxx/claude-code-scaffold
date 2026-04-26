@@ -345,9 +345,11 @@ local_adapter() {
       output_contract='["uid","created","title","status"]'
       ;;
     idea.sync)
-      # Local sync is a no-op; the command exists for contract uniformity.
-      cmd=".ccanvil/scripts/docs-check.sh idea-sync"
-      output_contract='["synced","pending"]'
+      # BTS-179: resolver returns idea-pending-replay (the dispatch
+      # primitive). idea-sync remains the enumerate-only primitive for
+      # backwards compat. Skill prose collapses to single resolve+eval.
+      cmd=".ccanvil/scripts/docs-check.sh idea-pending-replay"
+      output_contract='["synced","failed","pending","entries"]'
       ;;
     idea.review-icebox)
       cmd=".ccanvil/scripts/docs-check.sh idea-review-icebox"
