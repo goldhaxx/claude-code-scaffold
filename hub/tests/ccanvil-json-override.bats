@@ -93,12 +93,13 @@ EOF
   cat > "$PROJECT/.claude/ccanvil.json" <<'EOF'
 {"features":{"pr_review":false},"integrations":{}}
 EOF
-  # Local file has routing config
+  # Local file has routing config. BTS-175: backlog.list resolver now requires
+  # state_ids.backlog on Linear-routed projects.
   cat > "$PROJECT/.claude/ccanvil.local.json" <<'EOF'
 {
   "integrations":{
     "routing":{"backlog":"linear"},
-    "providers":{"linear":{"mechanism":"mcp","project":"Test","team":"TestTeam"}}
+    "providers":{"linear":{"mechanism":"mcp","project":"Test","team":"TestTeam","state_ids":{"backlog":"STATE-X"}}}
   }
 }
 EOF
@@ -106,7 +107,7 @@ EOF
   run bash "$OPERATIONS_SCRIPT" resolve backlog.list --project-dir "$PROJECT"
   [ "$status" -eq 0 ]
   echo "$output" | jq -e '.provider == "linear"'
-  echo "$output" | jq -e '.mechanism == "mcp"'
+  echo "$output" | jq -e '.mechanism == "http"'
 }
 
 # =========================================================================

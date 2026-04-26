@@ -133,7 +133,7 @@ teardown() {
 # Step 4: MCP resolve for backlog.list (AC-2)
 # =========================================================================
 
-@test "backlog.list with linear routing returns MCP adapter" {
+@test "backlog.list with linear routing returns http adapter (BTS-175)" {
   set -e
   mkdir -p "$PROJECT/.claude"
   cat > "$PROJECT/.claude/ccanvil.json" <<'JSON'
@@ -143,7 +143,8 @@ teardown() {
       "linear": {
         "mechanism": "mcp",
         "project": "Test Project",
-        "team": "Test Team"
+        "team": "Test Team",
+        "state_ids": { "backlog": "STATE-UUID-X" }
       }
     },
     "routing": {
@@ -155,10 +156,11 @@ JSON
   run bash "$SCRIPT" resolve backlog.list --project-dir "$PROJECT"
   [ "$status" -eq 0 ]
   echo "$output" | jq -e '.provider == "linear"'
-  echo "$output" | jq -e '.mechanism == "mcp"'
-  echo "$output" | jq -e '.invocation.tool == "mcp__claude_ai_Linear__list_issues"'
-  echo "$output" | jq -e '.invocation.params.project == "Test Project"'
-  echo "$output" | jq -e '.invocation.params.team == "Test Team"'
+  echo "$output" | jq -e '.mechanism == "http"'
+  echo "$output" | jq -e '.invocation.command | contains("linear-query.sh list-issues")'
+  echo "$output" | jq -e '.invocation.command | contains("Test Project")'
+  echo "$output" | jq -e '.invocation.command | contains("Test Team")'
+  echo "$output" | jq -e '.invocation.command | contains("STATE-UUID-X")'
   echo "$output" | jq -e '.contract.output | length > 0'
 }
 
@@ -190,7 +192,7 @@ JSON
 {
   "integrations": {
     "providers": {
-      "linear": { "mechanism": "mcp", "project": "P", "team": "T" }
+      "linear": { "mechanism": "mcp", "project": "P", "team": "T", "state_ids": { "backlog": "STATE-X" } }
     },
     "routing": {
       "backlog": "linear"
@@ -402,7 +404,7 @@ JSON
 {
   "integrations": {
     "providers": {
-      "linear": { "mechanism": "mcp", "project": "My \"Quoted\" Project", "team": "Test & Co" }
+      "linear": { "mechanism": "mcp", "project": "My \"Quoted\" Project", "team": "Test & Co", "state_ids": { "backlog": "STATE-X" } }
     },
     "routing": {
       "backlog": "linear"
@@ -412,9 +414,10 @@ JSON
 JSON
   run bash "$SCRIPT" resolve backlog.list --project-dir "$PROJECT"
   [ "$status" -eq 0 ]
-  # Output must be valid JSON (jq -e will fail if not)
-  echo "$output" | jq -e '.invocation.params.project'
-  echo "$output" | jq -e '.invocation.params.team == "Test & Co"'
+  # Output must be valid JSON (jq -e will fail if not). BTS-175: now http
+  # mechanism, special chars must round-trip through @sh shell-quoting.
+  echo "$output" | jq -e '.invocation.command | contains("Test & Co")'
+  echo "$output" | jq -e '.mechanism == "http"'
 }
 
 @test "resolve output is always valid JSON" {
@@ -481,7 +484,9 @@ JSON
   }
 }
 JSON
-  run bash "$SCRIPT" exec backlog.list --project-dir "$PROJECT"
+  # BTS-175 migrated backlog.list to http; backlog.get is still mcp-mechanism.
+  # Positional op-args precede --project-dir per operations.sh argv parser.
+  run bash "$SCRIPT" exec backlog.get SOME-ID --project-dir "$PROJECT"
   [ "$status" -eq 0 ]
   # Should output the resolution JSON (same as resolve) since MCP can't be executed from bash
   echo "$output" | jq -e '.mechanism == "mcp"'

@@ -9,7 +9,21 @@ Read the current state of the project to resume work after a context reset. `/re
 
 0a. If `.ccanvil/scripts/docs-check.sh` exists, run `.ccanvil/scripts/docs-check.sh validate` and report any staleness or mismatches before reading documents.
 0b. If `.ccanvil/scripts/docs-check.sh` exists, run `.ccanvil/scripts/docs-check.sh recommend` and display the recommended next action.
-0c. Run `.ccanvil/scripts/operations.sh resolve backlog.list` to get routing info. If the mechanism is `bash`, execute the command from `invocation.command` (e.g., `.ccanvil/scripts/docs-check.sh list-specs`). If the mechanism is `mcp`, call the specified MCP tool with the given params. Report counts by status (Draft, Ready, In Progress, Complete).
+0c. Capture the resolution into `$RESOLUTION` and branch on mechanism:
+
+```bash
+RESOLUTION=$(bash .ccanvil/scripts/operations.sh resolve backlog.list)
+mechanism=$(echo "$RESOLUTION" | jq -r '.mechanism')
+case "$mechanism" in
+  bash) eval "$(echo "$RESOLUTION" | jq -r '.invocation.command')" ;;  # local list-specs
+  http) eval "$(echo "$RESOLUTION" | jq -r '.invocation.command')" ;;  # BTS-175 Linear-routed
+  mcp)  ;;  # legacy: call .invocation.tool via MCP with .invocation.params
+esac
+```
+
+Report counts by status (Draft, Ready, In Progress, Complete) — or by Linear state name when http-routed.
+
+  **Do NOT use `idea.list` as a backlog proxy** (BTS-175). `idea.list` filters by `label=idea` and silently hides scaffold-labeled tickets, leading to phantom "backlog is empty" reports when in fact Backlog-state items exist. `backlog.list` is the canonical "what's left to ship" surface — it filters by Backlog state-id only, no label restriction.
 0d. Check the current branch name (`git branch --show-current`). Report whether it follows the `claude/<type>/<name>` naming convention.
 
 1. Read `docs/stasis.md` if it exists — this contains the last session's progress and next steps.

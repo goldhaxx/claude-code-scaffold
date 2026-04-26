@@ -8,7 +8,9 @@ Scan the project's current state across all time horizons and produce a strategi
 ## Data gathering (deterministic)
 
 1. Run: `bash .ccanvil/scripts/docs-check.sh radar-gather`
-2. Run: `bash .ccanvil/scripts/operations.sh exec backlog.list` (if available — gracefully skip if not)
+2. Run: `bash .ccanvil/scripts/operations.sh exec backlog.list` (if available — gracefully skip if not). On Linear-routed projects this hits the http resolver (BTS-175) and returns the canonical Backlog-state items.
+
+  **Do NOT use `idea.list` here** (BTS-175). `idea.list` filters by `label=idea` and silently hides scaffold-labeled tickets — using it as a backlog proxy produces phantom "no work left" reports while real tickets sit in Backlog. `backlog.list` is the canonical "what's left to ship" surface.
 3. Read `docs/roadmap.md` (if it exists)
 
 ## Briefing (synthesis)
