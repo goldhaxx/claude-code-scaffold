@@ -154,13 +154,11 @@ is_safe_bash_keyword() {
 
 # Check if a permission matches any dangerous pattern.
 # Returns the pattern label if matched, empty string if safe.
+# Note: bash control-flow keyword exemption (BTS-154) is enforced one
+# layer up in the main classify loop — entries that match the keyword
+# regex never reach check_danger.
 check_danger() {
   local inner="$1"
-
-  # BTS-154: control-flow keyword pre-check short-circuits to safe.
-  if is_safe_bash_keyword "$inner"; then
-    return 0
-  fi
 
   for pattern_entry in "${DANGER_PATTERNS[@]}"; do
     local label="${pattern_entry%%|*}"
@@ -236,6 +234,17 @@ cmd_check() {
 
     local inner matched_pattern
     inner=$(strip_bash_wrapper "$perm")
+
+    # BTS-154: bash control-flow keywords classify as REVIEWED with a
+    # built-in rationale. Short-circuits both DANGER and UNREVIEWED paths,
+    # so operators don't need accept_danger overrides for grammar tokens.
+    if is_safe_bash_keyword "$inner"; then
+      reviewed_count=$((reviewed_count + 1))
+      classified=$(echo "$classified" | jq --arg p "$perm" --argjson s "$sources" \
+        '. + [{permission: $p, source: $s, status: "REVIEWED", rationale: "bash control-flow keyword (BTS-154 grammar exemption)"}]')
+      continue
+    fi
+
     matched_pattern=$(check_danger "$inner" || true)
 
     if [[ -n "$matched_pattern" ]]; then
