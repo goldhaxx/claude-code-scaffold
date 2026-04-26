@@ -32,7 +32,7 @@
     },
     {
       "id": "session-wrap",
-      "description": "Session-kind stasis present and post-compact marker is fresh (>= stasis.last_updated). Session boundary; recommend forward action."
+      "description": "Session-kind stasis present (regardless of post-compact marker). Session boundary state; legal_next_actions vary based on compact freshness — pre-compact recommends /compact, post-compact recommends forward action."
     },
     {
       "id": "blocked",

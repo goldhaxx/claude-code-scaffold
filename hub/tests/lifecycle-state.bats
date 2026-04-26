@@ -131,6 +131,38 @@ EOF
 }
 
 # =========================================================================
+# AC-4b: session-wrap with STALE compact marker → /compact in legal actions
+# =========================================================================
+
+@test "AC-4b: session-stasis + stale post-compact marker → /compact in legal_next_actions" {
+  set -e
+  fx=$(init_fixture)
+  cat > "$fx/docs/stasis.md" <<'EOF'
+# Stasis
+
+> Feature: session-2099-test
+> Kind: session
+> Last updated: 2000
+
+## Accomplished
+test fixture
+
+## Determinism Review
+
+- operations_reviewed: 0
+- candidates_found: 0
+- No candidates this session.
+EOF
+  # Marker is OLDER than stasis.last_updated → compact has not run yet.
+  mkdir -p "$fx/.ccanvil/state"
+  echo "1000" > "$fx/.ccanvil/state/last-compact-ts"
+  run bash "$SCRIPT" lifecycle-state --project-dir "$fx"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '.state == "session-wrap"'
+  echo "$output" | jq -e '[.legal_next_actions[].action] | index("/compact") != null'
+}
+
+# =========================================================================
 # AC-5: spec-activated state
 # =========================================================================
 

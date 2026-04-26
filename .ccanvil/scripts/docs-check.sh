@@ -3734,9 +3734,13 @@ cmd_evidence_scan_session() {
 # Composes cmd_validate + git/marker state into a structured envelope:
 #   {state, legal_next_actions:[{action, command, reason}], blockers:[], suggestions:[]}
 #
-# Consumes the codified transition graph at .ccanvil/templates/lifecycle-graph.json
-# for state IDs and structural edges; contextual filtering (post-compact freshness,
-# spec/plan presence) lives in code.
+# .ccanvil/templates/lifecycle-graph.json codifies the state machine as data
+# (consumed by tests for schema validation; structural reference for future
+# Session-2/3 work). Session-1 does not parse the graph file at runtime —
+# legal_next_actions are hand-derived in the case statement below. This trade
+# is intentional: the graph is the contract, the code is the implementation.
+# pr-open / pr-merged states exist in the graph but are not emitted yet
+# (deferred to Session-2 — would require a gh subprocess for detection).
 # ---------------------------------------------------------------------------
 cmd_lifecycle_state() {
   local project_dir="."
