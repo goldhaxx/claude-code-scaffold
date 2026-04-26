@@ -3,7 +3,7 @@
 > Feature: bts-125-safe-markdown-rule
 > Work: linear:BTS-125
 > Created: 1777178566
-> Status: In Progress
+> Status: Complete
 
 ## Summary
 
