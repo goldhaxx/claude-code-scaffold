@@ -162,11 +162,11 @@ RESOLUTION=$(bash .ccanvil/scripts/operations.sh resolve ticket.transition "$ID"
 cmd=$(echo "$RESOLUTION" | jq -r '.invocation.command')
 case "$OUTCOME" in
   promote)
-    p=$(printf '%s' "$PRIORITY" | jq -R @sh)
+    p=$(printf '%s' "$PRIORITY" | jq -Rr @sh)
     eval "$cmd --priority $p"
     ;;
   merge)
-    t=$(printf '%s' "$TARGET_ID" | jq -R @sh)
+    t=$(printf '%s' "$TARGET_ID" | jq -Rr @sh)
     eval "$cmd --duplicate-of $t"
     ;;
   *)
