@@ -2419,6 +2419,112 @@ cmd_derive_pr_title() {
 }
 
 # ---------------------------------------------------------------------------
+# cmd_archive_stasis — BTS-22: copy docs/stasis.md to
+# docs/sessions/<epoch>-<feature_id>.md so cross-session stasis history
+# survives without git archeology. Idempotent on byte-identical content;
+# errors on collision with non-identical content.
+# ---------------------------------------------------------------------------
+cmd_archive_stasis() {
+  local project_dir="."
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --project-dir) project_dir="$2"; shift 2 ;;
+      *) project_dir="$1"; shift ;;
+    esac
+  done
+
+  local stasis_file="$project_dir/docs/stasis.md"
+  if [[ ! -f "$stasis_file" ]]; then
+    echo "ERROR: archive-stasis: docs/stasis.md not found at $stasis_file" >&2
+    return 1
+  fi
+
+  local feature_id epoch
+  feature_id=$(grep -m1 '^> Feature:' "$stasis_file" | sed -E 's/^> Feature:[[:space:]]*//' || true)
+  if [[ -z "$feature_id" ]]; then
+    echo "ERROR: archive-stasis: stasis missing > Feature: metadata" >&2
+    return 1
+  fi
+  epoch=$(grep -m1 '^> Last updated:' "$stasis_file" | sed -E 's/^> Last updated:[[:space:]]*//' || true)
+  if [[ -z "$epoch" ]]; then
+    epoch=$(grep -m1 '^> Created:' "$stasis_file" | sed -E 's/^> Created:[[:space:]]*//' || true)
+  fi
+  if [[ -z "$epoch" ]]; then
+    echo "ERROR: archive-stasis: stasis missing > Last updated: or > Created: epoch" >&2
+    return 1
+  fi
+
+  local sessions_dir="$project_dir/docs/sessions"
+  local rel_path="docs/sessions/${epoch}-${feature_id}.md"
+  local dest="$project_dir/$rel_path"
+
+  if [[ -f "$dest" ]]; then
+    if diff -q "$stasis_file" "$dest" >/dev/null 2>&1; then
+      jq -n --arg path "$rel_path" \
+        '{archived: false, path: $path, reason: "already-archived"}'
+      return 0
+    else
+      jq -n --arg path "$rel_path" \
+        '{error: "collision", existing: $path}' >&2
+      return 1
+    fi
+  fi
+
+  mkdir -p "$sessions_dir"
+  cp "$stasis_file" "$dest"
+  jq -n --arg path "$rel_path" '{archived: true, path: $path}'
+}
+
+# ---------------------------------------------------------------------------
+# cmd_sessions_list — BTS-22: list archived stasis files in
+# docs/sessions/, sorted newest-first by epoch. Used by /recall to read
+# recent N sessions without git archeology.
+# ---------------------------------------------------------------------------
+cmd_sessions_list() {
+  local project_dir="."
+  local limit=10
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --project-dir) project_dir="$2"; shift 2 ;;
+      --limit)       limit="$2"; shift 2 ;;
+      *)             project_dir="$1"; shift ;;
+    esac
+  done
+
+  local sessions_dir="$project_dir/docs/sessions"
+  if [[ ! -d "$sessions_dir" ]]; then
+    echo "[]"
+    return 0
+  fi
+
+  local entries="[]"
+  while IFS= read -r -d '' file; do
+    local fid epoch kind
+    fid=$(grep -m1 '^> Feature:' "$file" | sed -E 's/^> Feature:[[:space:]]*//' || true)
+    epoch=$(grep -m1 '^> Last updated:' "$file" | sed -E 's/^> Last updated:[[:space:]]*//' || true)
+    if [[ -z "$epoch" ]]; then
+      epoch=$(grep -m1 '^> Created:' "$file" | sed -E 's/^> Created:[[:space:]]*//' || true)
+    fi
+    kind=$(grep -m1 '^> Kind:' "$file" | sed -E 's/^> Kind:[[:space:]]*//' || true)
+
+    if [[ -z "$fid" || -z "$epoch" || ! "$epoch" =~ ^[0-9]+$ ]]; then
+      echo "WARN: sessions-list: skipping malformed file: $(basename "$file")" >&2
+      continue
+    fi
+
+    local rel="docs/sessions/$(basename "$file")"
+    entries=$(echo "$entries" | jq \
+      --arg path "$rel" \
+      --argjson epoch "$epoch" \
+      --arg fid "$fid" \
+      --arg kind "$kind" \
+      '. + [{path: $path, epoch: $epoch, feature_id: $fid, kind: $kind}]')
+  done < <(find "$sessions_dir" -maxdepth 1 -type f -name '*.md' -print0)
+
+  echo "$entries" | jq --argjson limit "$limit" 'sort_by(-.epoch) | .[:$limit]'
+}
+
+# ---------------------------------------------------------------------------
 # cmd_assert_pr_title — BTS-178: ensure a draft PR's live title matches the
 # spec-derived expected form (`feat(<feature-id>): <first-summary-line>`).
 # Force-updates via `gh pr edit` when the title is placeholder-shaped (e.g.
@@ -3528,6 +3634,8 @@ case "$cmd" in
   refresh-plan-hash) cmd_refresh_plan_hash "$@" ;;
   assert-pr-title)   cmd_assert_pr_title "$@" ;;
   derive-pr-title)   cmd_derive_pr_title "$@" ;;
+  archive-stasis)    cmd_archive_stasis "$@" ;;
+  sessions-list)     cmd_sessions_list "$@" ;;
   idea-review-icebox) cmd_idea_review_icebox "$@" ;;
   idea-migrate-state) cmd_idea_migrate_state "$@" ;;
   idea-migrate)      cmd_idea_migrate "$@" ;;

@@ -34,6 +34,9 @@
 # ccanvil-init-skill.bats asserts the skill does NOT contain docs/checkpoint.md —
 # that assertion text necessarily mentions the legacy string.
 ^hub/tests/ccanvil-init-skill\.bats:
+# stasis-history.bats (BTS-22) contains a checkpoint-cleanup drift-guard that
+# searches for legacy producers; the assertion text mentions the legacy strings.
+^hub/tests/stasis-history\.bats:
 
 # --- Scanner implementation (docs-check.sh legacy-refs-scan) ---
 # The function's docblock + regex pattern contain the legacy strings by

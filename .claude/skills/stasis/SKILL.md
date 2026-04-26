@@ -153,6 +153,16 @@ If none: "No candidates this session."
     ```
     The `ALLOW_MAIN=1` bypass is required because `protect-main.sh` otherwise blocks direct commits to main — and stasis commits are a deliberate exception (they capture state at a boundary, not feature work).
 
+## Archive into the session history (BTS-22)
+
+12a. After committing the live `docs/stasis.md`, persist a copy into `docs/sessions/<epoch>-<feature_id>.md` so `/recall` can read recent sessions without git archeology:
+    ```bash
+    bash .ccanvil/scripts/docs-check.sh archive-stasis --project-dir .
+    ALLOW_MAIN=1 git add docs/sessions/
+    ALLOW_MAIN=1 git -c commit.gpgsign=false commit -m "chore(stasis-archive): persist <feature-id>"
+    ```
+    `archive-stasis` is idempotent — running it twice on byte-identical content emits `{archived: false, reason: "already-archived"}` and exits 0. On collision with non-identical content (e.g., the live stasis was edited after a prior archive), it errors and the operator decides how to resolve. The archive is a forward-only history; `cmd_complete` and `cmd_land` never touch `docs/sessions/`.
+
 ## Close
 
 13. Final output must end with a single explicit next-action directive:

@@ -36,6 +36,8 @@ hub/                        # Hub-only — NOT distributed
 ├── specs/                  # Completed spec archive
 └── meta/                   # SYSTEM_PROMPT.md, INIT_PROMPT.md
 docs/                       # Active feature lifecycle (branch-local)
+├── specs/                  # Per-feature spec archive (committed history)
+└── sessions/               # Per-session stasis archive (committed history — BTS-22)
 ```
 
 ## Fork Setup

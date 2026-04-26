@@ -33,6 +33,19 @@ Report counts by status (Draft, Ready, In Progress, Complete) — or by Linear s
 5. Read `docs/spec.md` if it exists — this is the current feature specification.
 
 6. If `docs/stasis.md` has a `## Determinism Review` section with candidates_found > 0, read it and prepare to surface those items.
+6a. **Cross-session history (BTS-22):** read up to the 3 most-recent archived stasis files via the `sessions-list` substrate primitive — replaces the prior git-archeology approach (`git show HEAD~1:docs/stasis.md`).
+    ```bash
+    sessions=$(bash .ccanvil/scripts/docs-check.sh sessions-list --limit 3 --project-dir .)
+    if [[ $(echo "$sessions" | jq 'length') -gt 0 ]]; then
+      # Read each path's content for cross-session pattern context.
+      echo "$sessions" | jq -r '.[].path' | while read -r p; do
+        : # cat "$p"  # consumed by the cross-session synthesis below
+      done
+    else
+      # Fallback for first-stasis nodes that pre-date BTS-22 — still works.
+      git show HEAD~1:docs/stasis.md 2>/dev/null || true
+    fi
+    ```
 7. If `.ccanvil/scripts/docs-check.sh` exists, run `.ccanvil/scripts/docs-check.sh audit-session --since <last-stasis-commit>` (extract the commit from stasis metadata or use the last 10 commits) and note any new findings.
 
 8. If `.ccanvil/scripts/docs-check.sh` exists, run `.ccanvil/scripts/docs-check.sh idea-count` and note any untriaged ideas.
