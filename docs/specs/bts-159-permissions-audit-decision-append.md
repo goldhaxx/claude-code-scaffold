@@ -3,7 +3,7 @@
 > Feature: bts-159-permissions-audit-decision-append
 > Work: linear:BTS-159
 > Created: 1777163893
-> Status: In Progress
+> Status: Complete
 
 ## Summary
 
