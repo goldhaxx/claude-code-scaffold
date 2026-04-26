@@ -13,6 +13,14 @@
 #   ccanvil-sync.sh lock-update <file> <field> <value>  Update a lockfile field
 #   ccanvil-sync.sh section-merge <s> <l>  Merge hub/node sections of a delimited file
 #   ccanvil-sync.sh scan                   List all trackable files in the project
+#   ccanvil-sync.sh broadcast-resolve-auto [--dry-run]
+#                                          BTS-116: algorithmic resolution of
+#                                          .claude/ccanvil.json conflicts on
+#                                          the current node. Emits JSON; auto-
+#                                          applies content-identical (take-hub)
+#                                          and local-superset (keep-local)
+#                                          cases; exits 3 for value-divergence
+#                                          or local-removed-keys.
 
 set -euo pipefail
 
@@ -2658,6 +2666,147 @@ cmd_broadcast() {
 }
 
 # ---------------------------------------------------------------------------
+# BTS-116: broadcast-resolve-auto — algorithmic resolution of
+# .claude/ccanvil.json conflicts. Classifies the divergence between local
+# and hub copies into four states: take-hub (content-identical), keep-local
+# (local strictly extends hub), requires-review (value-divergence or
+# local-removed-keys), no-conflict (both files match or both missing).
+# Auto-applies the deterministic resolutions via the existing pull-apply
+# primitives; surfaces the rest as JSON for manual review.
+#
+# Out of scope: other file types, hub-side --all iteration, auto-commit.
+# Per spec (BTS-116). Reuses file_hash + cmd_pull_apply; no new primitives.
+# ---------------------------------------------------------------------------
+
+cmd_broadcast_resolve_auto() {
+  local dry_run=false
+  if [[ "${1:-}" == "--dry-run" ]]; then
+    dry_run=true
+  fi
+
+  if [[ ! -f "$LOCKFILE" ]]; then
+    echo "broadcast-resolve-auto: not a ccanvil node (no .ccanvil/ccanvil.lock)" >&2
+    exit 2
+  fi
+
+  local file=".claude/ccanvil.json"
+  local hub_root
+  hub_root=$(get_hub_source)
+  local hub_file="$hub_root/$file"
+  local local_file="$file"
+
+  local local_hash hub_hash
+  local_hash=$(file_hash "$local_file")
+  hub_hash=$(file_hash "$hub_file")
+
+  # No-conflict: both files missing.
+  if [[ "$local_hash" == "MISSING" && "$hub_hash" == "MISSING" ]]; then
+    jq -n --arg f "$file" --arg lh "$local_hash" --arg hh "$hub_hash" '{
+      file: $f,
+      resolution: "no-conflict",
+      applied: false,
+      reason: "no-conflict",
+      hub_hash: $hh,
+      local_hash: $lh
+    }'
+    return 0
+  fi
+
+  # Take-hub: byte-identical content (also covers the no-conflict case
+  # where the file is identical on both sides — same outcome from the
+  # operator's perspective: nothing to merge).
+  if [[ "$local_hash" == "$hub_hash" ]]; then
+    local applied_val=false
+    if ! $dry_run; then
+      if cmd_pull_apply "$file" take-hub >/dev/null 2>&1; then
+        applied_val=true
+      fi
+    fi
+    jq -n --arg f "$file" --arg lh "$local_hash" --arg hh "$hub_hash" --argjson applied "$applied_val" '{
+      file: $f,
+      resolution: "take-hub",
+      applied: $applied,
+      reason: "content-identical",
+      hub_hash: $hh,
+      local_hash: $lh
+    }'
+    return 0
+  fi
+
+  # Both files must exist for the structural superset / divergence checks.
+  if [[ "$local_hash" == "MISSING" || "$hub_hash" == "MISSING" ]]; then
+    jq -n --arg f "$file" --arg lh "$local_hash" --arg hh "$hub_hash" '{
+      file: $f,
+      resolution: "requires-review",
+      applied: false,
+      reason: "one-side-missing",
+      hub_hash: $hh,
+      local_hash: $lh
+    }'
+    exit 3
+  fi
+
+  # Compute structural diff between hub and local objects.
+  # removed_keys: in hub but not in local (top-level key set difference).
+  # divergent_keys: in both, but values are not deep-equal.
+  local removed_keys divergent_keys
+  removed_keys=$(jq -n --slurpfile h "$hub_file" --slurpfile l "$local_file" \
+    '($h[0] | keys_unsorted) - ($l[0] | keys_unsorted)')
+  divergent_keys=$(jq -n --slurpfile h "$hub_file" --slurpfile l "$local_file" '
+    [($h[0] | keys_unsorted)[] as $k | select(($l[0] | has($k)) and ($h[0][$k] != $l[0][$k])) | $k]
+  ')
+
+  local removed_count divergent_count
+  removed_count=$(echo "$removed_keys" | jq 'length')
+  divergent_count=$(echo "$divergent_keys" | jq 'length')
+
+  # Keep-local: hub keys are all present in local with deep-equal values
+  # (no removed keys, no divergent keys). Local-superset is the case
+  # where local additions sit alongside hub-canonical content.
+  if [[ "$removed_count" -eq 0 && "$divergent_count" -eq 0 ]]; then
+    local applied_val=false
+    if ! $dry_run; then
+      if cmd_pull_apply "$file" keep-local >/dev/null 2>&1; then
+        applied_val=true
+      fi
+    fi
+    jq -n --arg f "$file" --arg lh "$local_hash" --arg hh "$hub_hash" --argjson applied "$applied_val" '{
+      file: $f,
+      resolution: "keep-local",
+      applied: $applied,
+      reason: "local-superset-of-hub",
+      hub_hash: $hh,
+      local_hash: $lh
+    }'
+    return 0
+  fi
+
+  # Requires-review: prefer the most-specific reason (removed > divergent).
+  if [[ "$removed_count" -gt 0 ]]; then
+    jq -n --arg f "$file" --arg lh "$local_hash" --arg hh "$hub_hash" --argjson removed "$removed_keys" '{
+      file: $f,
+      resolution: "requires-review",
+      applied: false,
+      reason: "local-removed-keys",
+      hub_hash: $hh,
+      local_hash: $lh,
+      removed_keys: $removed
+    }'
+  else
+    jq -n --arg f "$file" --arg lh "$local_hash" --arg hh "$hub_hash" --argjson divergent "$divergent_keys" '{
+      file: $f,
+      resolution: "requires-review",
+      applied: false,
+      reason: "value-divergence",
+      hub_hash: $hh,
+      local_hash: $lh,
+      divergent_keys: $divergent
+    }'
+  fi
+  exit 3
+}
+
+# ---------------------------------------------------------------------------
 # Stack commands
 # ---------------------------------------------------------------------------
 
@@ -2967,6 +3116,7 @@ case "${1:-}" in
   registry)         cmd_registry ;;
   events)           shift; cmd_events "$@" ;;
   broadcast)        shift; cmd_broadcast "$@" ;;
+  broadcast-resolve-auto) shift; cmd_broadcast_resolve_auto "$@" ;;
 
   # --- Stack commands ---
   stack-list)       cmd_stack_list ;;

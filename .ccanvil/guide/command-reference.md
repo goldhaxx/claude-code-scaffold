@@ -36,6 +36,7 @@
 | `/ccanvil-demote <file>` | Local | Marks a hub file as local override |
 | `/ccanvil-ignore <file>` | Local | Marks file as node-only (permanently excluded from sync) |
 | `ccanvil-sync.sh broadcast [--dry-run]` | Hub → All nodes | Pushes auto-updates to all registered nodes in one pass |
+| `ccanvil-sync.sh broadcast-resolve-auto [--dry-run]` | Node-side | BTS-116: algorithmic resolution of `.claude/ccanvil.json` conflicts. Emits JSON with `resolution: take-hub \| keep-local \| requires-review \| no-conflict` and the inputs (`hub_hash`, `local_hash`). Auto-applies via `pull-apply` when deterministic (content-identical → take-hub; local-superset-of-hub → keep-local); exits 3 with `divergent_keys` / `removed_keys` when manual review is needed |
 
 ## Utility Commands
 
