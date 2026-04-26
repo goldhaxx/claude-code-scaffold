@@ -467,15 +467,24 @@ EOF
   [ "$status" -eq 0 ]
 }
 
-@test "BTS-159 AC-9: /permissions-review skill prose uses decision-append (not legacy Write+cat+rm)" {
+@test "BTS-159 AC-9: /permissions-review skill prose uses decision-append (not legacy hand-assembled JSON)" {
   local skill="$BATS_TEST_DIRNAME/../../.claude/commands/permissions-review.md"
   [ -f "$skill" ]
-  # Must reference the new substrate.
+  # Must reference the new substrate (positive).
   grep -q 'decision-append' "$skill"
-  # Must NOT reference the legacy hand-assembled JSONL pattern. The skill
-  # used to instruct Claude to "Append one line per decision to a temp
-  # JSONL buffer" via raw JSON examples; that drift is now a regression.
-  ! grep -qE 'cat .*>>.*\$DECISIONS' "$skill"
+  # Negative regression guard: the legacy form was a raw JSON example
+  # `{"permission":"...","decision":"delete|promote|keep-local"}` in a
+  # code block, instructing Claude to hand-assemble the JSON. That
+  # specific pattern (an object literal pairing the two field names) is
+  # the regression surface — if it returns, decision-append got bypassed.
+  ! grep -qE '"permission":\s*"[^"]*"\s*,\s*"decision":' "$skill"
+}
+
+@test "BTS-159 AC-4: missing --buffer exits 2 with no write" {
+  # Parity coverage with --permission and --decision missing tests above.
+  run --separate-stderr bash "$SCRIPT" decision-append --permission 'Bash(x)' --decision delete
+  [ "$status" -eq 2 ]
+  [[ "$stderr" == *"buffer"* ]]
 }
 
 @test "BTS-159 AC-8: extra fields on non-accept-danger decisions are silently ignored" {

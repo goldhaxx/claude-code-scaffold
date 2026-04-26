@@ -782,9 +782,15 @@ cmd_apply() {
 # BTS-159: decision-append — atomically buffer one validated decision.
 #
 # Replaces the Write+cat+rm dance in /permissions-review with a single
-# typed-flag invocation. Validates against the same schema as
-# `apply --decisions` pre-flight (same error messages, same exit code 2),
-# constructs the JSON line via jq (never hand-assembled), appends with
+# typed-flag invocation. Validates with the same semantics as
+# `apply --decisions` pre-flight (same decision vocabulary, same
+# accept-danger 4-field non-empty/non-TODO check, same exit code 2).
+# Error message surface differs slightly: this command names CLI flags
+# (--efficiency), whereas apply names JSON fields (efficiency_justification)
+# since it parses already-formed JSONL. Both reject the same invalid
+# inputs.
+#
+# Constructs the JSON line via jq (never hand-assembled), appends with
 # POSIX O_APPEND for line-atomicity under PIPE_BUF.
 # ---------------------------------------------------------------------------
 cmd_decision_append() {
