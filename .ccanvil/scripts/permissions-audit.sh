@@ -31,15 +31,24 @@ CMD=""
 TEXT_MODE=false
 VERBOSE=false
 DECISIONS_FILE=""
+# BTS-159: decision-append flags.
+BUFFER_FILE=""
+PERMISSION=""
+DECISION=""
+RISK=""
+RATIONALE=""
+EFFICIENCY=""
+REVIEWER=""
 
 usage() {
-  echo "Usage: permissions-audit.sh <check|init|promote-review|apply> [--settings-dir DIR] [--log FILE] [--decisions FILE] [--text|--json] [--verbose]" >&2
+  echo "Usage: permissions-audit.sh <check|init|promote-review|apply|decision-append> [flags...]" >&2
+  echo "  decision-append --buffer FILE --permission PERM --decision delete|promote|keep-local|accept-danger [accept-danger fields]" >&2
   exit 2
 }
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    check|init|promote-review|apply)
+    check|init|promote-review|apply|decision-append)
       CMD="$1"; shift ;;
     --settings-dir)
       SETTINGS_DIR="$2"; shift 2 ;;
@@ -53,6 +62,20 @@ while [[ $# -gt 0 ]]; do
       TEXT_MODE=false; shift ;;
     --verbose)
       VERBOSE=true; shift ;;
+    --buffer)
+      BUFFER_FILE="$2"; shift 2 ;;
+    --permission)
+      PERMISSION="$2"; shift 2 ;;
+    --decision)
+      DECISION="$2"; shift 2 ;;
+    --risk)
+      RISK="$2"; shift 2 ;;
+    --rationale)
+      RATIONALE="$2"; shift 2 ;;
+    --efficiency)
+      EFFICIENCY="$2"; shift 2 ;;
+    --reviewer)
+      REVIEWER="$2"; shift 2 ;;
     -h|--help)
       usage ;;
     *)
@@ -756,13 +779,81 @@ cmd_apply() {
 }
 
 # ---------------------------------------------------------------------------
+# BTS-159: decision-append — atomically buffer one validated decision.
+#
+# Replaces the Write+cat+rm dance in /permissions-review with a single
+# typed-flag invocation. Validates with the same semantics as
+# `apply --decisions` pre-flight (same decision vocabulary, same
+# accept-danger 4-field non-empty/non-TODO check, same exit code 2).
+# Error message surface differs slightly: this command names CLI flags
+# (--efficiency), whereas apply names JSON fields (efficiency_justification)
+# since it parses already-formed JSONL. Both reject the same invalid
+# inputs.
+#
+# Constructs the JSON line via jq (never hand-assembled), appends with
+# POSIX O_APPEND for line-atomicity under PIPE_BUF.
+# ---------------------------------------------------------------------------
+cmd_decision_append() {
+  if [[ -z "$BUFFER_FILE" ]]; then
+    emit_error_envelope "decision-append requires --buffer <file>" 2
+  fi
+  if [[ -z "$PERMISSION" ]]; then
+    emit_error_envelope "decision-append requires --permission <perm>" 2
+  fi
+  if [[ -z "$DECISION" ]]; then
+    emit_error_envelope "decision-append requires --decision <delete|promote|keep-local|accept-danger>" 2
+  fi
+
+  case "$DECISION" in
+    delete|promote|keep-local) ;;
+    accept-danger)
+      # All four required fields must be non-empty and not "TODO".
+      local _f _v
+      for _f in RISK RATIONALE EFFICIENCY REVIEWER; do
+        _v="${!_f}"
+        if [[ -z "$_v" || "$_v" == "TODO" ]]; then
+          local lower="$(echo "$_f" | tr '[:upper:]' '[:lower:]')"
+          # Field name in the emitted JSON for efficiency is efficiency_justification;
+          # error message uses the friendly flag name for operator clarity.
+          emit_error_envelope "accept-danger requires non-empty --${lower} (got empty or 'TODO')" 2
+        fi
+      done
+      ;;
+    *)
+      emit_error_envelope "unknown decision '$DECISION' (expected delete|promote|keep-local|accept-danger)" 2
+      ;;
+  esac
+
+  # Build the JSON line via jq — never hand-assemble.
+  local json_line
+  if [[ "$DECISION" == "accept-danger" ]]; then
+    json_line=$(jq -nc \
+      --arg p "$PERMISSION" \
+      --arg d "$DECISION" \
+      --arg r "$RISK" \
+      --arg ra "$RATIONALE" \
+      --arg e "$EFFICIENCY" \
+      --arg rv "$REVIEWER" \
+      '{permission:$p, decision:$d, risk:$r, rationale:$ra, efficiency_justification:$e, reviewer:$rv}')
+  else
+    json_line=$(jq -nc \
+      --arg p "$PERMISSION" \
+      --arg d "$DECISION" \
+      '{permission:$p, decision:$d}')
+  fi
+
+  echo "$json_line" >> "$BUFFER_FILE"
+}
+
+# ---------------------------------------------------------------------------
 # Dispatch
 # ---------------------------------------------------------------------------
 
 case "$CMD" in
-  check)          cmd_check ;;
-  init)           cmd_init ;;
-  promote-review) cmd_promote_review ;;
-  apply)          cmd_apply ;;
+  check)            cmd_check ;;
+  init)             cmd_init ;;
+  promote-review)   cmd_promote_review ;;
+  apply)            cmd_apply ;;
+  decision-append)  cmd_decision_append ;;
   *)              usage ;;
 esac

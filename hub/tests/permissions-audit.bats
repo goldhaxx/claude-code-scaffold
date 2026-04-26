@@ -3,6 +3,8 @@
 #
 # Each test creates an isolated directory with fixture settings files.
 
+bats_require_minimum_version 1.5.0
+
 SCRIPT="$BATS_TEST_DIRNAME/../../.ccanvil/scripts/permissions-audit.sh"
 
 setup() {
@@ -342,6 +344,158 @@ EOF
   [ "$status" -eq 2 ]
   echo "$output" | jq -e '.danger == 1'
   echo "$output" | jq -e '[.entries[] | select(.status == "UNREVIEWED")] | length == 2'
+}
+
+# =========================================================================
+# BTS-159: decision-append substrate
+# =========================================================================
+# Single-call replacement for the Write+cat+rm dance in /permissions-review.
+# Validates against the same pre-flight schema as `apply --decisions`, then
+# atomically appends one JSON line to a caller-provided buffer file.
+
+@test "BTS-159 AC-1: decision-append --decision delete writes one JSON line" {
+  set -e
+  local buf="$FIXTURE/buffer.jsonl"
+  run bash "$SCRIPT" decision-append --buffer "$buf" --permission 'Bash(rm:*)' --decision delete
+  [ "$status" -eq 0 ]
+  [ -f "$buf" ]
+  # Exactly one line, valid JSON, correct shape.
+  local n
+  n=$(wc -l < "$buf" | tr -d ' ')
+  [ "$n" -eq 1 ]
+  cat "$buf" | jq -e '.permission == "Bash(rm:*)" and .decision == "delete"'
+}
+
+@test "BTS-159 AC-1: decision-append appends to existing buffer (preserves prior content)" {
+  set -e
+  local buf="$FIXTURE/buffer.jsonl"
+  printf '{"permission":"Bash(ls:*)","decision":"keep-local"}\n' > "$buf"
+  run bash "$SCRIPT" decision-append --buffer "$buf" --permission 'Bash(rm:*)' --decision delete
+  [ "$status" -eq 0 ]
+  local n
+  n=$(wc -l < "$buf" | tr -d ' ')
+  [ "$n" -eq 2 ]
+}
+
+@test "BTS-159 AC-2: --decision promote / keep-local both emit the 2-field shape" {
+  set -e
+  local buf="$FIXTURE/buffer.jsonl"
+  bash "$SCRIPT" decision-append --buffer "$buf" --permission 'Bash(p1)' --decision promote
+  bash "$SCRIPT" decision-append --buffer "$buf" --permission 'Bash(p2)' --decision keep-local
+  # Each line is valid JSON with exactly 2 keys.
+  while IFS= read -r line; do
+    echo "$line" | jq -e 'keys | length == 2'
+  done < "$buf"
+}
+
+@test "BTS-159 AC-3: --decision accept-danger emits the 6-field shape" {
+  set -e
+  local buf="$FIXTURE/buffer.jsonl"
+  run bash "$SCRIPT" decision-append --buffer "$buf" \
+    --permission 'Bash(ALLOW_DESTRUCTIVE=1 rm:*)' \
+    --decision accept-danger \
+    --risk 'r' --rationale 'why' --efficiency 'e' --reviewer 'zach'
+  [ "$status" -eq 0 ]
+  cat "$buf" | jq -e '
+    .permission == "Bash(ALLOW_DESTRUCTIVE=1 rm:*)" and
+    .decision == "accept-danger" and
+    .risk == "r" and .rationale == "why" and
+    .efficiency_justification == "e" and .reviewer == "zach"
+  '
+}
+
+@test "BTS-159 AC-4: missing --permission exits 2 with no buffer write" {
+  local buf="$FIXTURE/buffer.jsonl"
+  run --separate-stderr bash "$SCRIPT" decision-append --buffer "$buf" --decision delete
+  [ "$status" -eq 2 ]
+  [ ! -f "$buf" ]
+  [[ "$stderr" == *"permission"* ]]
+}
+
+@test "BTS-159 AC-4: missing --decision exits 2" {
+  local buf="$FIXTURE/buffer.jsonl"
+  run --separate-stderr bash "$SCRIPT" decision-append --buffer "$buf" --permission 'Bash(x)'
+  [ "$status" -eq 2 ]
+  [ ! -f "$buf" ]
+  [[ "$stderr" == *"decision"* ]]
+}
+
+@test "BTS-159 AC-4: accept-danger missing required fields exits 2" {
+  local buf="$FIXTURE/buffer.jsonl"
+  # All four required fields → omit one (rationale).
+  run --separate-stderr bash "$SCRIPT" decision-append --buffer "$buf" \
+    --permission 'Bash(x)' --decision accept-danger \
+    --risk 'r' --efficiency 'e' --reviewer 'z'
+  [ "$status" -eq 2 ]
+  [ ! -f "$buf" ]
+  [[ "$stderr" == *"rationale"* ]]
+}
+
+@test "BTS-159 AC-4: accept-danger field == 'TODO' exits 2" {
+  local buf="$FIXTURE/buffer.jsonl"
+  run --separate-stderr bash "$SCRIPT" decision-append --buffer "$buf" \
+    --permission 'Bash(x)' --decision accept-danger \
+    --risk 'r' --rationale 'TODO' --efficiency 'e' --reviewer 'z'
+  [ "$status" -eq 2 ]
+  [ ! -f "$buf" ]
+}
+
+@test "BTS-159 AC-5: unknown --decision exits 2 listing valid set" {
+  local buf="$FIXTURE/buffer.jsonl"
+  run --separate-stderr bash "$SCRIPT" decision-append --buffer "$buf" \
+    --permission 'Bash(x)' --decision nonsense
+  [ "$status" -eq 2 ]
+  [[ "$stderr" == *"delete"* ]]
+  [[ "$stderr" == *"accept-danger"* ]]
+}
+
+@test "BTS-159 AC-7: buffer built via decision-append is consumed by apply --decisions" {
+  set -e
+  local buf="$FIXTURE/buffer.jsonl"
+  cat > "$FIXTURE/settings.json" <<'EOF'
+{"permissions": {"allow": ["Bash(real-tool:*)"]}}
+EOF
+  cat > "$FIXTURE/settings.local.json" <<'EOF'
+{"permissions": {"allow": ["Bash(stale:*)"]}}
+EOF
+  bash "$SCRIPT" decision-append --buffer "$buf" \
+    --permission 'Bash(stale:*)' --decision delete
+  # apply must accept the buffer without validation errors. We don't
+  # assert specific behavior here (covered by BTS-149 tests) — only that
+  # the pre-flight passes (no decision-shape complaints).
+  run bash "$SCRIPT" apply --decisions "$buf" --settings-dir "$FIXTURE"
+  [ "$status" -eq 0 ]
+}
+
+@test "BTS-159 AC-9: /permissions-review skill prose uses decision-append (not legacy hand-assembled JSON)" {
+  local skill="$BATS_TEST_DIRNAME/../../.claude/commands/permissions-review.md"
+  [ -f "$skill" ]
+  # Must reference the new substrate (positive).
+  grep -q 'decision-append' "$skill"
+  # Negative regression guard: the legacy form was a raw JSON example
+  # `{"permission":"...","decision":"delete|promote|keep-local"}` in a
+  # code block, instructing Claude to hand-assemble the JSON. That
+  # specific pattern (an object literal pairing the two field names) is
+  # the regression surface — if it returns, decision-append got bypassed.
+  ! grep -qE '"permission":\s*"[^"]*"\s*,\s*"decision":' "$skill"
+}
+
+@test "BTS-159 AC-4: missing --buffer exits 2 with no write" {
+  # Parity coverage with --permission and --decision missing tests above.
+  run --separate-stderr bash "$SCRIPT" decision-append --permission 'Bash(x)' --decision delete
+  [ "$status" -eq 2 ]
+  [[ "$stderr" == *"buffer"* ]]
+}
+
+@test "BTS-159 AC-8: extra fields on non-accept-danger decisions are silently ignored" {
+  set -e
+  local buf="$FIXTURE/buffer.jsonl"
+  bash "$SCRIPT" decision-append --buffer "$buf" \
+    --permission 'Bash(x)' --decision delete \
+    --risk 'should-not-appear' --rationale 'should-not-appear' \
+    --efficiency 'should-not-appear' --reviewer 'should-not-appear'
+  cat "$buf" | jq -e 'keys | length == 2'
+  cat "$buf" | jq -e 'has("risk") | not'
 }
 
 @test "BTS-154 AC-7: stale accept_danger log entry for now-safe keyword stays harmless" {

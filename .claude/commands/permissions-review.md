@@ -36,10 +36,16 @@ Map user input to a decision verb:
 - `keep-local` → `keep-local` (no-op, leaves entry in `settings.local.json`).
 - `triage` → ask follow-up "delete or promote?" then map accordingly.
 
-Append one line per decision to a temp JSONL buffer:
-```json
-{"permission":"...","decision":"delete|promote|keep-local"}
+Append the decision to the buffer via the BTS-159 `decision-append` substrate (replaces the legacy Write+cat+rm dance — one validated call per row):
+
+```bash
+bash .ccanvil/scripts/permissions-audit.sh decision-append \
+  --buffer "$DECISIONS" \
+  --permission "<permission>" \
+  --decision <delete|promote|keep-local>
 ```
+
+The script validates the decision verb against the same schema `apply --decisions` uses; on validation failure it exits 2 and writes nothing.
 
 ### 4. DANGER walkthrough
 
@@ -51,12 +57,20 @@ Action? [accept-danger / skip] (default skip)
 ```
 
 If `accept-danger`:
-- Prompt for: `risk` (1-line description of what could go wrong), `rationale` (why we accept the risk), `efficiency_justification` (how often is this used / what does it save), `reviewer` (your name).
+- Prompt for: `risk` (1-line description of what could go wrong), `rationale` (why we accept the risk), `efficiency` (how often is this used / what does it save), `reviewer` (your name).
 - Validate all four are non-empty and not "TODO" — re-prompt if invalid.
-- Append:
-```json
-{"permission":"...","decision":"accept-danger","risk":"...","rationale":"...","efficiency_justification":"...","reviewer":"..."}
+- Append via the BTS-159 substrate:
+```bash
+bash .ccanvil/scripts/permissions-audit.sh decision-append \
+  --buffer "$DECISIONS" \
+  --permission "<permission>" \
+  --decision accept-danger \
+  --risk "<risk>" \
+  --rationale "<rationale>" \
+  --efficiency "<efficiency>" \
+  --reviewer "<reviewer>"
 ```
+The script enforces the four-field non-empty / non-"TODO" check and emits the schema-correct JSON line; the skill only collects the prompts.
 
 If `skip`: don't append anything. The DANGER entry stays unreviewed (will surface again next session).
 
