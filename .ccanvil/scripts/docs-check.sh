@@ -1440,12 +1440,65 @@ cmd_land_recover_branch() {
 # --force skips the merged-PR check (for local merges or when gh is unavailable).
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# BTS-72: detect-repo-type — classifier for the repo's lifecycle adapter.
+# Returns one JSON line: {type, has_remote, remote_url}.
+#
+# type values:
+#   github       — origin URL contains "github.com"
+#   other-remote — origin set, not github.com (gitlab, bitbucket, github
+#                  enterprise on non-github.com domain, etc.)
+#   local        — no origin configured (purely local repo)
+#
+# Exits 2 with a stderr error when invoked outside a git repository.
+# ---------------------------------------------------------------------------
+cmd_detect_repo_type() {
+  if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    echo "ERROR: detect-repo-type: not in a git repository" >&2
+    return 2
+  fi
+
+  local remote_url=""
+  remote_url=$(git remote get-url origin 2>/dev/null || echo "")
+
+  # Reviewer CONCERN-1: extract the URL's HOST before classifying so a
+  # repo with `github.com` in its path (e.g., gitlab.com:user/github.com-mirror.git)
+  # doesn't poison the substring match.
+  local host=""
+  if [[ "$remote_url" =~ ^git@([^:]+): ]]; then
+    host="${BASH_REMATCH[1]}"
+  elif [[ "$remote_url" =~ ^https?://([^/]+)/ ]]; then
+    host="${BASH_REMATCH[1]}"
+  fi
+
+  local type has_remote
+  if [[ -z "$remote_url" ]]; then
+    type="local"
+    has_remote=false
+  elif [[ "$host" == "github.com" || "$host" == *.github.com ]]; then
+    type="github"
+    has_remote=true
+  else
+    type="other-remote"
+    has_remote=true
+  fi
+
+  jq -n --arg type "$type" --arg url "$remote_url" --argjson has_remote "$has_remote" \
+    '{type:$type, has_remote:$has_remote, remote_url:$url}'
+}
+
 cmd_land() {
   local force=false
   [[ "${1:-}" == "--force" ]] && force=true
 
   local branch
   branch=$(git branch --show-current 2>/dev/null)
+
+  # BTS-72: classify repo type once. Local-only repos skip gh-PR checks
+  # and perform an in-place merge instead of fetching from a non-existent
+  # origin.
+  local repo_type
+  repo_type=$(cmd_detect_repo_type 2>/dev/null | jq -r '.type // empty' 2>/dev/null || echo "")
 
   # Already on main: gh pr merge --delete-branch switches to main and deletes
   # the local branch itself. In that case, fast-forward local main to origin
@@ -1479,8 +1532,10 @@ cmd_land() {
     return 0
   fi
 
-  # Check if PR is merged (unless --force)
-  if ! $force && command -v gh >/dev/null 2>&1; then
+  # Check if PR is merged (unless --force, and skip on local-only repos
+  # since there is no PR concept). BTS-72: local-only path merges
+  # in-place after switching to main below.
+  if ! $force && [[ "$repo_type" != "local" ]] && command -v gh >/dev/null 2>&1; then
     local pr_state
     pr_state=$(gh pr view --json state -q '.state' 2>/dev/null || echo "NONE")
     if [[ "$pr_state" != "MERGED" ]]; then
@@ -1495,6 +1550,26 @@ cmd_land() {
     exit 1
   }
   echo "Switched to main."
+
+  # BTS-72: local-only — merge the feature branch in-place if not yet
+  # merged. Equivalent to a "local PR merge" — no remote, no gh, just git.
+  # Reviewer BLOCKING-2: on conflict, abort the in-flight merge cleanly so
+  # the next invocation doesn't see HEAD on main with MERGE_HEAD lingering.
+  if [[ "$repo_type" == "local" ]]; then
+    if ! git merge-base --is-ancestor "$branch" HEAD 2>/dev/null; then
+      if git -c commit.gpgsign=false merge --no-ff --no-edit "$branch" 2>/dev/null; then
+        echo "Merged '$branch' into main (local-only)."
+      else
+        # Clean up the partial merge state before exiting so retry semantics
+        # are well-defined. The user is left on main with a clean tree and
+        # the original feature branch still intact.
+        git merge --abort 2>/dev/null || true
+        git checkout "$branch" 2>/dev/null || true
+        echo "ERROR: Could not merge '$branch' into main (conflicts). Aborted; resolve on the feature branch and re-run." >&2
+        exit 1
+      fi
+    fi
+  fi
 
   # Fetch and reset (if remote exists). BTS-122 AC-7: fetch failure degrades
   # gracefully — emit WARN: and SKIP the hard reset so we don't blow away
@@ -3065,6 +3140,7 @@ case "$cmd" in
   activate)          cmd_activate "$@" ;;
   complete)          cmd_complete "$@" ;;
   pr-cleanup)        cmd_pr_cleanup "$@" ;;
+  detect-repo-type)  cmd_detect_repo_type "$@" ;;
   land)              cmd_land "$@" ;;
   land-recover-branch) cmd_land_recover_branch "$@" ;;
   extract-work)      cmd_extract_work "$@" ;;

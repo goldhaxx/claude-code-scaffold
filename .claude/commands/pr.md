@@ -27,7 +27,18 @@ This command ensures the branch is ready for merge: tests pass, docs are validat
    When no `docs/spec.md` exists (e.g., PR doesn't correspond to a ccanvil spec), it falls back to removing any lingering lifecycle docs + commit.
    If the call exits non-zero, STOP and surface the error — do not proceed to push.
 
-## Push and finalize PR
+## Push and finalize (branches on repo type — BTS-72)
+
+7a. **Detect repo type** before pushing or invoking gh:
+   ```bash
+   REPO_TYPE=$(bash .ccanvil/scripts/docs-check.sh detect-repo-type | jq -r '.type')
+   ```
+   Three branches:
+   - **`github`** → existing PR flow (steps 8–12 below).
+   - **`local-only`** → no remote configured. Skip push + gh entirely. Run `bash .ccanvil/scripts/docs-check.sh land --force` from the feature branch to perform the in-place merge into main + branch deletion. End on main. STOP — there is no PR concept; the lifecycle is complete after the local merge.
+   - **`other-remote`** → non-GitHub remote (GitLab, Bitbucket, GitHub Enterprise on non-`github.com`). Warn: `non-GitHub remote detected — manual flow required` and STOP. Operator handles the merge via the appropriate provider tool.
+
+## Push and finalize PR (github path)
 
 8. Push the current branch: `git push`
 9. Check if a draft PR already exists for this branch:
