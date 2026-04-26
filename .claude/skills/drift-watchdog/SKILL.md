@@ -96,6 +96,38 @@ fi
 
 The `drift-watchdog` label is mandatory — every issue must carry it so future runs find them. The label MUST exist in Linear before any create succeeds (one-time operator setup; the skill assumes it exists). Pending-log fallback always counts entries via `idea-pending-validate`.
 
+### 4a. Verify create landed (BTS-200)
+
+**do NOT report success based on the save-issue stdout alone — verify externally** by re-querying the just-created issue. This closes the agent-hallucination class of bug surfaced during BTS-21 first-kickstart, where the parent model produced a `"Drift-watchdog complete"` log claiming 7 creates with ZERO actual creates landed. The save-issue exit code is necessary but not sufficient — only `linear-query.sh get-issue` proves the issue exists with the correct shape.
+
+Immediately after a successful save, run:
+
+```bash
+if [[ -n "$CREATED_ID" ]]; then
+  VERIFY=$(bash .ccanvil/scripts/linear-query.sh get-issue "$CREATED_ID" 2>&1)
+  VERIFY_RC=$?
+  if (( VERIFY_RC != 0 )); then
+    # Network or auth error — treat as unverified, queue to pending log.
+    echo "drift-watchdog: VERIFY ERROR for $CREATED_ID (rc=$VERIFY_RC) — queueing pending"
+    bash .ccanvil/scripts/docs-check.sh idea-pending-append \
+      --op add --title "$TITLE" --body "$BODY"
+    continue
+  fi
+  if ! echo "$VERIFY" | jq -e '.labels | index("drift-watchdog")' >/dev/null 2>&1; then
+    # Issue exists but lacks the drift-watchdog label — same outcome as a failed create.
+    echo "drift-watchdog: VERIFY FAILED for $CREATED_ID — label missing — queueing pending"
+    bash .ccanvil/scripts/docs-check.sh idea-pending-append \
+      --op add --title "$TITLE" --body "$BODY"
+    continue
+  fi
+  echo "drift-watchdog: VERIFIED $CREATED_ID has drift-watchdog label"
+fi
+```
+
+The verification cost is one extra `get-issue` per drifted node — negligible compared to opus orchestration cost. Failures from this path converge into the same `idea-pending-append --op add` flow as save-issue failures, so `/idea sync` replays them uniformly.
+
+Generalizes beyond drift-watchdog: any agent-driven substrate that mutates external state should verify the mutation actually landed, not trust the agent's narrative. Anchored on BTS-200 (this protocol) and BTS-21 (origin incident).
+
 ### 5. Substrate purity
 
 This skill MUST use the http substrate (the resolver's `linear-query.sh save-issue` invocation) for issue creation. Direct MCP tool invocations are forbidden by the drift-guards; rely on the resolver-eval pattern above (`eval "$(echo "$RESOLUTION" | jq -r '.invocation.command')"`) — that's the established shape.

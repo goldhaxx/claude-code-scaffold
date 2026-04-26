@@ -124,3 +124,37 @@ AGENT="$REPO_ROOT/.claude/agents/drift-analyst.md"
 @test "BTS-199: skill references drift-watchdog-launchd-install wrapper" {
   grep -qF 'drift-watchdog-launchd-install' "$SKILL"
 }
+
+# =========================================================================
+# BTS-200: per-create self-verification subsection
+# =========================================================================
+
+@test "BTS-200 AC-1: skill has Verify create landed subsection" {
+  grep -qF 'Verify create landed' "$SKILL"
+}
+
+@test "BTS-200 AC-2: skill prescribes linear-query.sh get-issue verification" {
+  grep -qF 'linear-query.sh get-issue' "$SKILL"
+}
+
+@test "BTS-200 AC-3: skill asserts drift-watchdog label is present in returned issue" {
+  grep -qF '.labels | index("drift-watchdog")' "$SKILL"
+}
+
+@test "BTS-200 AC-4: skill queues failed verifications via idea-pending-append --op add" {
+  grep -qF 'idea-pending-append --op add' "$SKILL"
+}
+
+@test "BTS-200 AC-5: skill anchors on BTS-200 and BTS-21" {
+  set -e
+  grep -qF 'BTS-200' "$SKILL"
+  grep -qF 'BTS-21' "$SKILL"
+}
+
+@test "BTS-200 AC-6: skill explicitly says do not trust save-issue stdout — verify externally" {
+  grep -qiE 'verify externally|do NOT.*save-issue|do not.*save-issue' "$SKILL"
+}
+
+@test "BTS-200 AC-7: skill mentions network-error fallback (queue to pending)" {
+  grep -qiE 'network|queue to pending|pending log' "$SKILL"
+}
