@@ -140,10 +140,27 @@ strip_bash_wrapper() {
   echo "$perm"
 }
 
+# BTS-154: bash control-flow keywords are grammar tokens, not executable
+# commands. Bare `Bash(<keyword>)` and `Bash(<keyword>:*)` shapes carry no
+# risk surface — exempt them BEFORE running DANGER patterns. Word-anchored
+# (^...$) so substring shapes like `Bash(done-something)` / `Bash(fish)` /
+# `Bash(forever)` fall through to the normal classifier path.
+BASH_KEYWORD_REGEX='^(for|while|until|if|then|else|elif|fi|do|done|case|esac|in|function|select|time)(:\*)?$'
+
+is_safe_bash_keyword() {
+  local inner="$1"
+  echo "$inner" | grep -qE "$BASH_KEYWORD_REGEX"
+}
+
 # Check if a permission matches any dangerous pattern.
 # Returns the pattern label if matched, empty string if safe.
 check_danger() {
   local inner="$1"
+
+  # BTS-154: control-flow keyword pre-check short-circuits to safe.
+  if is_safe_bash_keyword "$inner"; then
+    return 0
+  fi
 
   for pattern_entry in "${DANGER_PATTERNS[@]}"; do
     local label="${pattern_entry%%|*}"
