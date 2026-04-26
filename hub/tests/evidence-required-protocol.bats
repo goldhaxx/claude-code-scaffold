@@ -49,3 +49,34 @@ STASIS_TPL="$REPO_ROOT/.ccanvil/templates/stasis.md"
   grep -qF 'BTS-198' "$RULE"
   grep -qF 'BTS-201' "$RULE"
 }
+
+# =========================================================================
+# AC-3, AC-4: /idea skill — Step 0.5 evidence gate
+# =========================================================================
+
+@test "AC-3: /idea SKILL.md contains the bug-shape heuristic regex" {
+  # Anchor on the regex shape — alternation across the documented terms.
+  grep -qF "fail|false[- ]positive|broken|errored?|blocked by|doesn'?t work|crashes?|hang(s|ing)?" "$IDEA_SKILL"
+}
+
+@test "AC-3: /idea SKILL.md describes Step 0.5 evidence gate" {
+  set -e
+  # Section header — Step 0.5 anchored deterministically.
+  grep -qE '^### Step 0\.5' "$IDEA_SKILL"
+  # Refusal flow + DIAGNOSE: alternative explicitly named.
+  grep -qF 'DIAGNOSE:' "$IDEA_SKILL"
+}
+
+@test "AC-4: /idea SKILL.md documents the four evidence anchors" {
+  set -e
+  # All four anchors must appear in the skill body so the agent can
+  # identify them programmatically when scanning capture text.
+  grep -qF 'Command:' "$IDEA_SKILL"
+  grep -qF 'Output:' "$IDEA_SKILL"
+  grep -qF 'Exit:' "$IDEA_SKILL"
+  grep -qF 'Reproduce:' "$IDEA_SKILL"
+}
+
+@test "AC-1: /idea SKILL.md references evidence-required-for-captures rule" {
+  grep -qF 'evidence-required-for-captures' "$IDEA_SKILL"
+}
