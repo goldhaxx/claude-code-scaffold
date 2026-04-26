@@ -149,6 +149,7 @@ exit 0  # allow
 |------|-------|--------|-------------|
 | File protection | PreToolUse (Write\|Edit\|MultiEdit) | `protect-files.sh` | Blocks writes to `.env`, credentials, `foundations.md`, generated dirs |
 | Auto-format | PostToolUse (Write\|Edit\|MultiEdit) | `format-on-write.sh` | Runs project formatter (uncomment for your stack) |
+| Suppress redundant persistence | PermissionRequest (Bash) | `permission-request-suppress-redundant.sh` | BTS-150: when a Bash command is already covered by a broader allow pattern in `settings.json`, auto-allows with `destination: "session"` so the redundant exact-form never persists to `settings.local.json` |
 
 ## When to Add a Hook vs a Rule
 

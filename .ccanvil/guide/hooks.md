@@ -92,6 +92,7 @@ graph TD
 | `guard-destructive.sh` | PreToolUse (Bash) | Yes | `git reset --hard`, `git branch -D`, `git push --delete`, `git clean -f`, `chmod 777/666/000`, `rm -rf` (recursive+force, any flag form), `find -delete` / `find -exec` / `-execdir` / `-okdir`. Bypass: prefix with `ALLOW_DESTRUCTIVE=1`. |
 | `lint-on-write.sh` | PostToolUse | Yes | Syntax validation: `bash -n` for `.sh`, `jq empty` for `.json`, python yaml check for `.yaml`. Blocks writes with syntax errors. |
 | `format-on-write.sh` | PostToolUse | No | Detects file type, runs appropriate formatter (uncomment for your stack) |
+| `permission-request-suppress-redundant.sh` | PermissionRequest (Bash) | No (intercepts) | BTS-150: when a Bash command request is already covered by a broader allow pattern in `.claude/settings.json` (e.g., `Bash(bash:*)` covers `bash some-script.sh`), auto-allows with `destination: "session"` so the redundant exact-form never persists to `.claude/settings.local.json`. Suppresses upstream drift that BTS-144's `promote-review` classifier and BTS-149's `/permissions-review` clean up periodically. Pattern shapes: token-prefix `Bash(<bin>:*)`, path-prefix `Bash(<dir>/:*)`, exact `Bash(<form>)`. Non-Bash tools and uncovered commands are passthrough. |
 
 ## Adding a New Hook
 

@@ -31,7 +31,6 @@
       "Bash(printf:*)",
       "Bash(true)",
       "Bash(false)",
-
       "Bash(jq:*)",
       "Bash(yq:*)",
       "Bash(awk:*)",
@@ -45,10 +44,8 @@
       "Bash(shasum:*)",
       "Bash(md5:*)",
       "Bash(base64:*)",
-
       "Bash(git:*)",
       "Bash(gh:*)",
-
       "Bash(npm:*)",
       "Bash(pnpm:*)",
       "Bash(yarn:*)",
@@ -64,12 +61,10 @@
       "Bash(rustc:*)",
       "Bash(go:*)",
       "Bash(brew:*)",
-
       "Bash(bats:*)",
       "Bash(jest:*)",
       "Bash(vitest:*)",
       "Bash(pytest:*)",
-
       "Bash(bash:*)",
       "Bash(bash -n:*)",
       "Bash(.ccanvil/scripts/:*)",
@@ -80,7 +75,6 @@
       "Bash(ALLOW_DESTRUCTIVE=1 git:*)",
       "Bash(ALLOW_DESTRUCTIVE=1 chmod:*)",
       "Bash(ALLOW_DESTRUCTIVE=1 rm:*)",
-
       "Bash(for:*)",
       "Bash(while:*)",
       "Bash(if:*)",
@@ -90,7 +84,6 @@
       "Bash(else:*)",
       "Bash(elif:*)",
       "Bash(fi)",
-
       "Bash(mkdir:*)",
       "Bash(rmdir:*)",
       "Bash(rm:*)",
@@ -100,11 +93,9 @@
       "Bash(touch:*)",
       "Bash(chmod:*)",
       "Bash(chown:*)",
-
       "Bash(curl:*)",
       "Bash(wget:*)",
       "Bash(security:*)",
-
       "WebSearch",
       "WebFetch(domain:anthropic.com)",
       "WebFetch(domain:www.anthropic.com)",
@@ -124,7 +115,6 @@
       "WebFetch(domain:docs.cursor.com)",
       "WebFetch(domain:cursor.com)",
       "WebFetch(domain:youtubetranscript.com)",
-
       "mcp__claude_ai_Linear__*",
       "mcp__claude-in-chrome__*",
       "mcp__open-brain__*",
@@ -134,7 +124,6 @@
       "mcp__claude_ai_Google_Calendar__*",
       "mcp__claude_ai_Google_Drive__*",
       "mcp__claude_ai_Mermaid_Chart__*",
-
       "Read(//Users/zacharywright/projects/**)",
       "Read(//tmp/**)",
       "Read(//private/tmp/**)"
@@ -221,6 +210,17 @@
           {
             "type": "command",
             "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/post-compact-marker.sh"
+          }
+        ]
+      }
+    ],
+    "PermissionRequest": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/permission-request-suppress-redundant.sh"
           }
         ]
       }
