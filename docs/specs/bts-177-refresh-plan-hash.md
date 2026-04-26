@@ -3,7 +3,7 @@
 > Feature: bts-177-refresh-plan-hash
 > Work: linear:BTS-177
 > Created: 1777217281
-> Status: In Progress
+> Status: Complete
 
 ## Summary
 
