@@ -45,3 +45,8 @@ docs/ideas.md
 .ccanvil/ideas-pending.log
 .ccanvil/ideas.log
 .ccanvil/state/
+
+# Drift-watchdog runtime logs (BTS-21) — written by the launchd-scheduled
+# `claude -p "/drift-watchdog"`; per-machine, never committable.
+.ccanvil/drift-watchdog.log
+.ccanvil/drift-watchdog.err
