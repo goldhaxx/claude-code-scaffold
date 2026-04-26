@@ -472,12 +472,34 @@ linear_mcp_adapter() {
 
   case "$op" in
     backlog.list)
-      tool="mcp__claude_ai_Linear__list_issues"
-      output_contract='["id","title","status","priority"]'
-      field_map='{"identifier":"id","title":"title","state.name":"status","priority":"priority"}'
-      jq -n --arg tool "$tool" --arg project "$project" --arg team "$team" \
-        --argjson output "$output_contract" --argjson fmap "$field_map" \
-        '{"provider":"linear","mechanism":"mcp","invocation":{"tool":$tool,"params":{"project":$project,"team":$team}},"contract":{"output":$output,"field_map":$fmap}}'
+      # BTS-175: http migration. Filter by --state <backlog_state_id> only —
+      # NO label filter, so the resolver returns the canonical "everything in
+      # Backlog state" view. Anti-pattern: do NOT proxy backlog reasoning
+      # through idea.list (which filters by label=idea and silently hides
+      # scaffold-labeled tickets).
+      local backlog_state_id
+      backlog_state_id=$(linear_state_id "$provider_config" "backlog")
+      if [[ -z "$backlog_state_id" ]]; then
+        echo "ERROR: backlog.list: state_ids.backlog not configured for Linear provider" >&2
+        exit 1
+      fi
+      output_contract='["id","title","status","priority","createdAt"]'
+      jq -n --arg project "$project" --arg team "$team" --arg state_id "$backlog_state_id" \
+        --argjson output "$output_contract" \
+        '{
+          provider: "linear",
+          mechanism: "http",
+          invocation: {
+            command: ("bash .ccanvil/scripts/linear-query.sh list-issues" +
+                      " --project " + ($project | @sh) +
+                      " --team " + ($team | @sh) +
+                      " --state " + ($state_id | @sh) +
+                      " --limit 250"),
+            endpoint: "https://api.linear.app/graphql",
+            auth_env: "LINEAR_API_KEY"
+          },
+          contract: { output: $output }
+        }'
       ;;
     backlog.get)
       tool="mcp__claude_ai_Linear__get_issue"
@@ -880,10 +902,18 @@ cmd_resolve() {
     local group
     group=$(operation_group "$op")
     routed_provider=$(jq -r --arg g "$group" '.integrations.routing[$g] // ""' "$CONFIG_FILE")
-    if [[ -z "$routed_provider" && ("$group" == "work" || "$group" == "ticket") ]]; then
-      # work and ticket groups share the idea provider's routing — on a
-      # Linear-configured node, `routing.idea=linear` alone is enough to
-      # route work.resolve and ticket.transition through the Linear adapter.
+    if [[ -z "$routed_provider" && ("$group" == "work" || "$group" == "ticket" || "$group" == "backlog") ]]; then
+      # work, ticket, and backlog groups share the idea provider's routing —
+      # on a Linear-configured node, `routing.idea=linear` alone is enough to
+      # route work.resolve, ticket.transition, AND backlog.list through the
+      # Linear adapter (BTS-175). The Linear backlog.list resolver still
+      # validates state_ids.backlog presence and errors loudly if absent.
+      #
+      # Intentional only for read-side backlog ops (backlog.list, backlog.get).
+      # backlog.create / backlog.prioritize fall through to the linear adapter's
+      # *) branch and bounce to local_adapter — correct today, but a future
+      # Linear case for those verbs would activate via the inheritance without
+      # an explicit `routing.backlog = linear` opt-in. Re-evaluate if added.
       routed_provider=$(jq -r '.integrations.routing.idea // ""' "$CONFIG_FILE")
     fi
     [[ -z "$routed_provider" ]] && routed_provider="local"

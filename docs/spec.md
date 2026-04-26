@@ -35,6 +35,7 @@ Each criterion is independently testable. Binary pass/fail.
 | File | Change |
 |------|--------|
 | `.ccanvil/scripts/operations.sh` | Modified — Linear `backlog.list` resolver migrated mcp→http; routing fallback extended (idea→backlog when state_ids.backlog configured); state_ids.backlog presence check |
+| `.ccanvil/scripts/linear-query.sh` | Modified — `list-issues --state` auto-detects UUID format and uses `state.id.eq` filter (vs `state.type.eq` for type names). Surfaced by AC-3 live-validation gate. |
 | `.claude/skills/recall/SKILL.md` | Modified — step 0c handles http mechanism + explicit anti-pattern note |
 | `.claude/skills/radar/SKILL.md` | Modified — step 2 handles http mechanism + anti-pattern note |
 | `hub/tests/backlog-list-canonical.bats` | New — AC-1 through AC-5, AC-9, AC-10 (resolver shape + routing fallback) |

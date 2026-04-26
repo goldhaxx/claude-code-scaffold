@@ -184,7 +184,15 @@ cmd_list_issues() {
     filter=$(printf '%s' "$filter" | jq --arg v "$team" '. + {team:{name:{eq:$v}}}')
   fi
   if [[ -n "$state" ]]; then
-    filter=$(printf '%s' "$filter" | jq --arg v "$state" '. + {state:{type:{eq:$v}}}')
+    # BTS-175: auto-detect UUID-shaped values and filter by state.id.eq
+    # rather than state.type.eq. Linear's IssueFilter accepts either form;
+    # `save-issue --state` already treats the value as a stateId UUID, so
+    # this aligns the list-issues semantics for symmetric state plumbing.
+    if [[ "$state" =~ ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$ ]]; then
+      filter=$(printf '%s' "$filter" | jq --arg v "$state" '. + {state:{id:{eq:$v}}}')
+    else
+      filter=$(printf '%s' "$filter" | jq --arg v "$state" '. + {state:{type:{eq:$v}}}')
+    fi
   fi
   if [[ -n "$label" ]]; then
     filter=$(printf '%s' "$filter" | jq --arg v "$label" '. + {labels:{some:{name:{eq:$v}}}}')
