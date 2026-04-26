@@ -245,18 +245,158 @@ EOF
   echo "$output" | jq -e '.danger == 2'
 }
 
-@test "loop primitives flagged as DANGER" {
+# BTS-154: Bash control-flow keywords (for, while, if, do, done, fi, etc.)
+# in their bare or :* shapes are bash grammar tokens — they cannot execute
+# anything on their own. The classifier exempts them via a pre-check before
+# the DANGER patterns fire.
+@test "BTS-154 AC-6: contract-flipped — bare-keyword fixture is now 0 DANGER" {
+  # Was: prior loop-primitives test asserted .danger == 3 for these shapes.
+  # Now: all three exempt via the keyword pre-check.
   cat > "$FIXTURE/settings.json" <<'EOF'
 {
   "permissions": {
-    "allow": ["Bash(for f:*)", "Bash(do echo:*)", "Bash(done)"]
+    "allow": ["Bash(for:*)", "Bash(do:*)", "Bash(done)"]
+  }
+}
+EOF
+
+  run bash "$SCRIPT" check --settings-dir "$FIXTURE"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '.danger == 0'
+}
+
+@test "BTS-154 AC-1: bare bash keywords (done, fi) classify as safe (not DANGER)" {
+  cat > "$FIXTURE/settings.json" <<'EOF'
+{
+  "permissions": {
+    "allow": ["Bash(done)", "Bash(fi)"]
+  }
+}
+EOF
+
+  run bash "$SCRIPT" check --settings-dir "$FIXTURE"
+  # All entries pass the keyword pre-check → exit 0 (no DANGER, no UNREVIEWED).
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '.danger == 0'
+}
+
+@test "BTS-154 AC-2: keyword:* shapes (for:*, while:*, if:*, etc.) classify as safe" {
+  cat > "$FIXTURE/settings.json" <<'EOF'
+{
+  "permissions": {
+    "allow": [
+      "Bash(for:*)", "Bash(while:*)", "Bash(if:*)", "Bash(do:*)",
+      "Bash(then:*)", "Bash(else:*)", "Bash(elif:*)"
+    ]
+  }
+}
+EOF
+
+  run bash "$SCRIPT" check --settings-dir "$FIXTURE"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '.danger == 0'
+}
+
+@test "BTS-154 AC-3: full keyword set (16 keywords × bare + :*) all classify as safe" {
+  cat > "$FIXTURE/settings.json" <<'EOF'
+{
+  "permissions": {
+    "allow": [
+      "Bash(for)", "Bash(while)", "Bash(until)", "Bash(if)",
+      "Bash(then)", "Bash(else)", "Bash(elif)", "Bash(fi)",
+      "Bash(do)", "Bash(done)", "Bash(case)", "Bash(esac)",
+      "Bash(in)", "Bash(function)", "Bash(select)", "Bash(time)",
+      "Bash(for:*)", "Bash(while:*)", "Bash(until:*)", "Bash(if:*)",
+      "Bash(then:*)", "Bash(else:*)", "Bash(elif:*)", "Bash(fi:*)",
+      "Bash(do:*)", "Bash(done:*)", "Bash(case:*)", "Bash(esac:*)",
+      "Bash(in:*)", "Bash(function:*)", "Bash(select:*)", "Bash(time:*)"
+    ]
+  }
+}
+EOF
+
+  run bash "$SCRIPT" check --settings-dir "$FIXTURE"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '.danger == 0'
+}
+
+@test "BTS-154 AC-4: substring shapes do NOT match the keyword exemption (word-anchor guard)" {
+  set -e
+  # `done-something` starts with `done` but isn't the keyword. The pre-check
+  # is word-anchored (`^...$`), so the existing loose loop-primitive regex
+  # (`^done`) still catches it as DANGER — pre-existing behavior preserved.
+  # `fish` and `forever` don't trip any DANGER pattern; they classify as
+  # UNREVIEWED (not auto-exempted by the keyword pre-check).
+  cat > "$FIXTURE/settings.json" <<'EOF'
+{
+  "permissions": {
+    "allow": ["Bash(done-something)", "Bash(fish)", "Bash(forever)"]
+  }
+}
+EOF
+
+  run bash "$SCRIPT" check --settings-dir "$FIXTURE"
+  # done-something is still DANGER (loose ^done regex, pre-existing).
+  # fish and forever land as UNREVIEWED (keyword pre-check correctly
+  # rejects them via the $-anchor).
+  [ "$status" -eq 2 ]
+  echo "$output" | jq -e '.danger == 1'
+  echo "$output" | jq -e '[.entries[] | select(.status == "UNREVIEWED")] | length == 2'
+}
+
+@test "BTS-154 AC-7: stale accept_danger log entry for now-safe keyword stays harmless" {
+  set -e
+  # Prior to BTS-154, Bash(done) was DANGER and operators added accept_danger
+  # overrides via /permissions-review. Post-BTS-154, the keyword pre-check
+  # short-circuits to safe BEFORE the override is consulted. The stale log
+  # entry must not produce errors or change classification.
+  cat > "$FIXTURE/settings.json" <<'EOF'
+{
+  "permissions": {
+    "allow": ["Bash(done)"]
+  }
+}
+EOF
+  cat > "$FIXTURE/permissions-log.json" <<'EOF'
+{
+  "entries": {
+    "Bash(done)": {
+      "risk": "Zero practical risk — bash control-flow keyword.",
+      "rationale": "Pre-BTS-154 false-positive override.",
+      "efficiency_justification": "Suppress noise.",
+      "reviewer": "test",
+      "accept_danger": true
+    }
+  }
+}
+EOF
+
+  run bash "$SCRIPT" check --settings-dir "$FIXTURE"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '.danger == 0'
+  # The override path was never reached — entry is REVIEWED via the
+  # accept_danger fallback OR safe via the pre-check. Either way: 0 DANGER,
+  # exit 0, no errors on stderr.
+}
+
+@test "BTS-154 AC-5: dangerous shapes adjacent to keywords still classify as DANGER" {
+  set -e
+  # Compound-operator and redirect must still fire even if the leading token
+  # is a keyword. Keyword exemption is for the bare-token / :* shapes only.
+  cat > "$FIXTURE/settings.json" <<'EOF'
+{
+  "permissions": {
+    "allow": [
+      "Bash(for f; rm -rf /)",
+      "Bash(do echo > /etc/passwd)"
+    ]
   }
 }
 EOF
 
   run bash "$SCRIPT" check --settings-dir "$FIXTURE"
   [ "$status" -eq 2 ]
-  echo "$output" | jq -e '.danger == 3'
+  echo "$output" | jq -e '.danger == 2'
 }
 
 @test "file mutation commands flagged as DANGER" {
