@@ -3607,6 +3607,127 @@ cmd_idea_pending_validate() {
   fi
 }
 
+# BTS-201: scan session captures for bug-shape ideas missing evidence anchors.
+# Returns JSON {evidence_gaps: [{id, title, reason}], scanned: N, fallback?:"24h"}.
+# Inputs:
+#   --since <commit>      — git commit; floor for createdAt filter (epoch via git log -1)
+#   --project-dir <path>  — defaults to "."
+#   --input-json <file>   — bypass live idea.list resolver; read canned issues array
+#   --no-time-filter      — skip createdAt filter (test mode)
+cmd_evidence_scan_session() {
+  local since="" project_dir="." input_json="" no_time_filter=0
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --since) since="${2:-}"; shift 2 ;;
+      --project-dir) project_dir="${2:-.}"; shift 2 ;;
+      --input-json) input_json="${2:-}"; shift 2 ;;
+      --no-time-filter) no_time_filter=1; shift ;;
+      *) shift ;;
+    esac
+  done
+
+  # Determine since-epoch (or 24h fallback)
+  local since_epoch="" fallback=""
+  if [[ -n "$since" ]]; then
+    since_epoch=$(git -C "$project_dir" log -1 --format=%ct "$since" 2>/dev/null || true)
+  fi
+  if [[ -z "$since_epoch" ]]; then
+    since_epoch=$(( $(date +%s) - 86400 ))
+    [[ -n "$since" ]] && fallback="24h"
+    # Empty --since with no resolution also implies fallback at first-stasis
+    # nodes; we mark fallback only when the operator explicitly passed an
+    # unresolvable --since to keep the signal informative.
+  fi
+
+  # Load issues (canned for tests, resolved live otherwise)
+  local issues
+  if [[ -n "$input_json" ]]; then
+    [[ ! -f "$input_json" ]] && {
+      echo "ERROR: evidence-scan-session: --input-json file not found: $input_json" >&2
+      return 3
+    }
+    issues=$(cat "$input_json")
+  else
+    local ops="$(dirname "$0")/operations.sh"
+    local resolution
+    resolution=$(bash "$ops" resolve idea.list --project-dir "$project_dir" 2>/dev/null) || {
+      echo "ERROR: evidence-scan-session: idea.list resolution failed" >&2
+      return 3
+    }
+    local cmd_str
+    cmd_str=$(printf '%s' "$resolution" | jq -r '.invocation.command')
+    issues=$(eval "$cmd_str") || {
+      echo "ERROR: evidence-scan-session: list invocation failed" >&2
+      return 3
+    }
+  fi
+
+  # Validate JSON shape
+  if ! echo "$issues" | jq -e 'type == "array"' >/dev/null 2>&1; then
+    echo "ERROR: evidence-scan-session: invalid JSON from idea.list (expected array)" >&2
+    return 3
+  fi
+
+  # Bug-shape heuristic — must match the regex documented in
+  # .claude/rules/evidence-required-for-captures.md and /idea SKILL.md.
+  local bug_re='fail|false[- ]positive|broken|errored?|blocked by|doesn'\''?t work|crashes?|hang(s|ing)?'
+
+  local gaps='[]'
+  local scanned=0
+
+  while IFS= read -r issue; do
+    [[ -z "$issue" ]] && continue
+
+    local id title body created_at
+    id=$(echo "$issue" | jq -r '.id // empty')
+    title=$(echo "$issue" | jq -r '.title // empty')
+    body=$(echo "$issue" | jq -r '.description // empty')
+    created_at=$(echo "$issue" | jq -r '.createdAt // empty')
+
+    # Time filter (skip in test mode)
+    if (( ! no_time_filter )) && [[ -n "$created_at" ]]; then
+      local created_epoch
+      # ISO8601 → epoch; date(1) on macOS uses -j -f, GNU uses -d. Try both.
+      created_epoch=$(date -j -f "%Y-%m-%dT%H:%M:%S" "${created_at%%.*}" "+%s" 2>/dev/null \
+        || date -d "${created_at%%.*}" "+%s" 2>/dev/null \
+        || echo 0)
+      [[ "$created_epoch" -le "$since_epoch" ]] && continue
+    fi
+
+    scanned=$((scanned + 1))
+
+    # DIAGNOSE: titles are exempt from evidence requirement
+    [[ "$title" =~ ^DIAGNOSE: ]] && continue
+
+    # Bug-shape match against title (case-insensitive)
+    if ! echo "$title" | grep -qiE "$bug_re"; then
+      continue
+    fi
+
+    # Bug-shape detected → check for all four anchors line-leading
+    local missing=0
+    for anchor in 'Command:' 'Output:' 'Exit:' 'Reproduce:'; do
+      if ! echo "$body" | grep -qE "^$anchor"; then
+        missing=1
+        break
+      fi
+    done
+
+    if (( missing )); then
+      gaps=$(echo "$gaps" | jq --arg id "$id" --arg t "$title" \
+        '. + [{id:$id, title:$t, reason:"missing-evidence-anchors"}]')
+    fi
+  done < <(echo "$issues" | jq -c '.[]')
+
+  if [[ -n "$fallback" ]]; then
+    jq -n --argjson gaps "$gaps" --argjson scanned "$scanned" --arg fb "$fallback" \
+      '{evidence_gaps:$gaps, scanned:$scanned, fallback:$fb}'
+  else
+    jq -n --argjson gaps "$gaps" --argjson scanned "$scanned" \
+      '{evidence_gaps:$gaps, scanned:$scanned}'
+  fi
+}
+
 # ---------------------------------------------------------------------------
 # Dispatch
 # ---------------------------------------------------------------------------
@@ -3657,6 +3778,7 @@ case "$cmd" in
   idea-template-body) cmd_idea_template_body "$@" ;;
   idea-pending-validate) cmd_idea_pending_validate "$@" ;;
   remote-presence)   cmd_remote_presence "$@" ;;
+  evidence-scan-session) cmd_evidence_scan_session "$@" ;;
   *)
     echo "Usage: docs-check.sh {status|validate|recommend|audit-session|config-get|list-specs|activate|complete|pr-cleanup|land|idea-add|idea-list|idea-count|idea-update|idea-sync|idea-pending-replay|refresh-plan-hash|idea-migrate|idea-setup|idea-upgrade|title-from-body|legacy-refs-scan|stamp-spec|idea-pending-append|idea-pending-validate|remote-presence} [args...]" >&2
     exit 1

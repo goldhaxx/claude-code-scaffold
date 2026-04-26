@@ -55,6 +55,57 @@ fi
 
 Bare `/idea <text>` (no flags) is unchanged — body forwarded verbatim. The templating sub-command is deterministic and side-effect-free; testable in isolation.
 
+### Step 0.5 — evidence gate for bug-shape captures (BTS-201)
+
+Before generating a title, scan the body for bug-shape language. If matched, the capture must be evidence-backed (per `.claude/rules/evidence-required-for-captures.md`) or it must be retitled `DIAGNOSE: <symptom>`. This closes the failure mode that produced BTS-198 — a "Likely root cause" capture that almost shipped a regex carve-out for a phantom rule.
+
+**Bug-shape heuristic** (case-insensitive regex):
+
+```
+fail|false[- ]positive|broken|errored?|blocked by|doesn'?t work|crashes?|hang(s|ing)?
+```
+
+If the body matches the heuristic, check for the four **evidence anchors** (case-sensitive, line-leading):
+
+- `Command:` — the exact failing command, copy-pasteable.
+- `Output:` — the exact error output / hook BLOCKED message / stack trace, verbatim.
+- `Exit:` — the exit code.
+- `Reproduce:` — a one-line reproducer recipe.
+
+```bash
+BUG_SHAPE_RE='fail|false[- ]positive|broken|errored?|blocked by|doesn'\''?t work|crashes?|hang(s|ing)?'
+if echo "$BODY" | grep -qiE "$BUG_SHAPE_RE"; then
+  has_anchors=1
+  for anchor in 'Command:' 'Output:' 'Exit:' 'Reproduce:'; do
+    grep -qF "^$anchor" <(echo "$BODY") || { has_anchors=0; break; }
+  done
+  if (( has_anchors == 0 )) && [[ ! "$TITLE" =~ ^DIAGNOSE: ]]; then
+    cat >&2 <<'MSG'
+REFUSED: bug-shape capture is missing evidence anchors.
+
+Per .claude/rules/evidence-required-for-captures.md, fix-shaped bug captures
+must include all four anchors line-leading:
+  Command:
+  Output:
+  Exit:
+  Reproduce:
+
+Either (a) add the four anchors to the body, or (b) retitle as
+`DIAGNOSE: <symptom>` and treat the first ship as a diagnostic capture
+(instrumentation / log capture / repro harness) — not the fix.
+MSG
+    exit 1
+  fi
+fi
+```
+
+The skill MUST refuse the capture when bug-shape is detected without anchors and the title doesn't begin with `DIAGNOSE:`. The operator/agent then either:
+
+1. Adds the four anchors to the body (and retries), OR
+2. Retitles as `DIAGNOSE: <symptom>` (and retries — `DIAGNOSE:` titles are exempt from the anchor requirement, since the first ship is the diagnostic capture).
+
+Non-bug captures (feature ideas, refactor candidates, strategic notes) are unaffected — the heuristic only fires on bug-shape language.
+
 ### Step 1 — generate a title
 
 - If the raw text is ≤80 chars and single-line, the title = the raw text (short-text fast path; no Claude round-trip).

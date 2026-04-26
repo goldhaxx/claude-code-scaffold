@@ -47,6 +47,7 @@ flowchart TD
 `/stasis` is the strategic microscope/macroscope that runs before `/compact`. Beyond the basic accomplished/blocked/next-steps snapshot, it performs:
 
 - **Determinism review** — flags operations that should become scripts/hooks (via `.claude/rules/self-review.md` criteria)
+- **Evidence gaps** — runs `docs-check.sh evidence-scan-session` to surface bug-shape captures from this session that lack the four evidence anchors (`Command:`, `Output:`, `Exit:`, `Reproduce:`); enforces `.claude/rules/evidence-required-for-captures.md`
 - **Cross-session patterns** — compares this session to the prior stasis (`git show HEAD~1:docs/stasis.md`) and flags recurring issues; invokes `docs-check.sh legacy-refs-scan` to catch stale references to legacy ccanvil verbs/artifacts
 - **Security review** — via `security-audit` skill when available, else static grep for secrets/PII in the session's diff
 - **Memory candidates** — surfaces non-obvious feedback, surprising project facts, or external references worth auto-memory
@@ -59,7 +60,7 @@ When you run `/recall` after `/compact` (or `/clear`), Claude reads these source
 
 | Source | Purpose |
 |--------|---------|
-| `docs/stasis.md` | What was accomplished, blockers, next steps, prior determinism review |
+| `docs/stasis.md` | What was accomplished, blockers, next steps, prior determinism review, prior evidence gaps |
 | `git log --oneline -10` | Recent commits |
 | `git diff --stat` | Uncommitted changes |
 | `git diff --cached --stat` | Staged changes |
