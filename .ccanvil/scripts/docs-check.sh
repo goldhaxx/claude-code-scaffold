@@ -2320,6 +2320,65 @@ cmd_idea_sync() {
 }
 
 # ---------------------------------------------------------------------------
+# cmd_refresh_plan_hash — BTS-177: recompute docs/spec.md content_hash and
+# rewrite docs/plan.md's `> Spec hash: <hash>` line to match. Idempotent:
+# re-running when hashes already match is a no-op.
+#
+# Eliminates the manual plan-hash edit Claude was performing on mid-flow
+# spec scope expansion (BTS-175 live-API discovery, 2026-04-25).
+#
+# Invocation:
+#   refresh-plan-hash [--project-dir <dir>]
+#
+# Output: {updated: <bool>, spec_hash: "<hash>", plan: "docs/plan.md"}
+# Exit 0 on success (including no-op); non-zero on missing spec/plan or
+# malformed plan metadata.
+# ---------------------------------------------------------------------------
+cmd_refresh_plan_hash() {
+  local project_dir="."
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --project-dir) project_dir="$2"; shift 2 ;;
+      *) project_dir="$1"; shift ;;
+    esac
+  done
+
+  local spec_file="$project_dir/docs/spec.md"
+  local plan_file="$project_dir/docs/plan.md"
+
+  if [[ ! -f "$spec_file" ]]; then
+    echo "ERROR: docs/spec.md not found" >&2
+    return 1
+  fi
+  if [[ ! -f "$plan_file" ]]; then
+    echo "ERROR: docs/plan.md not found" >&2
+    return 1
+  fi
+  if ! grep -qE '^> Spec hash: [a-f0-9]{6,}' "$plan_file"; then
+    echo "ERROR: docs/plan.md has no '> Spec hash:' metadata line" >&2
+    return 1
+  fi
+
+  local new_hash current_hash
+  new_hash=$(content_hash "$spec_file")
+  current_hash=$(grep -E '^> Spec hash: [a-f0-9]{6,}' "$plan_file" | head -1 | sed -E 's/^> Spec hash: //')
+
+  if [[ "$new_hash" == "$current_hash" ]]; then
+    jq -n --arg h "$new_hash" '{updated:false, spec_hash:$h, plan:"docs/plan.md"}'
+    return 0
+  fi
+
+  # Atomic rewrite: tmpfile + mv.
+  local tmp
+  tmp=$(mktemp)
+  trap 'rm -f "$tmp"' RETURN
+  sed -E "s|^> Spec hash: [a-f0-9]{6,}|> Spec hash: $new_hash|" "$plan_file" > "$tmp"
+  mv "$tmp" "$plan_file"
+
+  jq -n --arg h "$new_hash" '{updated:true, spec_hash:$h, plan:"docs/plan.md"}'
+}
+
+# ---------------------------------------------------------------------------
 # cmd_idea_pending_replay — BTS-179: replay every entry in
 # .ccanvil/ideas-pending.log via the http substrate, ack on success,
 # preserve on failure. Replaces the per-skill shell loop in /idea sync.
@@ -3332,6 +3391,7 @@ case "$cmd" in
   idea-update)       cmd_idea_update "$@" ;;
   idea-sync)         cmd_idea_sync "$@" ;;
   idea-pending-replay) cmd_idea_pending_replay "$@" ;;
+  refresh-plan-hash) cmd_refresh_plan_hash "$@" ;;
   idea-review-icebox) cmd_idea_review_icebox "$@" ;;
   idea-migrate-state) cmd_idea_migrate_state "$@" ;;
   idea-migrate)      cmd_idea_migrate "$@" ;;
@@ -3345,7 +3405,7 @@ case "$cmd" in
   idea-pending-validate) cmd_idea_pending_validate "$@" ;;
   remote-presence)   cmd_remote_presence "$@" ;;
   *)
-    echo "Usage: docs-check.sh {status|validate|recommend|audit-session|config-get|list-specs|activate|complete|pr-cleanup|land|idea-add|idea-list|idea-count|idea-update|idea-sync|idea-pending-replay|idea-migrate|idea-setup|idea-upgrade|title-from-body|legacy-refs-scan|stamp-spec|idea-pending-append|idea-pending-validate|remote-presence} [args...]" >&2
+    echo "Usage: docs-check.sh {status|validate|recommend|audit-session|config-get|list-specs|activate|complete|pr-cleanup|land|idea-add|idea-list|idea-count|idea-update|idea-sync|idea-pending-replay|refresh-plan-hash|idea-migrate|idea-setup|idea-upgrade|title-from-body|legacy-refs-scan|stamp-spec|idea-pending-append|idea-pending-validate|remote-presence} [args...]" >&2
     exit 1
     ;;
 esac
