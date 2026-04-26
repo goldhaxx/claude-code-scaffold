@@ -3,7 +3,7 @@
 > Feature: bts-182-derive-pr-title-word-boundary
 > Work: linear:BTS-182
 > Created: 1777222091
-> Status: In Progress
+> Status: Complete
 
 ## Summary
 
