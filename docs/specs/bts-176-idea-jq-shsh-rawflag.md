@@ -3,7 +3,7 @@
 > Feature: bts-176-idea-jq-shsh-rawflag
 > Work: linear:BTS-176
 > Created: 1777183729
-> Status: In Progress
+> Status: Complete
 
 ## Summary
 
