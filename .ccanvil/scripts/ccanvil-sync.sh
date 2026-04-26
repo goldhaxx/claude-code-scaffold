@@ -3181,7 +3181,7 @@ cmd_drift_watchdog_launchd_print() {
   <array>
     <string>/bin/bash</string>
     <string>-c</string>
-    <string>cd "${hub_dir}" &amp;&amp; claude -p "/drift-watchdog" --max-budget-usd 0.50</string>
+    <string>cd "${hub_dir}" &amp;&amp; claude --model haiku -p "/drift-watchdog" --max-budget-usd 2.00</string>
   </array>
   <key>WorkingDirectory</key>
   <string>${hub_dir}</string>

@@ -37,9 +37,9 @@ AGENT="$REPO_ROOT/.claude/agents/drift-analyst.md"
   echo "$tools" | grep -qx 'Bash(git log:\*)'
 }
 
-@test "AC-3: drift-analyst model is sonnet" {
+@test "AC-3: drift-analyst model is haiku (cheap synthesis is sufficient)" {
   set -e
-  grep -q '^model: sonnet$' "$AGENT"
+  grep -q '^model: haiku$' "$AGENT"
 }
 
 # =========================================================================

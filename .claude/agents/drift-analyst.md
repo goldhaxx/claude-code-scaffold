@@ -6,7 +6,7 @@ tools:
   - Grep
   - Glob
   - Bash(git log:*)
-model: sonnet
+model: haiku
 ---
 
 # Drift Analyst
