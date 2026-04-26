@@ -3,7 +3,7 @@
 > Feature: bts-179-idea-pending-replay
 > Work: linear:BTS-179
 > Created: 1777215402
-> Status: In Progress
+> Status: Complete
 
 ## Summary
 
