@@ -27,6 +27,12 @@ generated/
 # Claude Code worktrees (per-session, not shared)
 .claude/worktrees/
 
+# Claude Code /loop and /schedule artifacts (BTS-168)
+# Session-local; don't survive /compact reliably and aren't committable state.
+# ccanvil does not provide a durable cron substrate; recurring work that needs
+# to survive sessions belongs in Linear / the idea queue.
+.claude/scheduled_tasks*
+
 # Sync state — tracked in git for provenance.
 # Listed in .claudeignore so Claude uses the script to access them, not raw reads.
 

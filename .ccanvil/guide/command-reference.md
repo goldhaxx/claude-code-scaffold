@@ -114,6 +114,10 @@ Node UUIDs make registration resilient to renames, moves, machine changes, and m
 
 Only files matching `ccanvil-*.md` are hub-owned; all other files in `~/.claude/commands/` are user-owned and never touched by ccanvil. This keeps ccanvil as a bolt-on, not a replacement for your Claude Code setup.
 
+### Claude Code scheduled-task boundary (BTS-168)
+
+Claude Code's `/loop` and `/schedule` features emit `.claude/scheduled_tasks*` artifacts inside the project root. These are **session-local** — they don't survive `/compact` reliably and aren't committable state. ccanvil gitignores them by default. ccanvil does not provide a durable cron substrate; recurring work that must survive sessions belongs in **Linear (or the local idea queue)**, surfaced via `/idea triage` and `/radar`, not in scheduled-task state files.
+
 ## Multi-Spec Lifecycle Scripts
 
 | Command | What it does |
