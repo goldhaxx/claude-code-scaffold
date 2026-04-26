@@ -3,7 +3,7 @@
 > Feature: bts-169-workspace-fence-jq-operator-exemption
 > Work: linear:BTS-169
 > Created: 1777173168
-> Status: In Progress
+> Status: Complete
 
 ## Summary
 
