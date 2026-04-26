@@ -164,6 +164,19 @@ EOF
   echo "$output" | jq -e '.matched_hooks[0].lines[1] | type == "number"'
 }
 
+@test "AC-4: matched_hooks entries are per-occurrence (lines[0] == lines[1])" {
+  # Review CONCERN 1 regression: each entry covers a single gate-context line,
+  # not a hull spanning unrelated code in between.
+  set -e
+  cat > "$FIXTURE/settings.json" <<'EOF'
+{ "permissions": { "allow": ["Bash(chmod:*)"] } }
+EOF
+  cd "$BATS_TEST_DIRNAME/../.."
+  run bash "$SCRIPT" entry-context "Bash(chmod:*)" --settings-dir "$FIXTURE"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e 'all(.matched_hooks[]; .lines[0] == .lines[1])'
+}
+
 @test "AC-4: matched_hooks empty for Bash(echo:*) — no leading-verb match" {
   set -e
   cat > "$FIXTURE/settings.json" <<'EOF'

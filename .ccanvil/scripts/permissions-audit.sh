@@ -891,22 +891,26 @@ scan_hooks_for_verb() {
     # invocations like `INPUT=$(echo ...)` while keeping the actual gating
     # regexes like `=~ (rm|chmod|chown|...)`.
     matches=$(grep -nE "\b${verb}\b" "$f" 2>/dev/null \
-      | awk -F: '
+      | awk '
         {
-          line = $1
-          $1 = ""
-          text = $0
+          # Strip leading "LINENO:" prefix without splitting on inner colons
+          # (which would mangle [[:space:]] character classes — review NIT N1).
+          if (match($0, /^[0-9]+:/) == 0) next
+          line = substr($0, 1, RLENGTH - 1)
+          text = substr($0, RLENGTH + 1)
           if (text ~ /^[[:space:]]*#/) next
           if (text ~ /=~/ || text ~ /[[:space:]]case[[:space:]]/ || text ~ /\*\)/) {
             print line
           }
         }')
     if [[ -n "$matches" ]]; then
-      local first last
-      first=$(echo "$matches" | head -1)
-      last=$(echo "$matches" | tail -1)
-      accum=$(echo "$accum" | jq --arg p "$f" --argjson lo "$first" --argjson hi "$last" \
-        '. + [{path:$p, lines:[$lo, $hi]}]')
+      # Review CONCERN 1: emit one entry per gate-context line rather than a
+      # [first, last] hull across the file. Hulls can span unrelated code when
+      # a verb gates two non-contiguous blocks. One-entry-per-line is truthful.
+      while IFS= read -r line_no; do
+        accum=$(echo "$accum" | jq --arg p "$f" --argjson n "$line_no" \
+          '. + [{path:$p, lines:[$n, $n]}]')
+      done <<< "$matches"
     fi
   done
   echo "$accum"
@@ -959,8 +963,10 @@ cmd_entry_context() {
   local introduced_arg='null'
   if [[ "$(echo "$source_files" | jq 'length')" -gt 0 ]]; then
     local log_line
+    # Review CONCERN 2: scope git log to $SETTINGS_DIR rather than hardcoding
+    # .claude/. Otherwise non-default --settings-dir silently returns null.
     log_line=$(git log -S "$perm" --reverse --pretty=format:'%h%x09%s' \
-      -- .claude/settings.json .claude/settings.local.json 2>/dev/null | head -1 || true)
+      -- "$SETTINGS_DIR/settings.json" "$SETTINGS_DIR/settings.local.json" 2>/dev/null | head -1 || true)
     if [[ -n "$log_line" ]]; then
       local commit subject
       commit="${log_line%%	*}"
