@@ -32,9 +32,28 @@ Either way, `/idea` never touches git. No commits. No branch creation. Capture w
 
 If the first arg is not `list`, `triage`, `review-icebox`, or `sync`, treat everything after `/idea` as the idea text.
 
-### Step 0 — extract `--parent <ref>` (BTS-162, optional)
+### Step 0 — extract capture flags (BTS-162 + BTS-172, optional)
 
-Before generating the title, scan the raw input for `--parent <ref>` (in either leading or trailing position). If present, extract it into `$PARENT` and remove the flag + value from the body. Validate non-empty + no-whitespace (`[[ "$PARENT" =~ [[:space:]] ]]` → error). The parent ref is passed through verbatim — `BTS-158`, `idea-7`, `linear:BTS-158` all valid; cross-provider validation happens at the dispatch surface.
+Before generating the title, scan the raw input for capture-time flags and extract each into a separate variable, removing the flag + value from the body:
+
+- **`--parent <ref>`** (BTS-162) — capture-time parentId link. Extract into `$PARENT`. Validate non-empty + no-whitespace. Passed through verbatim; provider validates at dispatch.
+- **`--source-skill <name>`** (BTS-172) — anchors the body with `Captured during /<name> walk-through.` Extract into `$SOURCE_SKILL`.
+- **`--context <text>`** (BTS-172) — anchors the body with `Surfaced at <text>.` Extract into `$CONTEXT`.
+- **`--family <BTS-A,BTS-B>`** (BTS-172) — prepends a `## Family` section listing each ref. Extract into `$FAMILY` (comma-separated string passed through to substrate).
+
+When ANY of `--source-skill` / `--context` / `--family` is set, call `docs-check.sh idea-template-body` with the original body and the present flags to compose the final templated body, then use that templated body as the input to title generation and capture dispatch:
+
+```bash
+TEMPLATE_ARGS=()
+[[ -n "$SOURCE_SKILL" ]] && TEMPLATE_ARGS+=(--source-skill "$SOURCE_SKILL")
+[[ -n "$CONTEXT" ]] && TEMPLATE_ARGS+=(--context "$CONTEXT")
+[[ -n "$FAMILY" ]] && TEMPLATE_ARGS+=(--family "$FAMILY")
+if [[ ${#TEMPLATE_ARGS[@]} -gt 0 ]]; then
+  BODY=$(bash .ccanvil/scripts/docs-check.sh idea-template-body --body "$BODY" "${TEMPLATE_ARGS[@]}")
+fi
+```
+
+Bare `/idea <text>` (no flags) is unchanged — body forwarded verbatim. The templating sub-command is deterministic and side-effect-free; testable in isolation.
 
 ### Step 1 — generate a title
 

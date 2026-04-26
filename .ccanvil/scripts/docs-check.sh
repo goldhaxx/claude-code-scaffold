@@ -1805,6 +1805,98 @@ cmd_idea_add() {
   echo "Captured: $title"
 }
 
+# ---------------------------------------------------------------------------
+# BTS-172: idea-template-body — compose templated idea bodies from explicit
+# flags. Prepends fixed-order sections (captured-during, surfaced-at,
+# Family) before the original body. Missing flags collapse the
+# corresponding section without leaving stray blank lines.
+#
+# Usage:
+#   docs-check.sh idea-template-body --body BODY \
+#     [--source-skill NAME] [--context TEXT] [--family A,B,C] \
+#     [project-dir]
+# ---------------------------------------------------------------------------
+cmd_idea_template_body() {
+  local body=""
+  local source_skill=""
+  local context=""
+  local family=""
+  local project_dir="."
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --body)
+        body="$2"; shift 2 ;;
+      --source-skill)
+        if [[ -z "$2" ]]; then
+          echo "ERROR: idea-template-body: --source-skill requires a non-empty value" >&2
+          return 2
+        fi
+        source_skill="$2"; shift 2 ;;
+      --context)
+        if [[ -z "$2" ]]; then
+          echo "ERROR: idea-template-body: --context requires a non-empty value" >&2
+          return 2
+        fi
+        context="$2"; shift 2 ;;
+      --family)
+        # Validate the raw value is non-empty AND contains at least one
+        # non-comma, non-whitespace character.
+        if [[ -z "$2" ]]; then
+          echo "ERROR: idea-template-body: --family requires a non-empty comma-separated list" >&2
+          return 2
+        fi
+        if [[ ! "$2" =~ [^[:space:],] ]]; then
+          echo "ERROR: idea-template-body: --family requires a non-empty comma-separated list" >&2
+          return 2
+        fi
+        family="$2"; shift 2 ;;
+      *)
+        project_dir="$1"; shift ;;
+    esac
+  done
+
+  [[ -n "$body" ]] || { echo "Usage: idea-template-body --body BODY [--source-skill X] [--context X] [--family A,B] [project-dir]" >&2; return 1; }
+
+  # Compose output. Each section is emitted only when its flag is set;
+  # blank-line separators only appear between present sections.
+  local out=""
+  local need_blank=false
+
+  if [[ -n "$source_skill" ]]; then
+    out+="Captured during /$source_skill walk-through."$'\n'
+    need_blank=true
+  fi
+
+  if [[ -n "$context" ]]; then
+    out+="Surfaced at $context."$'\n'
+    need_blank=true
+  fi
+
+  if [[ -n "$family" ]]; then
+    [[ "$need_blank" == true ]] && out+=$'\n'
+    out+="## Family"$'\n'
+    # Split on comma, trim each item, emit one bullet per non-empty.
+    local IFS=','
+    local item
+    for item in $family; do
+      # Trim leading/trailing whitespace.
+      item="${item#"${item%%[![:space:]]*}"}"
+      item="${item%"${item##*[![:space:]]}"}"
+      [[ -z "$item" ]] && continue
+      out+="- $item"$'\n'
+    done
+    need_blank=true
+  fi
+
+  # Blank line between prepended sections and the original body, only if
+  # we actually prepended something.
+  [[ "$need_blank" == true ]] && out+=$'\n'
+  out+="$body"
+
+  printf '%s\n' "$out"
+}
+
 cmd_idea_list() {
   local filter_status=""
   local project_dir="."
@@ -2996,6 +3088,7 @@ case "$cmd" in
   legacy-refs-scan)  cmd_legacy_refs_scan "$@" ;;
   stamp-spec)        cmd_stamp_spec "$@" ;;
   idea-pending-append) cmd_idea_pending_append "$@" ;;
+  idea-template-body) cmd_idea_template_body "$@" ;;
   idea-pending-validate) cmd_idea_pending_validate "$@" ;;
   remote-presence)   cmd_remote_presence "$@" ;;
   *)
