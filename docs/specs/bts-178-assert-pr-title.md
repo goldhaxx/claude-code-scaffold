@@ -3,7 +3,7 @@
 > Feature: bts-178-assert-pr-title
 > Work: linear:BTS-178
 > Created: 1777217843
-> Status: In Progress
+> Status: Complete
 
 ## Summary
 
