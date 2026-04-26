@@ -3,7 +3,7 @@
 > Feature: bts-152-security-audit-per-finding-allowlist
 > Work: linear:BTS-152
 > Created: 1777162929
-> Status: In Progress
+> Status: Complete
 
 ## Summary
 
