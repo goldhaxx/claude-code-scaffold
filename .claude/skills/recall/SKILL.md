@@ -50,6 +50,7 @@ Report counts by status (Draft, Ready, In Progress, Complete) — or by Linear s
 
 8. If `.ccanvil/scripts/docs-check.sh` exists, run `.ccanvil/scripts/docs-check.sh idea-count` and note any untriaged ideas.
 9. If `.ccanvil/scripts/permissions-audit.sh` exists (BTS-149), run both: `permissions-audit.sh check --json` and `permissions-audit.sh promote-review --json`. Read `.danger` and `.counts.total` and sum them.
+10. **BTS-201: parse the prior stasis's `## Evidence Gaps` section.** Read `docs/stasis.md` and extract everything between the `## Evidence Gaps` heading and the next `##` heading. If the section content matches the empty-state literal `No evidence gaps this session.`, treat as empty. Otherwise, parse each `- BTS-X — <title> — <reason>` bullet for surfacing in the briefing. The protocol is documented in `.claude/rules/evidence-required-for-captures.md`.
 
 ## Briefing
 
@@ -58,6 +59,7 @@ Then provide a brief summary:
 - **Spec backlog** — count of specs by status from step 0c, and which spec (if any) is active on the current branch
 - **Ideas** — untriaged idea count from step 8 (if > 0, note: "N untriaged ideas — run /idea triage")
 - **Permissions Review** — sum from step 9. When `(check.danger + promote-review.counts.total) > 0`, print one line: `**Permissions Review:** N candidates pending — run /permissions-review`. When 0, omit entirely (no noise).
+- **Evidence Gaps from prior session:** (BTS-201) — when step 10 found non-empty bullets, surface them under the literal heading `**Evidence Gaps from prior session:**` with one line per gap (`- BTS-X — <title> — <reason>`). When the section matched the empty-state literal `No evidence gaps this session.`, **OMIT this heading entirely** — silent on empty (no noise).
 - **Branch** — current branch name and whether it follows convention (from step 0d)
 - **Outstanding determinism improvements** — if the previous stasis's `## Determinism Review` had candidates, list them under this heading before the regular summary
 - **Post-stasis audit findings** — if `audit-session` found patterns since the last stasis, list them here

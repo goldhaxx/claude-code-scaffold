@@ -114,6 +114,36 @@ Follow `.claude/rules/self-review.md`. Review operations from this session; flag
 
 The capture body is the bullet's full text (operation, what happened, deterministic replacement, impact). Capture failure NEVER aborts the stasis flow — pending-log fallback guarantees forward progress.
 
+### ## Evidence Gaps (BTS-201)
+**Always present** — never omitted. Surfaces session captures that look like bug reports but lack reproducible evidence (per `.claude/rules/evidence-required-for-captures.md`).
+
+Run the substrate primitive:
+
+```bash
+SCAN=$(bash .ccanvil/scripts/docs-check.sh evidence-scan-session \
+  --since "$LAST_STASIS_COMMIT" --project-dir .)
+GAPS=$(echo "$SCAN" | jq -r '.evidence_gaps')
+SCANNED=$(echo "$SCAN" | jq -r '.scanned')
+```
+
+Where `$LAST_STASIS_COMMIT` is the commit where the prior `docs/stasis.md` was written (extract from `git log -1 --format=%H -- docs/stasis.md` on the parent commit, or empty for first stasis — the substrate falls back to a 24h scan automatically).
+
+**When `evidence_gaps` is empty**, write the literal:
+
+```
+No evidence gaps this session.
+```
+
+**When non-empty**, render one bullet per gap:
+
+```
+- BTS-X — <title> — <reason>
+```
+
+The empty-state literal is parseable by `/recall`'s briefing renderer — it determines whether to surface the carry-forward heading or stay silent. Never mutate the literal phrasing.
+
+This section closes the BTS-198 failure mode: a "Likely root cause" capture that slipped through prior stasis review and almost shipped a regex carve-out for a phantom rule. The protocol is documented in `.claude/rules/evidence-required-for-captures.md`.
+
 ### ## Permissions Review Pending (BTS-149)
 Conditional section — include ONLY when `(promote-review.counts.total + check.danger) > 0`. When both counts are 0, OMIT this section entirely (no noise).
 

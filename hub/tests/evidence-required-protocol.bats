@@ -80,3 +80,56 @@ STASIS_TPL="$REPO_ROOT/.ccanvil/templates/stasis.md"
 @test "AC-1: /idea SKILL.md references evidence-required-for-captures rule" {
   grep -qF 'evidence-required-for-captures' "$IDEA_SKILL"
 }
+
+# =========================================================================
+# AC-5, AC-6: /stasis skill wires the scan + writes ## Evidence Gaps
+# =========================================================================
+
+@test "AC-5: /stasis SKILL.md invokes evidence-scan-session" {
+  grep -qF 'evidence-scan-session' "$STASIS_SKILL"
+}
+
+@test "AC-6: /stasis SKILL.md references the ## Evidence Gaps section" {
+  grep -qF '## Evidence Gaps' "$STASIS_SKILL"
+}
+
+@test "AC-6: /stasis SKILL.md documents the empty-state literal" {
+  grep -qF 'No evidence gaps this session.' "$STASIS_SKILL"
+}
+
+@test "AC-1: /stasis SKILL.md references evidence-required-for-captures rule" {
+  grep -qF 'evidence-required-for-captures' "$STASIS_SKILL"
+}
+
+# =========================================================================
+# AC-6: stasis template carries the empty-state literal
+# =========================================================================
+
+@test "AC-6: stasis template includes ## Evidence Gaps heading" {
+  grep -qF '## Evidence Gaps' "$STASIS_TPL"
+}
+
+@test "AC-6: stasis template includes the empty-state literal" {
+  grep -qF 'No evidence gaps this session.' "$STASIS_TPL"
+}
+
+# =========================================================================
+# AC-7: /recall surfaces carried-forward gaps
+# =========================================================================
+
+@test "AC-7: /recall SKILL.md reads ## Evidence Gaps from prior stasis" {
+  grep -qF '## Evidence Gaps' "$RECALL_SKILL"
+}
+
+@test "AC-7: /recall SKILL.md uses the surface heading literal" {
+  grep -qF '**Evidence Gaps from prior session:**' "$RECALL_SKILL"
+}
+
+@test "AC-7: /recall SKILL.md silently omits when empty-state literal matches" {
+  # Anchor on the empty-state phrase so the recall skill parses it.
+  grep -qF 'No evidence gaps this session.' "$RECALL_SKILL"
+}
+
+@test "AC-1: /recall SKILL.md references evidence-required-for-captures rule" {
+  grep -qF 'evidence-required-for-captures' "$RECALL_SKILL"
+}

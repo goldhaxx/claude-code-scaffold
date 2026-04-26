@@ -42,6 +42,12 @@
 - [For each candidate: **[operation]**: Claude [what happened]. Should be [deterministic replacement]. Impact: [high/medium/low].]
 - [If no candidates: "No candidates this session."]
 
+## Evidence Gaps
+
+[BTS-201: bug-shape captures from this session lacking the four evidence anchors (Command:, Output:, Exit:, Reproduce:). One bullet per gap: `- BTS-X — <title> — <reason>`. If no gaps: `No evidence gaps this session.` — keep this literal verbatim so /recall can parse the empty state.]
+
+No evidence gaps this session.
+
 ## Cross-Session Patterns
 
 [Any determinism-review candidates or audit-session findings that also appeared in the previous stasis. Run `docs-check.sh legacy-refs-scan` as part of this check. If no prior stasis exists: "First stasis — no prior state to compare." If no patterns: "No recurring patterns."]
