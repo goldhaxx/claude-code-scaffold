@@ -278,8 +278,9 @@ OPERATIONS="$REPO_ROOT/.ccanvil/scripts/operations.sh"
   grep -q '\.ccanvil/templates/stasis\.md' "$REPO_ROOT/.claude/skills/stasis/SKILL.md"
 }
 
-@test "stasis skill: invokes docs-check.sh validate (AC-4, AC-11)" {
-  grep -q 'docs-check.sh validate' "$REPO_ROOT/.claude/skills/stasis/SKILL.md"
+@test "stasis skill: invokes docs-check.sh lifecycle-state (BTS-20 migration of AC-4, AC-11)" {
+  # BTS-20 migrated /stasis pre-flight from validate to lifecycle-state.
+  grep -q 'docs-check.sh lifecycle-state' "$REPO_ROOT/.claude/skills/stasis/SKILL.md"
 }
 
 @test "stasis skill: invokes radar-gather, idea-count, audit-session (AC-2)" {

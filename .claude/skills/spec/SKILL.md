@@ -27,7 +27,7 @@ A work ref is one of:
 3. **Resolve the work reference:** For all other invocation forms (`/spec BTS-130 <desc>`, `/spec linear:BTS-130 <desc>`, `/spec idea-29 <desc>`), run `bash .ccanvil/scripts/operations.sh resolve work.resolve "<arg1>" --project-dir .` on the first user argument. Capture the resolved JSON (`{provider, id, slug, url}`).
    - If the command exits non-zero, **STOP** and tell the user: `/spec requires a work reference. Examples: /spec BTS-130 "describe the feature", /spec idea 29, /spec linear:BTS-130 "...". Run /idea <text> first to capture the work if it doesn't exist yet.` The script enforces format validation (bare Linear IDs must match TEAM-N; bare local IDs must contain a digit; whitespace rejected); descriptions that accidentally reach this step will fail fast.
 
-4. **Check state:** Run `bash .ccanvil/scripts/docs-check.sh validate` — if there's already an active spec on this branch, warn and ask before proceeding.
+4. **BTS-20: Check state via lifecycle-state.** Run `bash .ccanvil/scripts/docs-check.sh lifecycle-state --project-dir .` and read `.state`. If state is `spec-activated`, `plan-written`, or `implementing`, an active spec is already in flight on this branch — warn and ask before proceeding. The operator must `/pr` and `/land` (or revert) before drafting a new spec.
 
 5. **If `idea <num>` mode (continued):** Run `bash .ccanvil/scripts/docs-check.sh idea-list` to get the idea body and use it as the feature description. Resolve the work ref via `operations.sh resolve work.resolve idea-<N>` (local) or the equivalent for Linear.
 

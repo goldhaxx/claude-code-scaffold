@@ -499,108 +499,129 @@ cmd_validate() {
 # Output: JSON with next_action and reason.
 # ---------------------------------------------------------------------------
 cmd_recommend() {
+  # BTS-20: state derivation delegated to cmd_lifecycle_state — single
+  # source of truth for "where in the lifecycle are we?" Recommend's job
+  # is to render a single rich action string with context (Ready spec ID,
+  # triage count, blocker details). Output schema unchanged for callers.
   local docs_dir="${1:-$DEFAULT_DOCS_DIR}"
-  local validate_json
-  validate_json=$(cmd_validate "$docs_dir")
+  local project_root="$(dirname "$docs_dir")"
 
-  local result
-  result=$(echo "$validate_json" | jq -r '.result')
-
-  local spec_exists plan_exists stasis_exists
-  spec_exists=$(echo "$validate_json" | jq -r '.status.spec.exists')
-  plan_exists=$(echo "$validate_json" | jq -r '.status.plan.exists')
-  stasis_exists=$(echo "$validate_json" | jq -r '.status.stasis.exists')
+  local envelope state
+  envelope=$(cmd_lifecycle_state --project-dir "$project_root")
+  state=$(echo "$envelope" | jq -r '.state')
 
   local next_action reason
 
-  # No active spec — specs exist in backlog but none activated
-  if [[ "$result" == "no-active-spec" ]]; then
-    # Find a Ready spec to suggest
-    local ready_spec
-    ready_spec=$(cmd_list_specs "$docs_dir" | jq -r '[.[] | select(.status == "Ready")] | first | .feature_id // empty')
-    if [[ -n "$ready_spec" ]]; then
-      next_action="Activate a spec: docs-check.sh activate $ready_spec"
-      reason="No active spec. Ready specs available in docs/specs/."
-    else
-      next_action="Activate a spec: docs-check.sh activate <id>"
-      reason="Specs exist in docs/specs/ but none are activated."
-    fi
-
-  # No docs at all
-  elif [[ "$spec_exists" != "true" && "$plan_exists" != "true" && "$stasis_exists" != "true" ]]; then
-    next_action="Describe a feature"
-    reason="No spec, plan, or stasis found. Start by describing what you want to build."
-
-  elif [[ "$result" == "unlinked" ]]; then
-    next_action="Add lifecycle metadata to docs"
-    reason="Documents exist but lack lifecycle metadata (Feature ID). Add metadata to enable validation."
-
-  elif [[ "$result" == "mismatched" ]]; then
-    next_action="Reconcile feature IDs"
-    reason="Documents reference different features. Ensure all docs share the same feature_id."
-
-  elif [[ "$result" == "stale-plan" ]]; then
-    next_action="Re-run /plan"
-    reason="Spec has changed since the plan was written. The plan is out of date."
-
-  elif [[ "$result" == "stale-stasis" ]]; then
-    next_action="Update stasis"
-    reason="Plan has changed since the stasis was written. The stasis is out of date."
-
-  elif [[ "$result" == "missing-determinism-review" ]]; then
-    next_action="Add Determinism Review to stasis"
-    reason="Stasis exists but is missing the required Determinism Review section. Add the section before clearing context."
-
-  elif [[ "$spec_exists" == "true" && "$plan_exists" != "true" ]]; then
-    next_action="Run /plan"
-    reason="Spec exists but no plan. Create an implementation plan from the spec."
-
-  elif [[ "$result" == "aligned" && "$stasis_exists" == "true" ]]; then
-    # BTS-113 — distinguish "session about to end (recommend /compact)" from
-    # "session just resumed after /compact + /recall (recommend forward action)"
-    # via the .ccanvil/state/last-compact-ts marker written by the PreCompact
-    # hook. Marker >= stasis.last_updated means compact already fired; suggest
-    # forward momentum. Otherwise (no marker, or marker older than stasis) the
-    # stasis is fresh → still time to /compact.
-    local stasis_ts marker_ts
-    stasis_ts=$(echo "$validate_json" | jq -r '.status.stasis.last_updated // empty')
-    local project_root="$(dirname "$docs_dir")"
-    local marker_path="$project_root/.ccanvil/state/last-compact-ts"
-    marker_ts=""
-    if [[ -f "$marker_path" ]]; then
-      # Same whitespace-stripping as cmd_status — defends against a marker
-      # file that accidentally picked up extra whitespace or a double-write
-      # race that appended a second line.
-      marker_ts=$(tr -d '[:space:]' < "$marker_path" 2>/dev/null || echo "")
-    fi
-
-    if [[ -n "$marker_ts" && "$marker_ts" =~ ^[0-9]+$ \
-          && -n "$stasis_ts" && "$stasis_ts" =~ ^[0-9]+$ \
-          && "$marker_ts" -ge "$stasis_ts" ]]; then
-      # Compact already happened — surface forward action.
-      # Prefer /idea triage when there's untriaged work; else /radar.
-      local triage_count
-      triage_count=$(cmd_idea_count "$project_root" 2>/dev/null | jq -r '.triage // 0' 2>/dev/null || echo 0)
-      if [[ -n "$triage_count" && "$triage_count" -gt 0 ]]; then
-        next_action="$triage_count untriaged ideas — run /idea triage"
-        reason="Compact already ran. Triage outstanding ideas before starting next feature."
+  case "$state" in
+    no-active-spec)
+      # Distinguish: Ready specs in backlog vs no specs at all.
+      # Use status output — spec/plan/stasis all absent confirms "no docs"
+      # vs specs/ existing with backlog items.
+      local ready_spec specs_count
+      ready_spec=$(cmd_list_specs "$docs_dir" 2>/dev/null \
+        | jq -r '[.[] | select(.status == "Ready")] | first | .feature_id // empty' 2>/dev/null \
+        || echo "")
+      specs_count=$(cmd_list_specs "$docs_dir" 2>/dev/null \
+        | jq -r 'length // 0' 2>/dev/null \
+        || echo 0)
+      if [[ -n "$ready_spec" ]]; then
+        next_action="Activate a spec: docs-check.sh activate $ready_spec"
+        reason="No active spec. Ready specs available in docs/specs/."
+      elif [[ "$specs_count" -gt 0 ]]; then
+        next_action="Activate a spec: docs-check.sh activate <id>"
+        reason="Specs exist in docs/specs/ but none are activated."
       else
-        next_action="/radar to brief the next feature"
-        reason="Compact already ran. Review project state and start next feature."
+        next_action="Describe a feature"
+        reason="No spec, plan, or stasis found. Start by describing what you want to build."
       fi
-    else
-      next_action="/compact to wrap session"
-      reason="All docs aligned with stasis. Run /compact to preserve context, then start the next feature."
-    fi
+      ;;
 
-  elif [[ "$result" == "aligned" && "$stasis_exists" != "true" ]]; then
-    next_action="Ready to build"
-    reason="Spec and plan are aligned. Start implementing via TDD."
+    spec-activated)
+      next_action="Run /plan"
+      reason="Spec exists but no plan. Create an implementation plan from the spec."
+      ;;
 
-  else
-    next_action="Review docs state"
-    reason="Unexpected state. Run docs-check.sh validate for details."
-  fi
+    plan-written)
+      next_action="Ready to build"
+      reason="Spec and plan are aligned. Start implementing via TDD."
+      ;;
+
+    implementing)
+      # Feature-kind stasis present. /compact is the legal-next-action when
+      # marker is stale (or absent); forward action when marker is fresh.
+      local first_action_imp
+      first_action_imp=$(echo "$envelope" | jq -r '.legal_next_actions[0].action // ""')
+      if [[ "$first_action_imp" == "/compact" ]]; then
+        next_action="/compact to wrap session"
+        reason="All docs aligned with stasis. Run /compact to preserve context, then start the next feature."
+      else
+        next_action="Ready to build"
+        reason="Spec and plan are aligned. Start implementing via TDD."
+      fi
+      ;;
+
+    session-wrap)
+      # Use the envelope's first legal action to determine pre- vs post-compact:
+      # /compact in legal_next_actions[0] means stasis-fresh; otherwise compact
+      # already fired and we surface forward action.
+      local first_action triage_count
+      first_action=$(echo "$envelope" | jq -r '.legal_next_actions[0].action // ""')
+      if [[ "$first_action" == "/compact" ]]; then
+        next_action="/compact to wrap session"
+        reason="All docs aligned with stasis. Run /compact to preserve context, then start the next feature."
+      else
+        # Post-compact: prefer /idea triage when triage > 0, else /radar.
+        triage_count=$(cmd_idea_count "$project_root" 2>/dev/null | jq -r '.triage // 0' 2>/dev/null || echo 0)
+        if [[ -n "$triage_count" && "$triage_count" -gt 0 ]]; then
+          next_action="$triage_count untriaged ideas — run /idea triage"
+          reason="Compact already ran. Triage outstanding ideas before starting next feature."
+        else
+          next_action="/radar to brief the next feature"
+          reason="Compact already ran. Review project state and start next feature."
+        fi
+      fi
+      ;;
+
+    blocked)
+      # Map specific validate.result values to the established recommend
+      # output strings. The blocker set is small and stable — mismatched,
+      # stale-plan, stale-stasis, unlinked, missing-determinism-review.
+      local validate_json validate_result
+      validate_json=$(cmd_validate "$docs_dir")
+      validate_result=$(echo "$validate_json" | jq -r '.result')
+      case "$validate_result" in
+        unlinked)
+          next_action="Add lifecycle metadata to docs"
+          reason="Documents exist but lack lifecycle metadata (Feature ID). Add metadata to enable validation."
+          ;;
+        mismatched)
+          next_action="Reconcile feature IDs"
+          reason="Documents reference different features. Ensure all docs share the same feature_id."
+          ;;
+        stale-plan)
+          next_action="Re-run /plan"
+          reason="Spec has changed since the plan was written. The plan is out of date."
+          ;;
+        stale-stasis)
+          next_action="Update stasis"
+          reason="Plan has changed since the stasis was written. The stasis is out of date."
+          ;;
+        missing-determinism-review)
+          next_action="Add Determinism Review to stasis"
+          reason="Stasis exists but is missing the required Determinism Review section. Add the section before clearing context."
+          ;;
+        *)
+          next_action="Address blockers"
+          reason=$(echo "$envelope" | jq -r '.blockers | join("; ")')
+          ;;
+      esac
+      ;;
+
+    uninitialized|*)
+      next_action="Review docs state"
+      reason="Unexpected state. Run docs-check.sh validate for details."
+      ;;
+  esac
 
   jq -n \
     --arg next_action "$next_action" \
@@ -3751,9 +3772,12 @@ cmd_lifecycle_state() {
     esac
   done
 
-  # AC-9: uninitialized — missing .ccanvil/scripts/ or not inside a git repo.
-  if [[ ! -d "$project_dir/.ccanvil/scripts" || ! -d "$project_dir/.git" ]]; then
-    jq -n --arg err "not a ccanvil project (.ccanvil/scripts/ or .git/ missing)" \
+  # AC-9: uninitialized — not a ccanvil project (no .ccanvil/ root).
+  # Requiring .git/ is too strict — recommend test fixtures and bare project
+  # roots may not initialize git. The .ccanvil/ presence is the canonical
+  # ccanvil marker; AC-9 fixtures use /tmp paths with neither.
+  if [[ ! -d "$project_dir/.ccanvil" ]]; then
+    jq -n --arg err "not a ccanvil project (.ccanvil/ missing)" \
       '{state:"uninitialized", legal_next_actions:[], blockers:[], suggestions:[], error:$err}'
     return 2
   fi
@@ -3829,12 +3853,31 @@ cmd_lifecycle_state() {
         {action:"/plan", command:"/plan", reason:"draft implementation plan from active spec"}
       ]')
       ;;
-    plan-written|implementing)
+    plan-written)
       actions=$(jq -n '[
         {action:"implement", command:"TDD red → green → refactor → commit", reason:"execute plan steps"},
         {action:"/pr", command:"/pr", reason:"finalize and mark PR ready"},
         {action:"/stasis", command:"/stasis", reason:"snapshot session progress before context reset"}
       ]')
+      ;;
+    implementing)
+      # Feature-kind stasis present → session boundary mid-feature.
+      # When marker is fresh (compact already ran) prefer forward action;
+      # otherwise /compact is the next move (matches cmd_recommend's BTS-113
+      # forward-momentum logic).
+      if $compact_fresh; then
+        actions=$(jq -n '[
+          {action:"/radar", command:"/radar", reason:"orient on next feature (compact already ran)"},
+          {action:"implement", command:"TDD red → green → refactor → commit", reason:"continue plan steps"},
+          {action:"/pr", command:"/pr", reason:"finalize and mark PR ready"}
+        ]')
+      else
+        actions=$(jq -n '[
+          {action:"/compact", command:"/compact", reason:"all docs aligned with stasis — preserve context, then start the next feature"},
+          {action:"/pr", command:"/pr", reason:"finalize and mark PR ready"},
+          {action:"implement", command:"TDD red → green → refactor → commit", reason:"continue plan steps"}
+        ]')
+      fi
       ;;
     session-wrap)
       if $compact_fresh; then

@@ -9,17 +9,11 @@ Run at the end of a session, immediately before `/compact`. Writes `docs/stasis.
 
 ## Pre-flight halt check
 
-1. Run `bash .ccanvil/scripts/docs-check.sh validate` and read the `.result` field.
-   - **Benign states — continue:**
-     - `aligned` — mid-feature, lifecycle clean
-     - `missing-determinism-review` — stasis will populate the required section
-     - `no-active-spec` — between features (specs/ has backlog items, none active)
-     - `no docs` / missing spec+plan+stasis entirely — fresh session before any feature
-   - **Corruption states — STOP and surface the failure:**
-     - `stale-plan` — spec changed after plan was written
-     - `mismatched` — feature_ids disagree across docs
-     - `unlinked` — docs exist but have no lifecycle metadata
-   - Do not write a clean stasis snapshot on top of a broken lifecycle. If halting, report the validate output and ask the user to fix the lifecycle state first.
+1. **BTS-20: lifecycle-state pre-flight.** Run `bash .ccanvil/scripts/docs-check.sh lifecycle-state --project-dir .` and read `.state` from the envelope.
+   - **Benign states — continue:** `no-active-spec`, `spec-activated`, `plan-written`, `implementing`, `session-wrap`. (Stasis is legal across all in-flight feature states; on `session-wrap` it's mid-stasis, idempotent.)
+   - **Corruption state — STOP and surface the failure:** `blocked`. The envelope's `.blockers[]` array carries the specific causes (`stale-plan`, `mismatched`, `unlinked`, etc — the validate detail strings the primitive composes from). Report the blockers verbatim and ask the user to fix the lifecycle state first.
+   - **Edge state — STOP:** `uninitialized` (not a ccanvil tree).
+   - Do not write a clean stasis snapshot on top of a broken lifecycle. The envelope's blockers ARE the recovery checklist.
 
 ## Data gathering (deterministic)
 

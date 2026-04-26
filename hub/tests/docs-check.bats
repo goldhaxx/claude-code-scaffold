@@ -12,11 +12,16 @@ SCRIPT="$BATS_TEST_DIRNAME/../../.ccanvil/scripts/docs-check.sh"
 
 setup() {
   export TMPDIR="${BATS_TEST_TMPDIR}"
-  DOCS=$(mktemp -d)
+  # BTS-20: cmd_recommend now delegates state derivation to cmd_lifecycle_state,
+  # which requires .ccanvil/ at the project root (dirname of docs_dir). Restructure
+  # the fixture so DOCS is a child of a ccanvil-shaped project root.
+  PROJECT=$(mktemp -d)
+  DOCS="$PROJECT/docs"
+  mkdir -p "$DOCS" "$PROJECT/.ccanvil"
 }
 
 teardown() {
-  rm -rf "$DOCS"
+  ALLOW_DESTRUCTIVE=1 rm -rf "$PROJECT"
 }
 
 # ---------------------------------------------------------------------------

@@ -2,6 +2,7 @@ Create an implementation plan for the feature described in the user's message (o
 
 ## Steps
 
+0. **BTS-20: lifecycle-state pre-flight.** Run `bash .ccanvil/scripts/docs-check.sh lifecycle-state --project-dir .` and read `.state`. /plan is legal only when state is `spec-activated` (drafting first plan) or `plan-written` (re-planning after spec edit). On any other state — `no-active-spec`, `session-wrap`, `blocked`, `uninitialized` — STOP with the envelope's `.blockers[]` (when populated) or a clear message naming the current state and the legal entry conditions. This fails fast instead of /plan reading `docs/spec.md` silently and erroring late on missing content.
 1. Read `.ccanvil/templates/plan.md` for the plan format guide.
 2. If `docs/spec.md` has content (not just the placeholder comment), read it for acceptance criteria.
 3. Extract the `feature_id` from spec.md's metadata (the `> Feature:` line).

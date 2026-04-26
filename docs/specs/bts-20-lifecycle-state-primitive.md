@@ -7,9 +7,9 @@
 
 ## Summary
 
-The implicit lifecycle state machine — Draft → Activated → Plan → Implement → PR → Land → Session-wrap — lives today in skill prose and a partially-overlapping pair of `docs-check.sh` commands (`validate` + `recommend`). Each consumer (skills `/recall`, `/plan`, `/pr`, `/stasis`, `/spec`) re-parses validate output independently. This ship introduces a unified `lifecycle-state` substrate primitive that emits a structured envelope `{state, legal_next_actions[], blockers[], suggestions[]}` consumed via one resolver call. The transition graph lives as data in `.ccanvil/templates/lifecycle-graph.json` instead of scattered prose.
+The implicit lifecycle state machine — Draft → Activated → Plan → Implement → PR → Land → Session-wrap — lives today in skill prose and a partially-overlapping pair of `docs-check.sh` commands (`validate` + `recommend`). Each consumer (skills `/recall`, `/pr`, `/stasis`, `/spec`) re-parses validate output independently. This ship introduces a unified `lifecycle-state` substrate primitive that emits a structured envelope `{state, legal_next_actions[], blockers[], suggestions[]}` consumed via one resolver call. The transition graph lives as data in `.ccanvil/templates/lifecycle-graph.json` instead of scattered prose.
 
-This is **Session-1** of a multi-session ship: primitive design + transition-graph data + `/recall` migration as the proof-point consumer. Session-2/3 migrate `/plan`, `/pr`, `/stasis`. Sessions are explicitly bounded so each lands as a complete substrate ship.
+**Single ship covering full migration:** primitive + transition-graph data + ALL state-parse consumers migrated (`/recall`, `/pr`, `/stasis`, `/spec`) + `/plan` pre-flight gate added + `cmd_recommend` refactored to delegate to the primitive. (Earlier draft scoped this as multi-session; expanded per substrate-mature judgment — drift-guards catch regressions across all migrations in one ship.)
 
 ## Job To Be Done
 
@@ -29,6 +29,12 @@ This is **Session-1** of a multi-session ship: primitive design + transition-gra
 - [ ] **AC-8:** Recall's briefing surfaces the new envelope: shows current `state`, lists `legal_next_actions[]` (titles + commands), and includes blockers when present. Drift-guard greps recall prose for the literal phrase `legal next actions`.
 - [ ] **AC-9:** Edge: when `lifecycle-state` is invoked outside a git repo or in a non-ccanvil project, exit code is 2 with a JSON error envelope `{error: "...", state: "uninitialized"}`. Drift-guard runs against `/tmp` fixture.
 - [ ] **AC-10:** Tests land in `hub/tests/lifecycle-state.bats` with ≥9 cases (one per AC-1..AC-9) plus drift-guards for the recall migration in `hub/tests/recall-skill.bats` (or new `recall-lifecycle-migration.bats` if no recall test file exists).
+- [ ] **AC-11:** `/pr` skill (`.claude/commands/pr.md`) consumes `lifecycle-state` instead of separate `validate` call. `pr-guard` continues to run separately for behind-base check (different concern). Drift-guard greps for `lifecycle-state` and asserts no separate `docs-check.sh validate` call.
+- [ ] **AC-12:** `/stasis` skill consumes `lifecycle-state` for pre-flight halt-check (replaces the separate `validate` call at step 1). On `state == "blocked"`, halt and surface the envelope's `blockers[]`. Drift-guard.
+- [ ] **AC-13:** `/spec` skill consumes `lifecycle-state` for the "active spec exists?" check (step 4). Refuses spec creation when state is `spec-activated`, `plan-written`, or `implementing` — operator must `/pr` and `/land` (or revert) first. Drift-guard.
+- [ ] **AC-14:** `/plan` skill (`.claude/commands/plan.md`) gains an explicit pre-flight: refuses to plan when `lifecycle-state.state` is not `spec-activated` or `plan-written`. Today /plan reads `docs/spec.md` silently and fails late on missing content; the new gate fails fast. Drift-guard.
+- [ ] **AC-15:** `cmd_recommend` refactored to delegate state derivation to `cmd_lifecycle_state`. New shape: cmd_recommend emits `{next_action, reason}` from the first entry of the envelope's `legal_next_actions[]`. Output schema unchanged for existing callers. Drift-guard validates the existing `recommend` output JSON shape against the new implementation.
+- [ ] **AC-16:** All 1594 baseline tests still pass post-refactor; no regression in `recommend-freshness.bats`, `feature-lifecycle.bats`, `auto-transition-emit.bats`, or any other lifecycle-touching suite.
 
 ## Affected Files
 
@@ -49,12 +55,15 @@ This is **Session-1** of a multi-session ship: primitive design + transition-gra
 
 ## Out of Scope
 
-- **Migrating `/plan`, `/pr`, `/stasis`, `/spec`.** Session-2/3 work — each migration is its own ship with its own drift-guards.
-- **Pre-flight gap audit.** Stasis flagged "does plan block if no spec? does activate block on dirty tree? does idea-triage warn on just-captured ideas?" — separate ticket; this ship only codifies what's already enforced, doesn't add new gates.
+- **Migrating `/plan` to consume the envelope's state.** /plan reads `status` for `spec.content_hash` (a metadata fetch, not a state-parse). Lifecycle-state doesn't surface content hashes. /plan instead gains a pre-flight gate (AC-14) that uses lifecycle-state to refuse planning outside legal states; its hash read stays unchanged.
+- **Activate dirty-tree pre-flight gate.** `cmd_activate` already enforces this (`docs-check.sh` lines 911-931 — exits with "ERROR: worktree has uncommitted changes" if non-spec files are dirty). Pre-flight gap closed before this ship.
+- **`/idea triage` just-captured warning.** Separate ideas-substrate concern, not state-machine.
+- **SSOT-Linear (specs/plans/stasis stored in Linear ticket bodies).** Future major effort — own session. Two history-loss tensions to resolve in its spec session: (a) git-tracked spec evolution; (b) lifecycle docs backup/access regime. See memory `project_ssot_history_tensions.md`.
 - **Always-on orchestrator service.** Original BTS-20 scope; deferred (launchd `claude -p` pattern is sufficient).
 - **Multi-agent / multi-terminal coordination.** Original BTS-20 scope; not at single-user scale.
-- **Cross-node lifecycle coordination.** Lives in `ccanvil-sync.sh`, not the engine.
-- **Refactoring `cmd_validate` or `cmd_recommend` internals.** The new primitive consumes their output; it does NOT subsume them. They remain callable for backwards-compat.
+- **Cross-node lifecycle coordination.** Lives in `ccanvil-sync.sh`.
+- **`pr-open` / `pr-merged` state detection.** In the graph but not emitted (would require a `gh` subprocess). `/pr` and `/land` aren't gated on these states today; deferred.
+- **Refactoring `cmd_validate` internals.** Validate stays as the alignment checker that lifecycle-state composes. Refactoring it would multiply blast radius beyond this ship.
 
 ## Implementation Notes
 
