@@ -132,6 +132,63 @@ EOF
 
 
 # =========================================================================
+# AC-4 / AC-10: matched_hooks heuristic scan
+# =========================================================================
+
+@test "AC-4: matched_hooks for Bash(chmod:*) finds guard-destructive.sh" {
+  set -e
+  cat > "$FIXTURE/settings.json" <<'EOF'
+{ "permissions": { "allow": ["Bash(chmod:*)"] } }
+EOF
+  # The hooks dir lives at .claude/hooks/ in the repo; entry-context scans it
+  # relative to the workspace, not the fixture. Verify guard-destructive.sh is
+  # picked up by the leading-verb scan for chmod.
+  cd "$BATS_TEST_DIRNAME/../.."
+  run bash "$SCRIPT" entry-context "Bash(chmod:*)" --settings-dir "$FIXTURE"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '.matched_hooks | length > 0'
+  echo "$output" | jq -e '[.matched_hooks[].path] | any(. | endswith("guard-destructive.sh"))'
+}
+
+@test "AC-4: matched_hooks entry has path and lines fields" {
+  set -e
+  cat > "$FIXTURE/settings.json" <<'EOF'
+{ "permissions": { "allow": ["Bash(chmod:*)"] } }
+EOF
+  cd "$BATS_TEST_DIRNAME/../.."
+  run bash "$SCRIPT" entry-context "Bash(chmod:*)" --settings-dir "$FIXTURE"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '.matched_hooks[0] | has("path") and has("lines")'
+  echo "$output" | jq -e '.matched_hooks[0].lines | length == 2'
+  echo "$output" | jq -e '.matched_hooks[0].lines[0] | type == "number"'
+  echo "$output" | jq -e '.matched_hooks[0].lines[1] | type == "number"'
+}
+
+@test "AC-4: matched_hooks empty for Bash(echo:*) — no leading-verb match" {
+  set -e
+  cat > "$FIXTURE/settings.json" <<'EOF'
+{ "permissions": { "allow": ["Bash(echo:*)"] } }
+EOF
+  cd "$BATS_TEST_DIRNAME/../.."
+  run bash "$SCRIPT" entry-context "Bash(echo:*)" --settings-dir "$FIXTURE"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '.matched_hooks == []'
+}
+
+@test "AC-10: matched_hooks empty when .claude/hooks/ is missing" {
+  set -e
+  # Run from a workspace that has no .claude/hooks/ dir — fixture itself.
+  cat > "$FIXTURE/settings.json" <<'EOF'
+{ "permissions": { "allow": ["Bash(chmod:*)"] } }
+EOF
+  cd "$FIXTURE"
+  run bash "$SCRIPT" entry-context "Bash(chmod:*)" --settings-dir "$FIXTURE"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '.matched_hooks == []'
+}
+
+
+# =========================================================================
 # AC-6: positional arg required → exit 2 with specific error on stderr
 # =========================================================================
 

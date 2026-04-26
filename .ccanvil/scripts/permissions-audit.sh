@@ -857,6 +857,61 @@ cmd_decision_append() {
 # BTS-161: entry-context — deterministic per-row context for /permissions-review
 # ---------------------------------------------------------------------------
 
+extract_leading_verb() {
+  # Bash(...) → strip wrapper → drop leading <NAME=val> env-prefix tokens →
+  # take first whitespace-separated token → strip trailing :*.
+  local inner="$1"
+  # Drop leading env assignments like "ALLOW_DESTRUCTIVE=1 chmod:* …"
+  while [[ "$inner" =~ ^[A-Z_][A-Z0-9_]*=[^[:space:]]+[[:space:]]+ ]]; do
+    inner="${inner#${BASH_REMATCH[0]}}"
+  done
+  local verb="${inner%%[[:space:]]*}"
+  verb="${verb%:*}"
+  echo "$verb"
+}
+
+scan_hooks_for_verb() {
+  local verb="$1"
+  local hooks_dir="${2:-.claude/hooks}"
+  if [[ -z "$verb" || ! -d "$hooks_dir" ]]; then
+    echo '[]'
+    return
+  fi
+  # Verb's character set might be regex-special — use grep -F is wrong (we want
+  # word boundaries). Use grep -nE with word boundary anchors. Skip echo and
+  # comment lines so noise like `echo "BLOCKED: chmod ..."` doesn't count.
+  local accum='[]'
+  local f
+  for f in "$hooks_dir"/*.sh; do
+    [[ -f "$f" ]] || continue
+    local matches
+    # \bVERB\b matches the verb as a whole word. Keep only lines that ALSO
+    # contain a gate-relevant operator: =~ (regex), case/*) (case branch), or
+    # a regex variable definition with |. Skip comments. This filters out pure
+    # invocations like `INPUT=$(echo ...)` while keeping the actual gating
+    # regexes like `=~ (rm|chmod|chown|...)`.
+    matches=$(grep -nE "\b${verb}\b" "$f" 2>/dev/null \
+      | awk -F: '
+        {
+          line = $1
+          $1 = ""
+          text = $0
+          if (text ~ /^[[:space:]]*#/) next
+          if (text ~ /=~/ || text ~ /[[:space:]]case[[:space:]]/ || text ~ /\*\)/) {
+            print line
+          }
+        }')
+    if [[ -n "$matches" ]]; then
+      local first last
+      first=$(echo "$matches" | head -1)
+      last=$(echo "$matches" | tail -1)
+      accum=$(echo "$accum" | jq --arg p "$f" --argjson lo "$first" --argjson hi "$last" \
+        '. + [{path:$p, lines:[$lo, $hi]}]')
+    fi
+  done
+  echo "$accum"
+}
+
 cmd_entry_context() {
   if [[ -z "$ENTRY_CONTEXT_PERM" ]]; then
     echo "ERROR: entry-context requires a permission argument" >&2
@@ -889,8 +944,17 @@ cmd_entry_context() {
     fi
   fi
 
-  jq -n --arg permission "$perm" --argjson sf "$source_files" --argjson mp "$matched_pattern_arg" \
-    '{permission:$permission, source_files:$sf, matched_pattern:$mp, matched_hooks:[], introduced_in:null}'
+  # matched_hooks: leading-verb scan against .claude/hooks/*.sh.
+  local matched_hooks='[]'
+  if [[ "$perm" == Bash\(* ]]; then
+    local inner verb
+    inner=$(strip_bash_wrapper "$perm")
+    verb=$(extract_leading_verb "$inner")
+    matched_hooks=$(scan_hooks_for_verb "$verb")
+  fi
+
+  jq -n --arg permission "$perm" --argjson sf "$source_files" --argjson mp "$matched_pattern_arg" --argjson mh "$matched_hooks" \
+    '{permission:$permission, source_files:$sf, matched_pattern:$mp, matched_hooks:$mh, introduced_in:null}'
 }
 
 # ---------------------------------------------------------------------------
