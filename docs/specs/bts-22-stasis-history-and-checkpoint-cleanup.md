@@ -3,7 +3,7 @@
 > Feature: bts-22-stasis-history-and-checkpoint-cleanup
 > Work: linear:BTS-22
 > Created: 1777220407
-> Status: In Progress
+> Status: Complete
 
 ## Summary
 
