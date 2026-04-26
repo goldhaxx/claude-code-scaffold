@@ -99,6 +99,8 @@ flowchart TD
 
 **Why TDD matters here:** Without tests, Claude's only verification is its own judgment — which degrades as context fills. At 80% accuracy per decision, 20 sequential decisions yield 1.2% overall success. Tests provide ground truth that survives context compaction and session resets.
 
+**Live-API validation gate (BTS-171):** when a plan step flags a live-API contract risk ("if the live API rejects, adjust", "exact filter shape may not work", etc.), the implementation must run one live call against the risky endpoint and confirm success BEFORE commit and BEFORE `/review`. Stubs accept any shape; only live calls verify contract. See `.claude/rules/tdd.md#live-api-validation-gate`.
+
 ## Closing the feature (merge → auto-complete)
 
 `/pr → merge → docs-check.sh land` transitions the spec archive to `Complete` automatically. No manual `docs-check.sh complete <id>` is needed in the normal flow.

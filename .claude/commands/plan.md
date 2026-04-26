@@ -14,6 +14,8 @@ Create an implementation plan for the feature described in the user's message (o
 5. Each step should be small enough to complete in one TDD cycle (~5-15 minutes).
 6. Order steps so each builds on the previous — earlier steps establish foundations, later steps add features.
 
+6a. **Live-API validation gate (BTS-171).** If any plan step flags a live-API contract uncertainty — phrasings like `live API`, `live endpoint`, `exact filter shape`, `may not work`, `if the live API rejects`, `verify against live`, or equivalent — explicitly enumerate the live command that proves the contract and require its execution BEFORE the implementation step is considered complete (i.e., before commit and before `/review`). Stubs accept any shape; only live calls verify contract. See `.claude/rules/tdd.md#live-api-validation-gate` for the rule and prior incidents (BTS-115, BTS-170).
+
 7. If any step adds, removes, or modifies preset infrastructure (commands, rules, agents, skills, hooks, scripts, or sync behavior), add a final step to update documentation. Read these files only when this step applies:
    - **Hub-wide changes** (modifying hub-shared files): update the relevant file in `.ccanvil/guide/` (hub section, above `<!-- NODE-SPECIFIC-START -->`). If conventions or "do not" rules changed, update the hub section of `CLAUDE.md` (below `<!-- HUB-MANAGED-START -->`).
    - **Local-only changes** (adding project-specific commands, rules, agents): update the node-specific section of the relevant `.ccanvil/guide/` file (below `<!-- NODE-SPECIFIC-START -->`). If the project's tech stack, commands, or architecture changed, update the node section of `CLAUDE.md` (above `<!-- HUB-MANAGED-START -->`).

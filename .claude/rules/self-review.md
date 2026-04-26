@@ -12,6 +12,8 @@ Flag an operation if ALL of these are true:
 3. A script command, hook, or improved output format could replace it
 4. It consumed meaningful context (more than a trivial one-liner)
 
+Also flag (BTS-171): a plan-flagged live-API contract risk where the implementer skipped live-validation before commit. This is a rule/skill candidate, not a script-replacement candidate — the fix lives in `.claude/rules/tdd.md` and the `/plan` skill prose, not in a new shell command.
+
 ## What to Write
 
 Fill the `## Determinism Review` section in `docs/stasis.md` with:

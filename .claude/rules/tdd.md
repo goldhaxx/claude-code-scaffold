@@ -9,6 +9,14 @@ When implementing any feature or fix:
 3. **REFACTOR:** With all tests green, improve code quality. Do not add behavior.
 4. **REPEAT:** Move to the next acceptance criterion.
 
+## Live-API validation gate
+
+When a plan step flags a live-API contract risk — phrasings like *"if the live API rejects, adjust"*, *"the exact filter shape may not work"*, *"verify against live"*, or any equivalent admission of contract uncertainty — the implementation MUST run one live call against the risky endpoint and confirm success BEFORE committing AND BEFORE running `/review`. Stubs accept any shape; only the live API verifies the contract.
+
+**Why:** stub-only tests have shipped contract bugs into commits twice in the recent backlog (BTS-115 dual-capture missed a workspace-scoped label; BTS-170 used `{team:{null:{eq:true}}}` where the live API required `{team:{null:true}}`). Each incident burned an extra `/review`-cycle to surface what one live call would have caught. The cycle "stub-pass → commit → /review-flags → live-test-fails → fix → recommit" is 2× the cost of "live-test-first → commit-once."
+
+**How to apply:** when reading a plan, scan for the risk-language phrasings above. Treat any match as a BLOCKING gate at the implementation step — run the live command, capture its output, only then commit. The check is one command, takes <5 seconds, and prevents a known-class of bug. Doesn't apply to pure-prose, gitignore, or doc-only diffs.
+
 ## Test Structure
 
 - Name test files to mirror source: `src/services/auth.ts` → `src/__tests__/services/auth.test.ts`
