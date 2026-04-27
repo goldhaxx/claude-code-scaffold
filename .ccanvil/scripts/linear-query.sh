@@ -852,6 +852,7 @@ cmd_list_documents() {
   _require_api_key
   local project_id="" issue_id="" initiative_id=""
   local limit="50"
+  local with_content=0
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -859,6 +860,7 @@ cmd_list_documents() {
       --issue)          issue_id="$2";      shift 2 ;;
       --initiative)     initiative_id="$2"; shift 2 ;;
       --limit)          limit="$2";         shift 2 ;;
+      --with-content)   with_content=1;     shift ;;
       *) _die 2 "list-documents: unknown flag: $1" ;;
     esac
   done
@@ -877,19 +879,40 @@ cmd_list_documents() {
   local variables
   variables=$(jq -n --argjson f "$filter" --argjson l "$limit" '{filter:$f, first:$l}')
 
-  local query='query ($filter: DocumentFilter, $first: Int) {
-    documents(filter: $filter, first: $first) {
-      nodes { id title slugId updatedAt createdAt }
-    }
-  }'
+  # BTS-214: --with-content flag includes the markdown body in the projection.
+  # Used by _complete_archive_linear to batch-read all 3 lifecycle Documents
+  # in one call (replaces 3 sequential get-document calls).
+  local query projection
+  if [[ $with_content -eq 1 ]]; then
+    query='query ($filter: DocumentFilter, $first: Int) {
+      documents(filter: $filter, first: $first) {
+        nodes { id title content slugId updatedAt createdAt }
+      }
+    }'
+    projection='[.documents.nodes[] | {
+      id: .id,
+      title: .title,
+      content: .content,
+      slugId: .slugId,
+      updatedAt: .updatedAt,
+      createdAt: .createdAt
+    }]'
+  else
+    query='query ($filter: DocumentFilter, $first: Int) {
+      documents(filter: $filter, first: $first) {
+        nodes { id title slugId updatedAt createdAt }
+      }
+    }'
+    projection='[.documents.nodes[] | {
+      id: .id,
+      title: .title,
+      slugId: .slugId,
+      updatedAt: .updatedAt,
+      createdAt: .createdAt
+    }]'
+  fi
 
-  _post_graphql "$query" "$variables" | jq '[.documents.nodes[] | {
-    id: .id,
-    title: .title,
-    slugId: .slugId,
-    updatedAt: .updatedAt,
-    createdAt: .createdAt
-  }]'
+  _post_graphql "$query" "$variables" | jq "$projection"
 }
 
 cmd_document_history() {

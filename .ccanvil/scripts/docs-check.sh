@@ -3960,27 +3960,94 @@ _complete_archive_linear() {
   sessions_dir="$project_dir/docs/sessions"
   mkdir -p "$sessions_dir"
 
+  # BTS-214: batch-read all lifecycle Documents parented to the issue in
+  # ONE list-documents call (was 3 sequential get-document calls). Trashes
+  # stay serial — Linear's GraphQL doesn't expose mutation batching, and
+  # `DocumentFilter.id.in` is also not supported (live-validated against
+  # api.linear.app — Linear's filter shape rejects the `in` modifier on
+  # id), so the parent-issue lookup is the cheapest valid filter route.
+  # Net: 1 get-issue + 1 list-documents + N trashes (5 calls when all 3
+  # kinds present), down from the legacy 3 get-document + 3 trash (6).
+
+  # Phase 1: per-kind plan. Compute the expected Document UUID + the
+  # output archive destination for every kind whose route is `linear`.
+  local -a planned_kinds=() planned_ids=() planned_dests=()
   local kind
   for kind in spec plan stasis; do
     local route
     route=$(_lifecycle_route "$kind" "$project_dir")
     [[ "$route" != "linear" ]] && continue
-
-    local resolve_kind ticket
+    local resolve_kind
     case "$kind" in
-      spec)   resolve_kind="spec";          ticket="$feature_id" ;;
-      plan)   resolve_kind="plan";          ticket="$feature_id" ;;
-      stasis) resolve_kind="feature-stasis"; ticket="$feature_id" ;;
+      spec)   resolve_kind="spec" ;;
+      plan)   resolve_kind="plan" ;;
+      stasis) resolve_kind="feature-stasis" ;;
     esac
-    local doc_id content
-    doc_id=$(bash "$script_dir/linear-query.sh" resolve-document-id --kind "$resolve_kind" --ticket "$ticket")
-    content=$(bash "$script_dir/linear-query.sh" get-document "$doc_id" 2>/dev/null | jq -r '.content // empty')
-    if [[ -n "$content" ]]; then
-      local dest="$sessions_dir/${epoch}-${feature_id}-${kind}.md"
-      printf '%s\n' "$content" > "$dest"
-      bash "$script_dir/linear-query.sh" trash-document "$doc_id" >/dev/null 2>&1 || true
-      echo "Archived ${kind} → $dest" >&2
+    local expected_id
+    expected_id=$(bash "$script_dir/linear-query.sh" resolve-document-id --kind "$resolve_kind" --ticket "$feature_id")
+    [[ -z "$expected_id" ]] && continue
+    planned_kinds+=("$kind")
+    planned_ids+=("$expected_id")
+    planned_dests+=("$sessions_dir/${epoch}-${feature_id}-${kind}.md")
+  done
+
+  # No kinds linear-routed → nothing to archive.
+  [[ ${#planned_ids[@]} -eq 0 ]] && return 0
+
+  # Phase 2: resolve issue UUID, then one batch-read of all Documents
+  # parented to that issue. Filter the response to the planned-id set.
+  # The script runs under `set -euo pipefail`, so the get-issue pipeline
+  # must be wrapped in `if` form to allow non-zero exit (Linear error)
+  # to fall through to the WARN path without killing cmd_complete.
+  local issue_uuid="" issue_response=""
+  if issue_response=$(bash "$script_dir/linear-query.sh" get-issue "$feature_id" 2>/dev/null); then
+    issue_uuid=$(printf '%s' "$issue_response" | jq -r '.uuid // empty')
+  fi
+  if [[ -z "$issue_uuid" ]]; then
+    echo "WARN: archive step skipped — could not resolve issue UUID for $feature_id" >&2
+    return 0
+  fi
+
+  local docs_json list_limit=50
+  if ! docs_json=$(bash "$script_dir/linear-query.sh" list-documents --issue "$issue_uuid" --with-content --limit "$list_limit" 2>/dev/null); then
+    echo "WARN: archive step skipped — list-documents failed for $feature_id" >&2
+    return 0
+  fi
+
+  # /review WARN-2: silent-truncation guard. ccanvil currently parents at
+  # most 3 Documents per issue (spec/plan/feature-stasis), but if a future
+  # lifecycle kind pushes past `list_limit`, we'd silently miss the
+  # overflow. Surface a WARN at zero API cost — no pagination logic
+  # needed today.
+  local doc_count
+  doc_count=$(printf '%s' "$docs_json" | jq 'length')
+  if [[ "$doc_count" -ge "$list_limit" ]]; then
+    echo "WARN: list-documents returned $doc_count results (limit=$list_limit) — possible truncation; some Documents may not be archived" >&2
+  fi
+
+  # Phase 3: archive + trash each present Document. Match by id-equality
+  # against the planned UUID (NOT title prefix — robust to title renames).
+  # /review WARN-1: separate archive (content-gated) from trash (match-gated).
+  # If the Document was created with empty content (e.g. operator cleared
+  # the body in Linear before /complete), we still trash it — otherwise it
+  # leaks as a "zombie Document" in Linear's project. Legacy behavior
+  # silently left those alive; this fix closes that latent class of bug.
+  local i=0
+  while [[ $i -lt ${#planned_kinds[@]} ]]; do
+    local k="${planned_kinds[$i]}" id="${planned_ids[$i]}" dest="${planned_dests[$i]}"
+    local node content
+    node=$(printf '%s' "$docs_json" | jq --arg id "$id" '[.[] | select(.id == $id)] | .[0] // empty')
+    if [[ -n "$node" && "$node" != "null" ]]; then
+      content=$(printf '%s' "$node" | jq -r '.content // empty')
+      if [[ -n "$content" ]]; then
+        printf '%s\n' "$content" > "$dest"
+        echo "Archived ${k} → $dest" >&2
+      else
+        echo "Archive: skipped ${k} write — Document had empty content; trashing anyway" >&2
+      fi
+      bash "$script_dir/linear-query.sh" trash-document "$id" >/dev/null 2>&1 || true
     fi
+    i=$((i + 1))
   done
 }
 
