@@ -3817,6 +3817,102 @@ cmd_evidence_scan_session() {
 # pr-open / pr-merged states exist in the graph but are not emitted yet
 # (deferred to Session-2 — would require a gh subprocess for detection).
 # ---------------------------------------------------------------------------
+# BTS-204 Step 8: storage-abstraction helpers for lifecycle-state.
+# When routing.<kind> is "linear", artifact presence is determined by
+# Linear (Document existence at the deterministic uuid5), not filesystem.
+
+# _lifecycle_route — read integrations.routing.<kind> from merged config.
+# Returns "linear" or "local". Defaults to "local" when key absent.
+_lifecycle_route() {
+  local kind="$1" project_dir="${2:-.}"
+  local hub_file="$project_dir/.claude/ccanvil.json"
+  local local_file="$project_dir/.claude/ccanvil.local.json"
+  local route="local"
+  for f in "$hub_file" "$local_file"; do
+    if [[ -f "$f" ]]; then
+      local r
+      r=$(jq -r --arg k "$kind" '.integrations.routing[$k] // empty' "$f" 2>/dev/null)
+      [[ -n "$r" ]] && route="$r"
+    fi
+  done
+  echo "$route"
+}
+
+# _has_any_linear_route — quick fast-path check. Returns "true" iff at least
+# one of spec/plan/stasis routes to linear in the merged config. Used to
+# skip ALL Linear querying on pure-local nodes (preserves existing behavior
+# byte-for-byte; no network calls, no auth probing, no env-var sniffing).
+_has_any_linear_route() {
+  local project_dir="${1:-.}"
+  local kind
+  for kind in spec plan stasis; do
+    if [[ "$(_lifecycle_route "$kind" "$project_dir")" == "linear" ]]; then
+      echo "true"
+      return 0
+    fi
+  done
+  echo "false"
+}
+
+# _active_feature_id — derive the active feature id (e.g., "BTS-204") from
+# context. Order of precedence:
+#   1. LIFECYCLE_FEATURE_ID_OVERRIDE env var (test-only path)
+#   2. docs/spec.md `> Work:` metadata (when present, e.g., legacy mid-migration)
+#   3. git branch name (claude/<type>/bts-204-foo → BTS-204)
+# Returns empty string when none resolves.
+_active_feature_id() {
+  local project_dir="${1:-.}"
+  if [[ -n "${LIFECYCLE_FEATURE_ID_OVERRIDE:-}" ]]; then
+    echo "$LIFECYCLE_FEATURE_ID_OVERRIDE"
+    return 0
+  fi
+  if [[ -f "$project_dir/docs/spec.md" ]]; then
+    local work
+    work=$(grep -E '^> Work:' "$project_dir/docs/spec.md" 2>/dev/null | head -1 | sed -E 's/^> Work:[[:space:]]*//; s/^[a-z]+://')
+    if [[ -n "$work" ]]; then
+      echo "$work"
+      return 0
+    fi
+  fi
+  local branch
+  branch=$(git -C "$project_dir" branch --show-current 2>/dev/null) || true
+  if [[ "$branch" == claude/*/* ]]; then
+    local fid="${branch##*/}"
+    if [[ "$fid" =~ ^([a-zA-Z]+-[0-9]+) ]]; then
+      printf '%s\n' "${BASH_REMATCH[1]}" | tr '[:lower:]' '[:upper:]'
+      return 0
+    fi
+  fi
+  echo ""
+}
+
+# _artifact_present_linear — query Linear via document-updated-at to determine
+# if the lifecycle Document for <kind, feature_id> exists. Returns "true" or
+# "false". Network errors, missing API key, or stub-down all map to "false"
+# so the lifecycle stays usable in degraded conditions (Linear-unreachable
+# is reported by other paths — this helper just answers presence).
+_artifact_present_linear() {
+  local kind="$1" feature_id="$2"
+  local resolve_kind
+  case "$kind" in
+    spec)   resolve_kind="spec" ;;
+    plan)   resolve_kind="plan" ;;
+    stasis) resolve_kind="feature-stasis" ;;
+    *)      echo "false"; return 0 ;;
+  esac
+  local script_dir doc_id
+  script_dir="$(dirname "${BASH_SOURCE[0]}")"
+  doc_id=$(bash "$script_dir/linear-query.sh" resolve-document-id --kind "$resolve_kind" --ticket "$feature_id" 2>/dev/null)
+  if [[ -z "$doc_id" ]]; then
+    echo "false"; return 0
+  fi
+  if bash "$script_dir/linear-query.sh" document-updated-at "$doc_id" >/dev/null 2>&1; then
+    echo "true"
+  else
+    echo "false"
+  fi
+}
+
 cmd_lifecycle_state() {
   local project_dir="."
   while [[ $# -gt 0 ]]; do
@@ -3846,6 +3942,28 @@ cmd_lifecycle_state() {
   plan_exists=$(echo "$validate_json" | jq -r '.status.plan.exists')
   stasis_exists=$(echo "$validate_json" | jq -r '.status.stasis.exists')
   stasis_kind=$(echo "$validate_json" | jq -r '.status.stasis.kind // empty')
+
+  # BTS-204 Step 8: when any lifecycle artifact is routed to Linear, override
+  # the filesystem-based exists flags using Linear-side presence checks. The
+  # fast-path skips this entirely on pure-local nodes (zero network cost).
+  if [[ "$(_has_any_linear_route "$project_dir")" == "true" ]]; then
+    local feat
+    feat=$(_active_feature_id "$project_dir")
+    if [[ -n "$feat" ]]; then
+      local kind
+      for kind in spec plan stasis; do
+        if [[ "$(_lifecycle_route "$kind" "$project_dir")" == "linear" ]]; then
+          local present
+          present=$(_artifact_present_linear "$kind" "$feat")
+          case "$kind" in
+            spec)   spec_exists="$present"   ;;
+            plan)   plan_exists="$present"   ;;
+            stasis) stasis_exists="$present" ;;
+          esac
+        fi
+      done
+    fi
+  fi
 
   # post-compact freshness: marker_ts >= stasis.last_updated means compact
   # has run at or after the current stasis was written. Mirrors the marker

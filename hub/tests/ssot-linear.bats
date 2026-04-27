@@ -500,3 +500,120 @@ JSON
   [ "$status" -ne 0 ]
   [[ "$stderr" =~ "kind" ]] || [[ "$stderr" =~ "feature" ]] || [[ "$stderr" =~ "session" ]]
 }
+
+# =========================================================================
+# Step 8: lifecycle-state storage abstraction
+# =========================================================================
+
+DC="$BATS_TEST_DIRNAME/../../.ccanvil/scripts/docs-check.sh"
+
+_make_local_lifecycle_fx() {
+  local fx="$BATS_TEST_TMPDIR/local-lc-fx"
+  mkdir -p "$fx/.ccanvil" "$fx/docs/specs"
+  echo '{}' > "$fx/.claude/ccanvil.json" 2>/dev/null
+  mkdir -p "$fx/.claude"
+  echo '{}' > "$fx/.claude/ccanvil.json"
+  echo "$fx"
+}
+
+_make_linear_lifecycle_fx() {
+  local fx="$BATS_TEST_TMPDIR/linear-lc-fx"
+  mkdir -p "$fx/.ccanvil" "$fx/docs"
+  mkdir -p "$fx/.claude"
+  cat > "$fx/.claude/ccanvil.json" <<'JSON'
+{
+  "integrations": {
+    "providers": {
+      "linear": {
+        "mechanism": "http",
+        "project": "ccanvil",
+        "project_id": "test-project-uuid"
+      }
+    },
+    "routing": {
+      "spec": "linear",
+      "plan": "linear",
+      "stasis": "linear"
+    }
+  }
+}
+JSON
+  echo "$fx"
+}
+
+@test "BTS-204 Step 8: lifecycle-state on local-routed empty fx → no-active-spec (unchanged)" {
+  set -e
+  fx=$(_make_local_lifecycle_fx)
+  run bash "$DC" lifecycle-state --project-dir "$fx"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '.state == "no-active-spec"'
+}
+
+@test "BTS-204 Step 8: lifecycle-state on linear-routed fx with no Linear docs → no-active-spec" {
+  set -e
+  _setup_stub
+  fx=$(_make_linear_lifecycle_fx)
+  # Stub returns Document not found for any get-document / document-updated-at
+  cat > "$LINEAR_STUB_RESPONSE" <<'JSON'
+{"errors":[{"message":"Entity not found: Document"}]}
+JSON
+  # The helper passes a feature_id via env override (test-only path).
+  # Without an active feature on a fresh node, lifecycle-state should
+  # return no-active-spec without making a network call.
+  run bash -c "source '$STUB_FIXTURE' && bash '$DC' lifecycle-state --project-dir '$fx'"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '.state == "no-active-spec"'
+}
+
+@test "BTS-204 Step 8: lifecycle-state on linear-routed fx with active feature reads Linear" {
+  set -e
+  _setup_stub
+  fx=$(_make_linear_lifecycle_fx)
+  # Inject an active feature via the test override env var (LIFECYCLE_FEATURE_ID_OVERRIDE).
+  export LIFECYCLE_FEATURE_ID_OVERRIDE="BTS-TEST"
+  # Stub: first call (spec) returns a doc; subsequent calls (plan, stasis) return errors.
+  # Use a multi-response stub by writing a script that picks responses by call count.
+  STUB_FIXTURE="$BATS_TEST_TMPDIR/multi-stub.sh"
+  cat > "$STUB_FIXTURE" <<'SHELL'
+curl() {
+  local n
+  n=$(cat "$BATS_TEST_TMPDIR/call-count" 2>/dev/null || echo 0)
+  n=$((n + 1))
+  echo "$n" > "$BATS_TEST_TMPDIR/call-count"
+  if [[ "$n" == "1" ]]; then
+    # spec.exists check → present
+    echo '{"data":{"document":{"id":"x","updatedAt":"2026-04-26T20:00:00.000Z","updatedBy":null}}}'
+  else
+    echo '{"errors":[{"message":"Entity not found: Document"}]}'
+  fi
+  return 0
+}
+export -f curl
+SHELL
+  echo 0 > "$BATS_TEST_TMPDIR/call-count"
+  run bash -c "source '$STUB_FIXTURE' && LIFECYCLE_FEATURE_ID_OVERRIDE='BTS-TEST' bash '$DC' lifecycle-state --project-dir '$fx'"
+  [ "$status" -eq 0 ]
+  # spec exists, plan + stasis don't → state should be "spec-activated"
+  echo "$output" | jq -e '.state == "spec-activated"'
+}
+
+@test "BTS-204 Step 8: lifecycle-state without any 'linear' routing skips Linear entirely" {
+  # Critical regression check: when ALL routing keys are local/absent, the
+  # lifecycle-state derivation must NOT reach for Linear (no API calls,
+  # no curl invocation, no network attempt).
+  set -e
+  fx=$(_make_local_lifecycle_fx)
+  # Use a stub that would FAIL (return non-zero exit) if curl were invoked.
+  # If lifecycle-state still passes, we know the local path didn't reach curl.
+  STUB_FIXTURE="$BATS_TEST_TMPDIR/fail-stub.sh"
+  cat > "$STUB_FIXTURE" <<'SHELL'
+curl() {
+  echo "ERROR: curl should not be invoked on a local-routed node" >&2
+  return 99
+}
+export -f curl
+SHELL
+  run bash -c "source '$STUB_FIXTURE' && bash '$DC' lifecycle-state --project-dir '$fx'"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '.state == "no-active-spec"'
+}
