@@ -852,3 +852,137 @@ SHELL
   [ "$status" -eq 0 ]
   echo "$output" | jq -e '.state == "no-active-spec"'
 }
+
+# =========================================================================
+# BTS-213: /spec + activate route-aware dispatch on Linear-routed nodes
+# =========================================================================
+
+@test "BTS-213 Step 4a: route-of spec returns local on local-routed fixture" {
+  set -e
+  fx=$(_make_local_lifecycle_fx)
+  run bash "$DC" route-of spec --project-dir "$fx"
+  [ "$status" -eq 0 ]
+  [ "$output" = "local" ]
+}
+
+@test "BTS-213 Step 4a: route-of spec returns linear on linear-routed fixture" {
+  set -e
+  fx=$(_make_linear_lifecycle_fx)
+  run bash "$DC" route-of spec --project-dir "$fx"
+  [ "$status" -eq 0 ]
+  [ "$output" = "linear" ]
+}
+
+@test "BTS-213 Step 4a: route-of without kind exits 2 with usage" {
+  run --separate-stderr bash "$DC" route-of
+  [ "$status" -eq 2 ]
+  [[ "$stderr" =~ "Usage" ]]
+}
+
+@test "BTS-213 Step 4a: route-of accepts plan and stasis kinds" {
+  set -e
+  fx=$(_make_linear_lifecycle_fx)
+  run bash "$DC" route-of plan --project-dir "$fx"
+  [ "$output" = "linear" ]
+  run bash "$DC" route-of stasis --project-dir "$fx"
+  [ "$output" = "linear" ]
+}
+
+@test "BTS-213 AC-1: /spec SKILL.md prose dispatches via artifact-write --kind spec when route-of=linear" {
+  # Drift-guard: /spec is a skill at .claude/skills/spec/SKILL.md (no commands/spec.md
+  # equivalent today). The skill MUST gate on route-of and dispatch via artifact-write
+  # when linear-routed; otherwise post-/spec lifecycle-state silently mis-reports.
+  grep -qF 'route-of spec' "$BATS_TEST_DIRNAME/../../.claude/skills/spec/SKILL.md"
+  grep -qF 'artifact-write --kind spec' "$BATS_TEST_DIRNAME/../../.claude/skills/spec/SKILL.md"
+}
+
+@test "BTS-213 AC-2/AC-5: route-of spec on local fx never invokes curl" {
+  set -e
+  fx=$(_make_local_lifecycle_fx)
+  STUB_FIXTURE="$BATS_TEST_TMPDIR/fail-stub-213.sh"
+  cat > "$STUB_FIXTURE" <<'SHELL'
+curl() {
+  echo "ERROR: curl invoked on local-routed node" >&2
+  return 99
+}
+export -f curl
+SHELL
+  run bash -c "source '$STUB_FIXTURE' && bash '$DC' route-of spec --project-dir '$fx'"
+  [ "$status" -eq 0 ]
+  [ "$output" = "local" ]
+}
+
+@test "BTS-213 AC-7: artifact-write spec is idempotent — second call takes update path" {
+  set -e
+  _setup_stub
+  fx=$(_make_linear_lifecycle_fx)
+  cd "$fx"
+  STUB_FIXTURE="$BATS_TEST_TMPDIR/idempotency-stub.sh"
+  cat > "$STUB_FIXTURE" <<'SHELL'
+curl() {
+  local n
+  n=$(cat "$BATS_TEST_TMPDIR/idem-cnt" 2>/dev/null || echo 0)
+  n=$((n + 1)); echo "$n" > "$BATS_TEST_TMPDIR/idem-cnt"
+  case "$n" in
+    1) echo '{"data":{"issue":{"id":"issue-uuid","identifier":"BTS-213","title":"t","priority":2,"createdAt":"t0","updatedAt":"t1","description":"d","state":{"name":"x","type":"x","id":"s"},"labels":{"nodes":[]}}}}' ;;
+    2) echo '{"errors":[{"message":"Entity not found: Document"}]}' ;;
+    3) echo '{"data":{"documentCreate":{"success":true,"document":{"id":"d1","title":"t","content":"c","updatedAt":"t2"}}}}' ;;
+    4) echo '{"data":{"issue":{"id":"issue-uuid","identifier":"BTS-213","title":"t","priority":2,"createdAt":"t0","updatedAt":"t1","description":"d","state":{"name":"x","type":"x","id":"s"},"labels":{"nodes":[]}}}}' ;;
+    5) echo '{"data":{"document":{"id":"d1","updatedAt":"t2","updatedBy":null}}}' ;;
+    6) echo '{"data":{"documentUpdate":{"success":true,"document":{"id":"d1","title":"t","content":"new","updatedAt":"t3"}}}}' ;;
+    *) echo '{"data":{}}' ;;
+  esac
+  return 0
+}
+export -f curl
+SHELL
+  echo 0 > "$BATS_TEST_TMPDIR/idem-cnt"
+  run bash -c "source '$STUB_FIXTURE' && echo '# v1' | ALLOW_CONCURRENT_EDIT_OVERRIDE=1 bash '$DC' artifact-write --kind spec --feature BTS-213"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '.id == "d1"'
+  run bash -c "source '$STUB_FIXTURE' && echo '# v2' | ALLOW_CONCURRENT_EDIT_OVERRIDE=1 bash '$DC' artifact-write --kind spec --feature BTS-213"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '.id == "d1"'
+  [ "$(cat "$BATS_TEST_TMPDIR/idem-cnt")" = "6" ]
+}
+
+@test "BTS-213 AC-3: cmd_activate body references _lifecycle_route or route-of for spec" {
+  awk '/^cmd_activate\(\)/,/^cmd_complete\(\)/' "$BATS_TEST_DIRNAME/../../.ccanvil/scripts/docs-check.sh" \
+    | grep -qE '_lifecycle_route|route-of'
+}
+
+@test "BTS-213 AC-3: cmd_activate dispatches artifact-write/cmd_artifact_write for spec on linear route" {
+  awk '/^cmd_activate\(\)/,/^cmd_complete\(\)/' "$BATS_TEST_DIRNAME/../../.ccanvil/scripts/docs-check.sh" \
+    | grep -qE 'cmd_artifact_write|artifact-write'
+}
+
+@test "BTS-213 AC-6: artifact-write spec failure leaves docs/specs archive untouched" {
+  set -e
+  _setup_stub
+  fx=$(_make_linear_lifecycle_fx)
+  cd "$fx"
+  mkdir -p docs/specs
+  printf '%s\n' '> Feature: bts-213' '> Status: Draft' 'body' > docs/specs/bts-213.md
+  ARCHIVE_HASH=$(shasum -a 256 docs/specs/bts-213.md | awk '{print $1}')
+  STUB_FIXTURE="$BATS_TEST_TMPDIR/err-stub.sh"
+  cat > "$STUB_FIXTURE" <<'SHELL'
+curl() {
+  local n
+  n=$(cat "$BATS_TEST_TMPDIR/err-cnt" 2>/dev/null || echo 0)
+  n=$((n + 1)); echo "$n" > "$BATS_TEST_TMPDIR/err-cnt"
+  case "$n" in
+    1) echo '{"data":{"issue":{"id":"issue-uuid","identifier":"BTS-213","title":"t","priority":2,"createdAt":"t0","updatedAt":"t1","description":"d","state":{"name":"x","type":"x","id":"s"},"labels":{"nodes":[]}}}}' ;;
+    2) echo '{"errors":[{"message":"Entity not found: Document"}]}' ;;
+    *) echo '{"errors":[{"message":"Internal server error"}]}' ;;
+  esac
+  return 0
+}
+export -f curl
+SHELL
+  echo 0 > "$BATS_TEST_TMPDIR/err-cnt"
+  run bash -c "source '$STUB_FIXTURE' && cat docs/specs/bts-213.md | ALLOW_CONCURRENT_EDIT_OVERRIDE=1 bash '$DC' artifact-write --kind spec --feature BTS-213"
+  [ "$status" -ne 0 ]
+  [ -f docs/specs/bts-213.md ]
+  AFTER_HASH=$(shasum -a 256 docs/specs/bts-213.md | awk '{print $1}')
+  [ "$ARCHIVE_HASH" = "$AFTER_HASH" ]
+}

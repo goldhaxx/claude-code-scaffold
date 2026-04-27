@@ -43,6 +43,26 @@ A work ref is one of:
    - Keep under 100 lines
    - Set metadata: `> Feature: <feature_id>`, `> Work: <provider>:<id>`, `> Created: PLACEHOLDER`, `> Status: Draft`. Then run `bash .ccanvil/scripts/docs-check.sh stamp-spec <feature_id>` to replace the placeholder with the current epoch deterministically (BTS-141 — never substitute the epoch via inline shell-variable interpolation; the script owns the timestamp).
 
+8a. **BTS-213: route-aware Linear dispatch.** After `stamp-spec`, check the
+    spec routing and dispatch the stamped content into the Linear Document
+    when routed away from local. Without this step, post-`/spec` lifecycle
+    queries Linear, finds nothing, and silently reports `state: no-active-spec`.
+
+    ```bash
+    if [[ "$(bash .ccanvil/scripts/docs-check.sh route-of spec --project-dir .)" == "linear" ]]; then
+      if ! bash .ccanvil/scripts/docs-check.sh artifact-write --kind spec --feature "$feature_id" \
+           < "docs/specs/$feature_id.md"; then
+        echo "WARN: /spec wrote local archive but Linear dispatch failed." >&2
+        echo "Retry: bash .ccanvil/scripts/docs-check.sh artifact-write --kind spec --feature $feature_id < docs/specs/$feature_id.md" >&2
+        exit 1
+      fi
+    fi
+    ```
+
+    The local archive write happens BEFORE the dispatch, so a Linear-side
+    failure leaves `docs/specs/<feature_id>.md` intact for the operator to
+    retry without recomposing the spec body.
+
 9. **If from an idea:** Run `bash .ccanvil/scripts/docs-check.sh idea-update <num> promoted`
 
 10. **BTS-136: auto-transition Linear ticket to Todo.** If the resolved work ref is `linear:<ID>`, dispatch the transition via `operations.sh resolve ticket.transition <ID> todo`. BTS-164 migrated this verb to `mechanism: http` — the resolver returns a complete `linear-query.sh save-issue` command in `.invocation.command`. Eval it:
