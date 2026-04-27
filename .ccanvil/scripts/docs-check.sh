@@ -4290,6 +4290,29 @@ _normalize_feature_to_ticket() {
   printf '%s\n' "$input"
 }
 
+# _classify_linear_failure — BTS-219: classify a captured stderr file from
+# a failing linear-query.sh invocation into one of four classes:
+#   auth-missing | not-found | network-error | parse-error
+# Used by cmd_artifact_read (and any other live-API caller that wants to
+# emit a structured WARN line). Pure function: takes a file path, prints
+# the class name, exits 0. No side effects, no global mutation.
+_classify_linear_failure() {
+  local errfile="${1:-}"
+  if [[ -z "$errfile" || ! -f "$errfile" ]]; then
+    printf '%s\n' "parse-error"
+    return 0
+  fi
+  if grep -qE 'LINEAR_API_KEY|Authentication required|Authentication failed' "$errfile"; then
+    printf '%s\n' "auth-missing"
+  elif grep -qE 'Entity not found' "$errfile"; then
+    printf '%s\n' "not-found"
+  elif grep -qE 'curl:|Connection refused|Could not resolve|Failed to connect' "$errfile"; then
+    printf '%s\n' "network-error"
+  else
+    printf '%s\n' "parse-error"
+  fi
+}
+
 # _active_feature_id — derive the active feature id (e.g., "BTS-204") from
 # context. Order of precedence:
 #   1. LIFECYCLE_FEATURE_ID_OVERRIDE env var (test-only path)
@@ -4693,15 +4716,41 @@ cmd_artifact_read() {
   # from "auth/network failure" (substrate problem).
   local err
   err=$(mktemp); local content rc
-  content=$(bash "$script_dir/linear-query.sh" get-document "$doc_id" 2>"$err"); rc=$?
+  # BTS-219: use `if` form to keep set -e from aborting on get-document failure
+  # before the WARN classifier runs. The `; rc=$?` pattern was killed by set -e
+  # before reaching the failure branch, swallowing every diagnostic.
+  if content=$(bash "$script_dir/linear-query.sh" get-document "$doc_id" 2>"$err"); then
+    rc=0
+  else
+    rc=$?
+  fi
   if [[ $rc -ne 0 ]]; then
     cat "$err" >&2
+    # BTS-219: classify the failure + emit structured WARN with retry recipe
+    # before deleting the err file. Mirrors the symmetric WARN pattern from
+    # cmd_activate's BTS-213 dispatch.
+    local warn_class
+    warn_class=$(_classify_linear_failure "$err")
+    case "$warn_class" in
+      auth-missing)
+        echo "WARN: artifact-read: auth-missing — Linear API key missing or invalid" >&2
+        echo "Retry: Set LINEAR_API_KEY in env or source .env from project root" >&2
+        ;;
+      not-found)
+        echo "WARN: artifact-read: not-found — Document for kind=$kind ticket=$ticket does not exist" >&2
+        echo "Retry: Verify ticket has a parented Document of kind=$kind, or use --stasis-kind session" >&2
+        ;;
+      network-error)
+        echo "WARN: artifact-read: network-error — Could not reach Linear API" >&2
+        echo "Retry: Check network; bash docs-check.sh artifact-read --kind $kind --feature ${feature:-<id>}" >&2
+        ;;
+      parse-error|*)
+        echo "WARN: artifact-read: parse-error — Unexpected response from Linear API" >&2
+        echo "Retry: bash linear-query.sh get-document $doc_id > /tmp/x.json; inspect" >&2
+        ;;
+    esac
     rm -f "$err"
-    # Distinguish not-found from real errors. linear-query.sh emits "Entity not
-    # found: Document" for missing; everything else is a substrate problem.
-    if grep -q "Entity not found" "$err" 2>/dev/null || grep -q "Entity not found" <<<"$err"; then
-      return 2
-    fi
+    [[ "$warn_class" == "not-found" ]] && return 2
     return 3
   fi
   rm -f "$err"
