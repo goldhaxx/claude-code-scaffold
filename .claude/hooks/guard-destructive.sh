@@ -82,14 +82,28 @@ fi
 # from a here-string, etc.) reach rm via a wrapper. The hook only sees the
 # literal command string; a wrapper-composed rm is not visible here. Tracked
 # alongside BTS-155 (find -delete/-exec).
-rm_recursive_re='(^|[[:space:]])(-[a-zA-Z]*[rR][a-zA-Z]*|--recursive)([[:space:]]|=|$)'
-rm_force_re='(^|[[:space:]])(-[a-zA-Z]*[fF][a-zA-Z]*|--force)([[:space:]]|=|$)'
-if [[ "$COMMAND" =~ (^|[[:space:]])rm[[:space:]] ]] \
-   && [[ "$COMMAND" =~ $rm_recursive_re ]] \
-   && [[ "$COMMAND" =~ $rm_force_re ]]; then
-  echo "BLOCKED: rm with recursive AND force flags deletes without prompt." >&2
-  echo "  To bypass: ALLOW_DESTRUCTIVE=1 rm ..." >&2
-  exit 2
+# BTS-202: detect rm-rf footgun via combined flag cluster (r AND f in
+# the SAME flag token) OR both --recursive AND --force long forms on
+# the line. Replaces the prior cross-line scan that fired when ANY
+# unrelated -r flag (e.g., `jq -r`) appeared alongside ANY unrelated
+# -f flag (e.g., `rm -f` force-only). Trade-off: split short-form
+# `rm -r -f` is no longer caught — operators using deliberate split
+# flags can prefix ALLOW_DESTRUCTIVE=1; canonical `rm -rf` still gated.
+rm_combined_cluster='(^|[[:space:]])-[a-zA-Z]*([rR][a-zA-Z]*[fF]|[fF][a-zA-Z]*[rR])[a-zA-Z]*([[:space:]]|=|$)'
+rm_long_recursive='(^|[[:space:]])--recursive([[:space:]]|=|$)'
+rm_long_force='(^|[[:space:]])--force([[:space:]]|=|$)'
+if [[ "$COMMAND" =~ (^|[[:space:]])rm[[:space:]] ]]; then
+  trip=0
+  if [[ "$COMMAND" =~ $rm_combined_cluster ]]; then
+    trip=1
+  elif [[ "$COMMAND" =~ $rm_long_recursive ]] && [[ "$COMMAND" =~ $rm_long_force ]]; then
+    trip=1
+  fi
+  if (( trip == 1 )); then
+    echo "BLOCKED: rm with recursive AND force flags deletes without prompt." >&2
+    echo "  To bypass: ALLOW_DESTRUCTIVE=1 rm ..." >&2
+    exit 2
+  fi
 fi
 
 # Block find with -delete or -exec/-execdir/-okdir. Path-agnostic shape gate:

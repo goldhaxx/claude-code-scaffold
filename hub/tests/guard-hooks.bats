@@ -287,25 +287,28 @@ WORKSPACE_HOOK="$BATS_TEST_DIRNAME/../../.claude/hooks/guard-workspace.sh"
   [ "$status" -eq 2 ]
 }
 
-@test "BTS-156 AC-2: blocks rm -r -f (split short flags)" {
-  # Split flags are equivalent to -rf at the OS level; an agent might emit
-  # this form as a natural variation. Without independent flag detection,
-  # the cluster regex would miss this. Surfaced by code review.
+@test "BTS-156 → BTS-202: split rm -r -f no longer caught (trade-off)" {
+  # BTS-202: rm-rf detection scoped to combined cluster (-rf, -fr, etc.)
+  # OR dual long-form (--recursive --force). Split short-form is the
+  # accepted trade-off — eliminates the jq -r + rm -f false-positive
+  # class. Operator can ALLOW_DESTRUCTIVE=1 for deliberate split form.
   input='{"tool_name":"Bash","tool_input":{"command":"rm -r -f /tmp/foo"}}'
   run bash -c "echo '$input' | '$DESTRUCTIVE_HOOK'"
-  [ "$status" -eq 2 ]
+  [ "$status" -eq 0 ]
 }
 
-@test "BTS-156 AC-3: blocks rm -r --force (mixed short+long)" {
+@test "BTS-156 → BTS-202: rm -r --force no longer caught (mixed trade-off)" {
+  # BTS-202 trade-off: mixed short+long not caught. Same rationale.
   input='{"tool_name":"Bash","tool_input":{"command":"rm -r --force /tmp/foo"}}'
   run bash -c "echo '$input' | '$DESTRUCTIVE_HOOK'"
-  [ "$status" -eq 2 ]
+  [ "$status" -eq 0 ]
 }
 
-@test "BTS-156 AC-3: blocks rm --recursive -f (mixed long+short)" {
+@test "BTS-156 → BTS-202: rm --recursive -f no longer caught (mixed trade-off)" {
+  # BTS-202 trade-off: mixed long+short not caught. Same rationale.
   input='{"tool_name":"Bash","tool_input":{"command":"rm --recursive -f /tmp/foo"}}'
   run bash -c "echo '$input' | '$DESTRUCTIVE_HOOK'"
-  [ "$status" -eq 2 ]
+  [ "$status" -eq 0 ]
 }
 
 @test "BTS-156: blocks sudo rm -rf" {
