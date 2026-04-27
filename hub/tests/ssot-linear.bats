@@ -656,6 +656,52 @@ SHELL
   grep -qF 'artifact-read --kind spec' "$BATS_TEST_DIRNAME/../../.claude/skills/recall/SKILL.md"
 }
 
+@test "BTS-204 Phase 5 Step 15: /pr skill prose embeds spec via artifact-read" {
+  grep -qF 'artifact-read --kind spec' "$BATS_TEST_DIRNAME/../../.claude/commands/pr.md"
+}
+
+@test "BTS-204 Phase 5 Step 14: cmd_complete archives + trashes Linear documents" {
+  set -e
+  _setup_stub
+  fx="$BATS_TEST_TMPDIR/complete-fx"
+  mkdir -p "$fx/.ccanvil/state" "$fx/.claude" "$fx/docs/specs"
+  cat > "$fx/.claude/ccanvil.json" <<'JSON'
+{
+  "integrations": {
+    "providers": {"linear": {"mechanism": "http", "project_id": "p"}},
+    "routing": {"spec": "linear", "plan": "linear", "stasis": "linear"}
+  }
+}
+JSON
+  # Minimal spec archive needed for cmd_complete to find feature_id + verify status
+  cat > "$fx/docs/specs/bts-test-feature.md" <<'MD'
+# Feature: Test
+> Feature: bts-test-feature
+> Status: In Progress
+MD
+  # Initialize git for the cmd_complete commit step.
+  cd "$fx"
+  git init -q . && git config user.email "t@t" && git config user.name "t"
+  git add -A && git commit -q -m "init"
+
+  # Stub: every get-document returns content; trash-document returns success.
+  STUB_FIXTURE="$BATS_TEST_TMPDIR/complete-stub.sh"
+  cat > "$STUB_FIXTURE" <<'SHELL'
+curl() {
+  echo '{"data":{"document":{"id":"x","title":"t","content":"# stored content","slugId":"s","url":"u","updatedAt":"t","createdAt":"t","updatedBy":null,"creator":null,"project":null,"issue":null,"documentDelete":{"success":true}}, "documentDelete":{"success":true}}}'
+  return 0
+}
+export -f curl
+SHELL
+  # Run cmd_complete.
+  run bash -c "source '$STUB_FIXTURE' && bash '$DC' complete bts-test-feature '$fx/docs'"
+  [ "$status" -eq 0 ]
+  # Archive files should now exist
+  ls "$fx/docs/sessions/" | grep -q "bts-test-feature-spec.md"
+  ls "$fx/docs/sessions/" | grep -q "bts-test-feature-plan.md"
+  ls "$fx/docs/sessions/" | grep -q "bts-test-feature-stasis.md"
+}
+
 @test "BTS-204 Phase 4: artifact-write linear-routed dispatches to save-document" {
   set -e
   _setup_stub

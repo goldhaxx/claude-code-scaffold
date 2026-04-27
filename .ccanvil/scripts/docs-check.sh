@@ -1115,6 +1115,17 @@ cmd_complete() {
   # Update status to Complete
   update_metadata_status "$spec_file" "Complete"
 
+  # BTS-204 Step 14: when any artifact is Linear-routed, delegate to the
+  # archive helper (reads from Linear, writes git-tracked history into the
+  # session archive directory, then trashes the Linear Documents). On
+  # pure-local nodes this is a no-op — cmd_archive_stasis at /stasis time
+  # already archives stasis; spec/plan stay in their original location.
+  local project_dir
+  project_dir=$(cd "$docs_dir/.." 2>/dev/null && pwd) || project_dir="."
+  if [[ "$(_has_any_linear_route "$project_dir")" == "true" ]]; then
+    _complete_archive_linear "$feature_id" "$project_dir"
+  fi
+
   # Clear assumptions.md if it exists
   local assumptions_file="$docs_dir/assumptions.md"
   if [[ -f "$assumptions_file" ]]; then
@@ -3911,6 +3922,40 @@ _artifact_present_linear() {
   else
     echo "false"
   fi
+}
+
+# BTS-204 Step 14: archive Linear-stored lifecycle artifacts to docs/sessions/
+# at /complete time, then trash the Linear Documents. Forward-only history.
+_complete_archive_linear() {
+  local feature_id="$1" project_dir="${2:-.}"
+  local script_dir epoch sessions_dir
+  script_dir="$(dirname "${BASH_SOURCE[0]}")"
+  epoch=$(date +%s)
+  sessions_dir="$project_dir/docs/sessions"
+  mkdir -p "$sessions_dir"
+
+  local kind
+  for kind in spec plan stasis; do
+    local route
+    route=$(_lifecycle_route "$kind" "$project_dir")
+    [[ "$route" != "linear" ]] && continue
+
+    local resolve_kind ticket
+    case "$kind" in
+      spec)   resolve_kind="spec";          ticket="$feature_id" ;;
+      plan)   resolve_kind="plan";          ticket="$feature_id" ;;
+      stasis) resolve_kind="feature-stasis"; ticket="$feature_id" ;;
+    esac
+    local doc_id content
+    doc_id=$(bash "$script_dir/linear-query.sh" resolve-document-id --kind "$resolve_kind" --ticket "$ticket")
+    content=$(bash "$script_dir/linear-query.sh" get-document "$doc_id" 2>/dev/null | jq -r '.content // empty')
+    if [[ -n "$content" ]]; then
+      local dest="$sessions_dir/${epoch}-${feature_id}-${kind}.md"
+      printf '%s\n' "$content" > "$dest"
+      bash "$script_dir/linear-query.sh" trash-document "$doc_id" >/dev/null 2>&1 || true
+      echo "Archived ${kind} → $dest" >&2
+    fi
+  done
 }
 
 # BTS-204 Phase 4: provider-aware artifact read/write compound primitives.

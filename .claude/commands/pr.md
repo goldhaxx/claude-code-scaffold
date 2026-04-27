@@ -58,6 +58,9 @@ This command ensures the branch is ready for merge: tests pass, docs are validat
     ## Test Plan
     <Test results summary — number passing, any notable coverage>
 
+    ## Spec
+    <Embedded spec excerpt — see step 11a>
+
     ## Assumptions & Decisions
     <Contents of docs/assumptions.md if it exists and is non-empty, otherwise omit this section>
 
@@ -66,6 +69,14 @@ This command ensures the branch is ready for merge: tests pass, docs are validat
 
     🤖 Generated with [Claude Code](https://claude.com/claude-code)
     ```
+11a. **BTS-204: embed canonical spec excerpt.** Read the spec via the
+     provider-aware primitive so reviewers don't need to round-trip to
+     Linear: `bash .ccanvil/scripts/docs-check.sh artifact-read --kind spec --feature <FEATURE_ID>`.
+     Inline the result as a fenced markdown block under `## Spec`. One-time
+     render at PR-creation time — not a sustained twin source. On
+     local-routed nodes this reads `docs/spec.md`; on Linear-routed it reads
+     the spec Linear Document. If the call returns empty (no active spec on
+     the branch), omit the `## Spec` section.
 12. Show the PR URL to the user.
 
 ## Guard: no premature finalization
