@@ -20,6 +20,7 @@ Run at the end of a session, immediately before `/compact`. Writes `docs/stasis.
 Collect these inputs via scripts — all deterministic, all cheap:
 
 2. `bash .ccanvil/scripts/docs-check.sh status` — feature_id, plan_hash, content hashes for spec/plan/stasis.
+2a. `bash .ccanvil/scripts/docs-check.sh session-info --project-dir .` (BTS-206) — session counter + ISO-8601 local boundary. Capture `.counter` and `.iso`; when `.counter > 0` substitute into `> Session: N` and `> Boundary: <iso>` metadata lines; when `.counter == 0` (fresh node, hook hasn't fired yet), omit both lines from the rendered stasis.
 3. `bash .ccanvil/scripts/docs-check.sh radar-gather` — active spec, completed specs, idea counts, roadmap theme, git activity, backlog.
 4. `bash .ccanvil/scripts/docs-check.sh idea-count` — untriaged idea count for the Next Steps section.
 5. `bash .ccanvil/scripts/docs-check.sh audit-session --since <last-stasis-commit>` — scan git diffs for stochastic patterns (fallback to last 20 commits if no prior stasis).

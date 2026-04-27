@@ -240,6 +240,59 @@ doc_entry() {
 }
 
 # ---------------------------------------------------------------------------
+# cmd_session_info — BTS-206. Read session counter + boundary state files.
+#
+# Args:
+#   --project-dir <path>   project root (default: cwd)
+#
+# Output: JSON {counter, epoch, iso, tz} on stdout.
+#   - counter: integer (0 if file missing or non-integer)
+#   - epoch:   int or null (parsed from boundary JSON)
+#   - iso:     string or null (parsed from boundary JSON)
+#   - tz:      string or null (parsed from boundary JSON)
+#
+# Exit: always 0. Reading is fault-tolerant — corruption surfaces as 0/null,
+# never as a non-zero exit. The SessionStart hook is what resets corruption.
+# ---------------------------------------------------------------------------
+cmd_session_info() {
+  local project_dir="."
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --project-dir) project_dir="${2:-.}"; shift 2 ;;
+      *) shift ;;
+    esac
+  done
+
+  local counter_path boundary_path counter epoch iso tz raw
+  counter_path="$project_dir/.ccanvil/state/session-counter"
+  boundary_path="$project_dir/.ccanvil/state/session-boundary"
+
+  counter=0
+  if [[ -f "$counter_path" ]]; then
+    raw=$(tr -d '[:space:]' < "$counter_path" 2>/dev/null || echo "")
+    if [[ "$raw" =~ ^[0-9]+$ ]]; then
+      counter="$raw"
+    else
+      echo "WARN: session-counter contains non-integer; reading as 0" >&2
+    fi
+  fi
+
+  epoch="null"; iso="null"; tz="null"
+  if [[ -f "$boundary_path" ]] && jq -e . < "$boundary_path" >/dev/null 2>&1; then
+    epoch=$(jq -c '.epoch // null' < "$boundary_path")
+    iso=$(jq -c '.iso // null' < "$boundary_path")
+    tz=$(jq -c '.tz // null' < "$boundary_path")
+  fi
+
+  jq -n \
+    --argjson counter "$counter" \
+    --argjson epoch "$epoch" \
+    --argjson iso "$iso" \
+    --argjson tz "$tz" \
+    '{counter:$counter, epoch:$epoch, iso:$iso, tz:$tz}'
+}
+
+# ---------------------------------------------------------------------------
 # cmd_status — Extract metadata + compute content hashes for all docs.
 #
 # Output: JSON object with spec, plan, stasis entries.
@@ -3962,6 +4015,7 @@ case "$cmd" in
   remote-presence)   cmd_remote_presence "$@" ;;
   evidence-scan-session) cmd_evidence_scan_session "$@" ;;
   lifecycle-state)   cmd_lifecycle_state "$@" ;;
+  session-info)      cmd_session_info "$@" ;;
   *)
     echo "Usage: docs-check.sh {status|validate|recommend|audit-session|config-get|list-specs|activate|complete|pr-cleanup|land|idea-add|idea-list|idea-count|idea-update|idea-sync|idea-pending-replay|refresh-plan-hash|idea-migrate|idea-setup|idea-upgrade|title-from-body|legacy-refs-scan|stamp-spec|idea-pending-append|idea-pending-validate|remote-presence} [args...]" >&2
     exit 1

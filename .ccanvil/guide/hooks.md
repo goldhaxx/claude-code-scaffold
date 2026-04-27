@@ -94,6 +94,7 @@ graph TD
 | `lint-on-write.sh` | PostToolUse | Yes | Syntax validation: `bash -n` for `.sh`, `jq empty` for `.json`, python yaml check for `.yaml`. Blocks writes with syntax errors. |
 | `format-on-write.sh` | PostToolUse | No | Detects file type, runs appropriate formatter (uncomment for your stack) |
 | `permission-request-suppress-redundant.sh` | PermissionRequest (Bash) | No (intercepts) | BTS-150: when a Bash command request is already covered by a broader allow pattern in `.claude/settings.json` (e.g., `Bash(bash:*)` covers `bash some-script.sh`), auto-allows with `destination: "session"` so the redundant exact-form never persists to `.claude/settings.local.json`. Suppresses upstream drift that BTS-144's `promote-review` classifier and BTS-149's `/permissions-review` clean up periodically. Pattern shapes: token-prefix `Bash(<bin>:*)`, path-prefix `Bash(<dir>/:*)`, exact `Bash(<form>)`. Non-Bash tools and uncovered commands are passthrough. |
+| `session-boundary.sh` | SessionStart | No | BTS-206: bumps `.ccanvil/state/session-counter` (atomic int increment) and stamps `.ccanvil/state/session-boundary` with `{epoch, iso, tz}` JSON on every fresh session start. ISO-8601 local timestamp uses TZ env or `/etc/localtime` symlink (fallback `UTC`). Surfaced by `/stasis` (metadata `> Session: N`, `> Boundary: <iso>`) and `/recall` briefing. All write failures log WARN and exit 0 — never blocks session start. Counter corruption (non-integer file content) resets to 1 with a WARN. |
 
 ## Adding a New Hook
 

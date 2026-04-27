@@ -25,6 +25,8 @@ Report counts by status (Draft, Ready, In Progress, Complete) — or by Linear s
   **Do NOT use `idea.list` as a backlog proxy** (BTS-175). `idea.list` filters by `label=idea` and silently hides scaffold-labeled tickets, leading to phantom "backlog is empty" reports when in fact Backlog-state items exist. `backlog.list` is the canonical "what's left to ship" surface — it filters by Backlog state-id only, no label restriction.
 0d. Check the current branch name (`git branch --show-current`). Report whether it follows the `claude/<type>/<name>` naming convention.
 
+0e. **BTS-206: session counter + boundary.** Run `bash .ccanvil/scripts/docs-check.sh session-info --project-dir .` and capture `.counter`, `.iso`. Used in the briefing's session line below.
+
 1. Read `docs/stasis.md` if it exists — this contains the last session's progress and next steps.
 2. Run `git log --oneline -10` to see recent commits.
 3. Run `git diff --stat` to see any uncommitted changes.
@@ -54,6 +56,7 @@ Report counts by status (Draft, Ready, In Progress, Complete) — or by Linear s
 ## Briefing
 
 Then provide a brief summary:
+- **Session N — boundary <iso>** (from step 0e). Render this line at the top of the briefing only when `counter > 0`. When `counter == 0` (fresh node, hook hasn't fired yet), OMIT this line entirely (no zero-noise). Format: `**Session N** — boundary <iso>`.
 - **Lifecycle state** (from step 0a's envelope) — the `state` field plus legal next actions and any blockers. Render as: one line for the current state name, then a `**Legal next actions:**` sub-list walking `legal_next_actions[]` (each entry's `action` + `command` + `reason`). When `blockers[]` is non-empty, render a `**Blockers:**` sub-list with one bullet per entry — these always come BEFORE legal next actions because recovery is required first.
 - **Spec backlog** — count of specs by status from step 0c, and which spec (if any) is active on the current branch
 - **Ideas** — untriaged idea count from step 8 (if > 0, note: "N untriaged ideas — run /idea triage")
