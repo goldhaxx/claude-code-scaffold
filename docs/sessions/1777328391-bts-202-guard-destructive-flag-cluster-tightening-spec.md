@@ -33,31 +33,33 @@ Each criterion is independently testable. Binary pass/fail.
 ## Affected Files
 
 | File | Change |
-|------|--------|
+| -- | -- |
 | `.claude/hooks/guard-destructive.sh` | Replace the two-regex cross-line scan with: combined-cluster regex (`r/R` AND `f/F` in same flag) + dual-long-form gate (`--recursive` AND `--force`). |
 | `hub/tests/guard-destructive-flag-cluster.bats` | New bats covering AC-1 through AC-6. |
 
 ## Dependencies
 
-- **Requires:** Nothing new.
-- **Blocked by:** Nothing.
+* **Requires:** Nothing new.
+* **Blocked by:** Nothing.
 
 ## Out of Scope
 
-- Detecting split short-form `rm -r -f` / `rm -r --force` / `rm --recursive -f`. The original two-regex design caught these but at the cost of the false-positive class. Per ticket recommendation (C), accept the trade-off. Operators can `ALLOW_DESTRUCTIVE=1` for split forms; canonical `rm -rf` is still gated.
-- Tokenizing the command and scoping flag detection to the rm invocation (approach A in the ticket). Larger refactor; not justified for this ship.
-- Generic shell-flag false-positive audit across other guards.
+* Detecting split short-form `rm -r -f` / `rm -r --force` / `rm --recursive -f`. The original two-regex design caught these but at the cost of the false-positive class. Per ticket recommendation (C), accept the trade-off. Operators can `ALLOW_DESTRUCTIVE=1` for split forms; canonical `rm -rf` is still gated.
+* Tokenizing the command and scoping flag detection to the rm invocation (approach A in the ticket). Larger refactor; not justified for this ship.
+* Generic shell-flag false-positive audit across other guards.
 
 ## Implementation Notes
 
-- **New regex set:**
+* **New regex set:**
+
   ```bash
   # Combined cluster: r/R AND f/F in the same flag token, any letter order
   rm_combined_cluster='(^|[[:space:]])-[a-zA-Z]*([rR][a-zA-Z]*[fF]|[fF][a-zA-Z]*[rR])[a-zA-Z]*([[:space:]]|=|$)'
   rm_long_recursive='(^|[[:space:]])--recursive([[:space:]]|=|$)'
   rm_long_force='(^|[[:space:]])--force([[:space:]]|=|$)'
   ```
-- **Gate condition:**
+* **Gate condition:**
+
   ```bash
   if [[ "$COMMAND" =~ (^|[[:space:]])rm[[:space:]] ]]; then
     trip=0
@@ -73,7 +75,7 @@ Each criterion is independently testable. Binary pass/fail.
     fi
   fi
   ```
-- **Dual-long-form residual false-positive risk:** if the command line contains `rm` PLUS both `--recursive` and `--force` (potentially in unrelated commands like `cp --recursive --force foo bar; rm /tmp/y`), the gate still fires. Acceptable: long-form rm flags are uncommon, and the combination of `rm` + `--recursive` + `--force` on a single line is almost certainly an rm using long forms. Operators can prefix `ALLOW_DESTRUCTIVE=1` for the rare collision.
+* **Dual-long-form residual false-positive risk:** if the command line contains `rm` PLUS both `--recursive` and `--force` (potentially in unrelated commands like `cp --recursive --force foo bar; rm /tmp/y`), the gate still fires. Acceptable: long-form rm flags are uncommon, and the combination of `rm` + `--recursive` + `--force` on a single line is almost certainly an rm using long forms. Operators can prefix `ALLOW_DESTRUCTIVE=1` for the rare collision.
 
 <!-- NODE-SPECIFIC-START -->
 <!-- Add project-specific content below this line. -->
