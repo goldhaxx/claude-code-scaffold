@@ -956,6 +956,43 @@ SHELL
     | grep -qE 'cmd_artifact_write|artifact-write'
 }
 
+@test "BTS-213 WARN-1: cmd_artifact_write honors --project-dir for route resolution" {
+  # Reviewer concern: if cmd_artifact_write's internal _lifecycle_route falls
+  # back to "." while the caller resolved route from a different project_dir,
+  # the dispatch silently no-ops to local. This test creates a linear-routed
+  # fx and invokes artifact-write from a DIFFERENT cwd, asserting the route
+  # resolves from --project-dir (not cwd) and reaches the Linear path.
+  set -e
+  _setup_stub
+  fx=$(_make_linear_lifecycle_fx)
+  other="$BATS_TEST_TMPDIR/other-cwd"
+  mkdir -p "$other"
+  cd "$other"   # cwd has no .claude/ccanvil.json — would resolve as local
+  STUB_FIXTURE="$BATS_TEST_TMPDIR/route-stub.sh"
+  cat > "$STUB_FIXTURE" <<'SHELL'
+curl() {
+  local n
+  n=$(cat "$BATS_TEST_TMPDIR/route-cnt" 2>/dev/null || echo 0)
+  n=$((n + 1)); echo "$n" > "$BATS_TEST_TMPDIR/route-cnt"
+  case "$n" in
+    1) echo '{"data":{"issue":{"id":"issue-uuid","identifier":"BTS-213","title":"t","priority":2,"createdAt":"t0","updatedAt":"t1","description":"d","state":{"name":"x","type":"x","id":"s"},"labels":{"nodes":[]}}}}' ;;
+    2) echo '{"errors":[{"message":"Entity not found: Document"}]}' ;;
+    3) echo '{"data":{"documentCreate":{"success":true,"document":{"id":"d2","title":"t","content":"c","updatedAt":"t2"}}}}' ;;
+    *) echo '{"data":{}}' ;;
+  esac
+  return 0
+}
+export -f curl
+SHELL
+  echo 0 > "$BATS_TEST_TMPDIR/route-cnt"
+  run bash -c "source '$STUB_FIXTURE' && echo '# remote spec' | ALLOW_CONCURRENT_EDIT_OVERRIDE=1 bash '$DC' artifact-write --kind spec --feature BTS-213 --project-dir '$fx'"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '.id == "d2"'
+  # Curl was invoked → Linear path was hit (would be 0 invocations if route
+  # silently fell to local).
+  [ "$(cat "$BATS_TEST_TMPDIR/route-cnt")" -ge "3" ]
+}
+
 @test "BTS-213 AC-6: artifact-write spec failure leaves docs/specs archive untouched" {
   set -e
   _setup_stub

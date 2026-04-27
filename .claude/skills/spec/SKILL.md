@@ -50,18 +50,20 @@ A work ref is one of:
 
     ```bash
     if [[ "$(bash .ccanvil/scripts/docs-check.sh route-of spec --project-dir .)" == "linear" ]]; then
-      if ! bash .ccanvil/scripts/docs-check.sh artifact-write --kind spec --feature "$feature_id" \
+      if ! bash .ccanvil/scripts/docs-check.sh artifact-write --kind spec --feature "$feature_id" --project-dir . \
            < "docs/specs/$feature_id.md"; then
         echo "WARN: /spec wrote local archive but Linear dispatch failed." >&2
-        echo "Retry: bash .ccanvil/scripts/docs-check.sh artifact-write --kind spec --feature $feature_id < docs/specs/$feature_id.md" >&2
-        exit 1
+        echo "Retry: bash .ccanvil/scripts/docs-check.sh artifact-write --kind spec --feature $feature_id --project-dir . < docs/specs/$feature_id.md" >&2
       fi
     fi
     ```
 
     The local archive write happens BEFORE the dispatch, so a Linear-side
     failure leaves `docs/specs/<feature_id>.md` intact for the operator to
-    retry without recomposing the spec body.
+    retry without recomposing the spec body. Continue-with-WARN (not exit):
+    matches `cmd_activate`'s symmetric behavior — the local archive is the
+    durable state, the auto-transition to Todo can still proceed, and the
+    operator retries the printed recipe at their convenience.
 
 9. **If from an idea:** Run `bash .ccanvil/scripts/docs-check.sh idea-update <num> promoted`
 
