@@ -4203,6 +4203,20 @@ cmd_evidence_scan_session() {
       continue
     fi
 
+    # BTS-203: idea.list does not return .description, so when body is
+    # empty (live mode, or fixture-with-null-description) we fetch the
+    # body via linear-query.sh get-issue. Override path via env for tests.
+    # Fail-closed: if fetch fails, body stays empty and the anchor check
+    # reports missing-evidence-anchors (no silent skip).
+    if [[ -z "$body" && -n "$id" ]]; then
+      local lq="${LINEAR_QUERY_OVERRIDE:-$(dirname "$0")/linear-query.sh}"
+      local fetched
+      fetched=$(bash "$lq" get-issue "$id" 2>/dev/null) || fetched=""
+      if [[ -n "$fetched" ]]; then
+        body=$(echo "$fetched" | jq -r '.description // empty')
+      fi
+    fi
+
     # Bug-shape detected → check for all four anchors line-leading
     local missing=0
     for anchor in 'Command:' 'Output:' 'Exit:' 'Reproduce:'; do
