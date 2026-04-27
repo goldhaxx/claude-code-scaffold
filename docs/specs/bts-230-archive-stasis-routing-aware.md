@@ -3,7 +3,7 @@
 > Feature: bts-230-archive-stasis-routing-aware
 > Work: linear:BTS-230
 > Created: 1777328545
-> Status: In Progress
+> Status: Complete
 
 ## Summary
 
