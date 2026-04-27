@@ -43,6 +43,7 @@ generated/
 .ccanvil/events.log
 docs/ideas.md
 .ccanvil/ideas-pending.log
+.ccanvil/ideas-pending.log.*.bak
 .ccanvil/ideas.log
 .ccanvil/state/
 
