@@ -224,3 +224,38 @@ JSON
   [ "$status" -eq 3 ]
   [[ "$stderr" =~ "parent not found" ]]
 }
+
+# =========================================================================
+# Step 4: document-updated-at — cheap projection for concurrent-edit checks
+# =========================================================================
+
+@test "BTS-204 Step 4: document-updated-at returns minimal projection" {
+  set -e
+  _setup_stub
+  cat > "$LINEAR_STUB_RESPONSE" <<'JSON'
+{"data":{"document":{"id":"x","updatedAt":"2026-04-26T20:00:00.000Z","updatedBy":{"id":"u1","name":"alice"}}}}
+JSON
+  run bash -c "source '$STUB_FIXTURE' && bash '$LQ' document-updated-at x"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '.id == "x"'
+  echo "$output" | jq -e '.updatedAt == "2026-04-26T20:00:00.000Z"'
+  echo "$output" | jq -e '.updatedBy.id == "u1"'
+}
+
+@test "BTS-204 Step 4: document-updated-at GraphQL projection is minimal" {
+  set -e
+  _setup_stub
+  cat > "$LINEAR_STUB_RESPONSE" <<'JSON'
+{"data":{"document":{"id":"x","updatedAt":"now","updatedBy":null}}}
+JSON
+  run bash -c "source '$STUB_FIXTURE' && bash '$LQ' document-updated-at x"
+  [ "$status" -eq 0 ]
+  body=$(_get_body)
+  # Verify the projection requests ONLY id, updatedAt, updatedBy — not content/title/etc
+  echo "$body" | jq -re '.query' | grep -v -E 'content|title|slugId|url|createdAt|creator|project|issue' >/dev/null
+}
+
+@test "BTS-204 Step 4: document-updated-at requires id arg" {
+  run --separate-stderr bash "$LQ" document-updated-at
+  [ "$status" -eq 2 ]
+}

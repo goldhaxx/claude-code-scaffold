@@ -48,6 +48,8 @@ Subcommands:
                                       --issue-id, --project-id, --initiative-id, --trashed,
                                       --input-json - (stdin JSON; CLI flags override on collision).
                                       Auto-detects mode by id presence (in flag or stdin).
+  document-updated-at <id-or-slug>    Cheap projection: returns {id, updatedAt, updatedBy}.
+                                      Used for concurrent-edit pre-checks (rate-limit hygiene).
 
 Environment:
   LINEAR_API_KEY        Required for every subcommand except --help.
@@ -599,6 +601,7 @@ main() {
     resolve-document-id) cmd_resolve_document_id "$@" ;;
     get-document) cmd_get_document "$@" ;;
     save-document) cmd_save_document "$@" ;;
+    document-updated-at) cmd_document_updated_at "$@" ;;
     *)
       _die 2 "Unknown subcommand: $subcommand. Run 'linear-query.sh --help' for usage."
       ;;
@@ -774,6 +777,30 @@ cmd_save_document() {
       updatedAt: .updatedAt
     }'
   fi
+}
+
+cmd_document_updated_at() {
+  _require_api_key
+  if [[ $# -lt 1 ]]; then
+    _die 2 "document-updated-at requires an id or slug"
+  fi
+  local id="$1"
+
+  local variables
+  variables=$(jq -nc --arg id "$id" '{id:$id}')
+
+  local query='query ($id: String!) {
+    document(id: $id) {
+      id updatedAt
+      updatedBy { id name }
+    }
+  }'
+
+  _post_graphql "$query" "$variables" | jq '.document | {
+    id: .id,
+    updatedAt: .updatedAt,
+    updatedBy: (.updatedBy // null)
+  }'
 }
 
 main "$@"
