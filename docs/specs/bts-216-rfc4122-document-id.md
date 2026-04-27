@@ -3,7 +3,7 @@
 > Feature: bts-216-rfc4122-document-id
 > Work: linear:BTS-216
 > Created: 1777271137
-> Status: In Progress
+> Status: Complete
 
 ## Summary
 
