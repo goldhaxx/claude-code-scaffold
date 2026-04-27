@@ -3,7 +3,7 @@
 > Feature: bts-210-guard-workspace-prose-tolerance
 > Work: linear:BTS-210
 > Created: 1777327158
-> Status: In Progress
+> Status: Complete
 
 ## Summary
 
