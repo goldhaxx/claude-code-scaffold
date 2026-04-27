@@ -227,10 +227,12 @@ The skill itself uses the http substrate exclusively for issue creation (resolve
 
 ## Docs Lifecycle Scripts
 
+> **BTS-212 — uniform flag parsing.** Every `docs-check.sh` subcommand that operates on a project root accepts `--project-dir <path>` as a flag in addition to the legacy positional `[docs-dir]` / `[project-dir]` form. Skill prose can pass `--project-dir .` mechanically across the family. Unknown flags emit `Usage:` to stderr and exit 2 — no more cryptic `dirname:` / `jq:` / `rm:` downstream-tool errors. The canonical set is the `PROJECT_TREE_SUBCOMMANDS` array near the top of `docs-check.sh`; the contract is locked in by `hub/tests/docs-check-flags.bats`.
+
 | Command | What it does |
 |---------|-------------|
-| `docs-check.sh status [docs-dir]` | Extract metadata (feature_id, hashes, timestamps) from spec/plan/stasis → JSON |
-| `docs-check.sh validate [docs-dir]` | Check alignment: `aligned`, `stale-plan`, `stale-stasis`, `mismatched`, `unlinked`, `missing-determinism-review` |
+| `docs-check.sh status [--project-dir <path>] [<docs-dir>]` | Extract metadata (feature_id, hashes, timestamps) from spec/plan/stasis → JSON |
+| `docs-check.sh validate [--project-dir <path>] [<docs-dir>]` | Check alignment: `aligned`, `stale-plan`, `stale-stasis`, `mismatched`, `unlinked`, `missing-determinism-review` |
 | `docs-check.sh legacy-refs-scan [--respect-allowlist <path>] [project-dir]` | Scan for legacy references (`/catchup`, `/checkpoint`, `docs/checkpoint.md`, etc.) → JSON. Scope: `hub-owned` vs `node-specific`. `--respect-allowlist <path>` (BTS-132) pre-filters matches against ERE patterns in `<path>` (same format as `hub/tests/legacy-refs-allowlist.txt`) — comments (`^#`) and blank lines skipped. Exit 1 if any post-filter matches remain; exit 2 if allowlist file is missing. |
 | `docs-check.sh evidence-scan-session [--since <commit>] [--project-dir <path>] [--input-json <file>] [--no-time-filter]` | BTS-201: scan session captures (via `idea.list` resolver, or canned `--input-json` for tests) for bug-shape titles missing the four evidence anchors (`Command:`, `Output:`, `Exit:`, `Reproduce:`). Returns `{evidence_gaps:[{id,title,reason}], scanned:N, fallback?:"24h"}`. `DIAGNOSE:`-titled captures are exempt; `--since` falls back to a 24h window when unresolvable. Invoked by `/stasis`; protocol documented in `.claude/rules/evidence-required-for-captures.md`. |
 | `docs-check.sh recommend [docs-dir]` | State machine → `{next_action, reason}` (e.g., "Run /plan", "Ready to build") |
