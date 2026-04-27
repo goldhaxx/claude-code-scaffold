@@ -27,7 +27,9 @@ Both fields must be `true`. If either fails, abort — re-running on a broken su
 
 ```bash
 DRIFT=$(bash .ccanvil/scripts/ccanvil-sync.sh drift-watchdog-list)
-N=$(echo "$DRIFT" | jq 'length')
+# BTS-227: here-string instead of echo — protects against macOS bash's echo
+# escape interpretation if the substrate ever embeds \n in summary fields.
+N=$(jq 'length' <<< "$DRIFT")
 if (( N == 0 )); then
   echo "drift-watchdog: no drift detected"
   exit 0
@@ -51,13 +53,14 @@ Each existing issue's title carries the `drift_key` — used to skip duplicate c
 For each entry in `$DRIFT`:
 
 ```bash
-DRIFT_KEY=$(echo "$drift" | jq -r '.drift_key')
-NODE_NAME=$(echo "$drift" | jq -r '.node_name')
+DRIFT_KEY=$(jq -r '.drift_key' <<< "$drift")
+NODE_NAME=$(jq -r '.node_name' <<< "$drift")
 
 # Idempotency check: skip if a non-terminal issue with this drift_key already exists.
-DUP=$(echo "$EXISTING" | jq --arg k "$DRIFT_KEY" \
-  '[.[] | select(.title | contains($k)) | select(.statusType != "canceled" and .statusType != "duplicate" and .statusType != "completed")]')
-if (( $(echo "$DUP" | jq 'length') > 0 )); then
+# BTS-227: here-string instead of echo — protects against \n in titles/labels.
+DUP=$(jq --arg k "$DRIFT_KEY" \
+  '[.[] | select(.title | contains($k)) | select(.statusType != "canceled" and .statusType != "duplicate" and .statusType != "completed")]' <<< "$EXISTING")
+if (( $(jq 'length' <<< "$DUP") > 0 )); then
   echo "drift-watchdog: skip — existing issue for $NODE_NAME ($DRIFT_KEY)"
   continue
 fi
@@ -113,7 +116,10 @@ if [[ -n "$CREATED_ID" ]]; then
       --op add --title "$TITLE" --body "$BODY"
     continue
   fi
-  if ! echo "$VERIFY" | jq -e '.labels | index("drift-watchdog")' >/dev/null 2>&1; then
+  # BTS-227: use here-string (`<<<`) instead of `echo "$VERIFY"` — macOS bash's
+  # echo builtin interprets backslash-n in JSON description fields as literal
+  # newlines, breaking the JSON. Here-strings are byte-faithful.
+  if ! jq -e '.labels | index("drift-watchdog")' <<< "$VERIFY" >/dev/null 2>&1; then
     # Issue exists but lacks the drift-watchdog label — same outcome as a failed create.
     echo "drift-watchdog: VERIFY FAILED for $CREATED_ID — label missing — queueing pending"
     bash .ccanvil/scripts/docs-check.sh idea-pending-append \
