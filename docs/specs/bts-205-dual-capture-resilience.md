@@ -3,7 +3,7 @@
 > Feature: bts-205-dual-capture-resilience
 > Work: linear:BTS-205
 > Created: 1777329561
-> Status: In Progress
+> Status: Complete
 
 ## Summary
 
