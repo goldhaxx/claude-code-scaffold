@@ -108,6 +108,38 @@ The `PATH` shown above is minimal — the live plist on the original machine car
 
 Update both `WorkingDirectory` and the `cd` argument to match the actual repo path on the new machine.
 
+## SSOT-Linear routing on this hub (post-BTS-217)
+
+As of 2026-04-27, this hub's `.claude/ccanvil.local.json` carries:
+
+```json
+{
+  "integrations": {
+    "routing": {
+      "idea":   "linear",
+      "spec":   "linear",
+      "plan":   "linear",
+      "stasis": "linear"
+    }
+  }
+}
+```
+
+Lifecycle docs for new features are written to Linear Documents parented to the linked ticket and archived into `docs/sessions/<epoch>-<feature>-{spec,plan,stasis}.md` at `/pr` time. The local `docs/spec.md`, `docs/plan.md`, `docs/stasis.md` are still produced (they ride the activate commit and are read by every `pr-cleanup` invocation), but they are removed by `pr-cleanup`'s `cmd_complete` and the durable post-merge state lives in Linear + `docs/sessions/`.
+
+**Hub-only.** Routing config lives in `.claude/ccanvil.local.json`, which is gitignored. `/ccanvil-pull` and `broadcast` never propagate the flip — every downstream node opts in independently by editing its own `.claude/ccanvil.local.json`. See `feedback_provider_neutral_schemas` memory for the design rationale.
+
+**Substrate provenance:** BTS-204 (substrate origin) → BTS-213 (route-aware `/spec` + `cmd_activate`) → BTS-214 (archive batch-read) → BTS-216 (RFC 4122 v4 UUID fix). All shipped 2026-04-25 → 2026-04-27. BTS-217 was the operator-decision-only flip + dogfood validation against the live API.
+
+**To revert** (rare — substrate is proven, but the override exists):
+
+```bash
+jq 'del(.integrations.routing.spec, .integrations.routing.plan, .integrations.routing.stasis)' \
+  .claude/ccanvil.local.json | sponge .claude/ccanvil.local.json
+```
+
+`routing.idea = "linear"` stays — it's been live since BTS-115.
+
 ## Three scheduling surfaces — easy to confuse
 
 The ccanvil ecosystem has three distinct ways to run code on a schedule. Mixing them up wastes context and produces resurrection mistakes (e.g., recreating a remote routine via in-session `CronCreate` and watching it die at session exit).
