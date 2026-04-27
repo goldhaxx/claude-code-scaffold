@@ -3958,6 +3958,53 @@ _complete_archive_linear() {
   done
 }
 
+# BTS-204 Phase 7: document-cache for concurrent-edit safety.
+# Stores {<doc_id>: {updatedAt}} at .ccanvil/state/document-cache.json.
+# Atomic writes via mktemp+mv. Cache file is gitignored (regenerable state).
+_doc_cache_path() {
+  echo "${1:-.}/.ccanvil/state/document-cache.json"
+}
+
+_doc_cache_get_updated_at() {
+  local doc_id="$1" project_dir="${2:-.}"
+  local cache_path
+  cache_path=$(_doc_cache_path "$project_dir")
+  [[ -f "$cache_path" ]] || { echo ""; return 0; }
+  jq -r --arg id "$doc_id" '.[$id].updatedAt // empty' "$cache_path" 2>/dev/null
+}
+
+_doc_cache_set_updated_at() {
+  local doc_id="$1" updated_at="$2" project_dir="${3:-.}"
+  local cache_path tmp
+  cache_path=$(_doc_cache_path "$project_dir")
+  mkdir -p "$(dirname "$cache_path")"
+  tmp=$(mktemp "${cache_path}.XXXXXX")
+  if [[ -f "$cache_path" ]]; then
+    jq --arg id "$doc_id" --arg ts "$updated_at" \
+      '.[$id] = {updatedAt: $ts}' "$cache_path" > "$tmp"
+  else
+    jq -n --arg id "$doc_id" --arg ts "$updated_at" \
+      '{($id): {updatedAt: $ts}}' > "$tmp"
+  fi
+  mv "$tmp" "$cache_path"
+}
+
+# Returns 0 if write is safe (cache absent OR remote updatedAt matches cache).
+# Returns 1 if remote updatedAt has advanced past cache (concurrent edit detected).
+_doc_concurrent_edit_check() {
+  local doc_id="$1" project_dir="${2:-.}"
+  local script_dir cached remote
+  script_dir="$(dirname "${BASH_SOURCE[0]}")"
+  cached=$(_doc_cache_get_updated_at "$doc_id" "$project_dir")
+  [[ -z "$cached" ]] && return 0   # No cache yet — first write; safe.
+  remote=$(bash "$script_dir/linear-query.sh" document-updated-at "$doc_id" 2>/dev/null | jq -r '.updatedAt // empty')
+  [[ -z "$remote" ]] && return 0   # Document missing remote (will create); safe.
+  if [[ "$remote" != "$cached" ]]; then
+    return 1
+  fi
+  return 0
+}
+
 # BTS-204 Phase 6: ssot-migrate — operator-driven, idempotent migration of
 # lifecycle artifacts between local files and Linear Documents. Bidirectional.
 # Never auto-triggered. Per AC-12.
@@ -4160,16 +4207,40 @@ cmd_artifact_write() {
   local doc_id
   doc_id=$(bash "$script_dir/linear-query.sh" resolve-document-id --kind "$resolve_kind" --ticket "$ticket")
 
+  # BTS-204 Step 19: pre-write concurrent-edit check (AC-8).
+  # If the cache has a known updatedAt and Linear's current updatedAt has
+  # advanced past it, refuse the write — surface document-history hint.
+  # When ALLOW_CONCURRENT_EDIT_OVERRIDE=1, skip the check (operator escape).
+  if [[ "${ALLOW_CONCURRENT_EDIT_OVERRIDE:-0}" != "1" ]]; then
+    if ! _doc_concurrent_edit_check "$doc_id" "$project_dir"; then
+      cat >&2 <<EOF
+ERROR: concurrent edit detected on Linear Document $doc_id.
+The remote updatedAt has advanced past the cached value.
+Run: bash .ccanvil/scripts/linear-query.sh document-history $doc_id
+to see what changed. Set ALLOW_CONCURRENT_EDIT_OVERRIDE=1 to force-write.
+EOF
+      return 4
+    fi
+  fi
+
+  local result
   if bash "$script_dir/linear-query.sh" document-updated-at "$doc_id" >/dev/null 2>&1; then
     # Update path
-    jq -n --arg id "$doc_id" --arg content "$content" '{id:$id, content:$content}' \
-      | bash "$script_dir/linear-query.sh" save-document --input-json -
+    result=$(jq -n --arg id "$doc_id" --arg content "$content" '{id:$id, content:$content}' \
+      | bash "$script_dir/linear-query.sh" save-document --input-json -) || return $?
   else
     # Create path with caller-supplied UUID
-    jq -n --arg id "$doc_id" --arg title "$title" --arg content "$content" \
+    result=$(jq -n --arg id "$doc_id" --arg title "$title" --arg content "$content" \
       --arg parent_field "$parent_field" --arg parent "$parent_value" \
       '{id:$id, title:$title, content:$content} + ({} + (if $parent_field == "issueId" then {issueId:$parent} else {projectId:$parent} end))' \
-      | bash "$script_dir/linear-query.sh" save-document --create-with-id --input-json -
+      | bash "$script_dir/linear-query.sh" save-document --create-with-id --input-json -) || return $?
+  fi
+  echo "$result"
+  # Cache the new updatedAt for next concurrent-edit check.
+  local new_ts
+  new_ts=$(printf '%s' "$result" | jq -r '.updatedAt // empty')
+  if [[ -n "$new_ts" ]]; then
+    _doc_cache_set_updated_at "$doc_id" "$new_ts" "$project_dir"
   fi
 }
 

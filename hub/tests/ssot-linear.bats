@@ -690,6 +690,70 @@ JSON
   echo "$output" | jq -e '.migrated == 0'
 }
 
+@test "BTS-204 Phase 7 Step 19: artifact-write refuses on concurrent edit" {
+  set -e
+  _setup_stub
+  fx=$(_make_linear_lifecycle_fx)
+  cd "$fx"
+  doc_id=$(bash "$LQ" resolve-document-id --kind spec --ticket BTS-204)
+  mkdir -p "$fx/.ccanvil/state"
+  jq -n --arg id "$doc_id" '{($id): {updatedAt: "2026-04-26T19:00:00.000Z"}}' \
+    > "$fx/.ccanvil/state/document-cache.json"
+  # Multi-response stub: get-issue (parent UUID) → document-updated-at (NEWER → divergence)
+  STUB_FIXTURE="$BATS_TEST_TMPDIR/conflict-stub.sh"
+  cat > "$STUB_FIXTURE" <<'SHELL'
+curl() {
+  local n
+  n=$(cat "$BATS_TEST_TMPDIR/cnt2" 2>/dev/null || echo 0)
+  n=$((n + 1)); echo "$n" > "$BATS_TEST_TMPDIR/cnt2"
+  case "$n" in
+    1) echo '{"data":{"issue":{"id":"issue-uuid","identifier":"BTS-204","title":"t","priority":2,"createdAt":"t0","updatedAt":"t1","description":"d","state":{"name":"x","type":"x","id":"s"},"labels":{"nodes":[]}}}}' ;;
+    2) echo '{"data":{"document":{"id":"x","updatedAt":"2026-04-26T20:00:00.000Z","updatedBy":null}}}' ;;
+    *) echo '{"data":{}}' ;;
+  esac
+  return 0
+}
+export -f curl
+SHELL
+  echo 0 > "$BATS_TEST_TMPDIR/cnt2"
+  run --separate-stderr bash -c "source '$STUB_FIXTURE' && echo 'new' | bash '$DC' artifact-write --kind spec --feature BTS-204"
+  [ "$status" -eq 4 ]
+  [[ "$stderr" =~ "concurrent edit" ]]
+}
+
+@test "BTS-204 Phase 7 Step 19: ALLOW_CONCURRENT_EDIT_OVERRIDE=1 force-writes" {
+  set -e
+  _setup_stub
+  fx=$(_make_linear_lifecycle_fx)
+  cd "$fx"
+  doc_id=$(bash "$LQ" resolve-document-id --kind spec --ticket BTS-204)
+  mkdir -p "$fx/.ccanvil/state"
+  jq -n --arg id "$doc_id" '{($id): {updatedAt: "2026-04-26T19:00:00.000Z"}}' \
+    > "$fx/.ccanvil/state/document-cache.json"
+  # Stub: divergent updatedAt + successful update path
+  STUB_FIXTURE="$BATS_TEST_TMPDIR/override-stub.sh"
+  cat > "$STUB_FIXTURE" <<'SHELL'
+curl() {
+  local n
+  n=$(cat "$BATS_TEST_TMPDIR/cnt" 2>/dev/null || echo 0)
+  n=$((n + 1)); echo "$n" > "$BATS_TEST_TMPDIR/cnt"
+  case "$n" in
+    1) echo '{"data":{"issue":{"id":"issue-uuid","identifier":"BTS-204","title":"t","priority":2,"createdAt":"t0","updatedAt":"t1","description":"d","state":{"name":"x","type":"x","id":"s"},"labels":{"nodes":[]}}}}' ;;
+    2) echo '{"data":{"document":{"id":"x","updatedAt":"t","updatedBy":null}}}' ;;
+    3) echo '{"data":{"documentUpdate":{"success":true,"document":{"id":"x","title":"t","content":"new","updatedAt":"2026-04-26T21:00:00Z"}}}}' ;;
+    *) echo '{"data":{}}' ;;
+  esac
+  return 0
+}
+export -f curl
+SHELL
+  echo 0 > "$BATS_TEST_TMPDIR/cnt"
+  run bash -c "source '$STUB_FIXTURE' && echo 'new' | ALLOW_CONCURRENT_EDIT_OVERRIDE=1 bash '$DC' artifact-write --kind spec --feature BTS-204"
+  [ "$status" -eq 0 ]
+  # Cache should be updated to the new timestamp
+  jq -e --arg id "$doc_id" '.[$id].updatedAt == "2026-04-26T21:00:00Z"' "$fx/.ccanvil/state/document-cache.json"
+}
+
 @test "BTS-204 Phase 5 Step 14: cmd_complete archives + trashes Linear documents" {
   set -e
   _setup_stub
