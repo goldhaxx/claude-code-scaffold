@@ -3,7 +3,7 @@
 > Feature: bts-228-linear-issue-relation-api
 > Work: linear:BTS-228
 > Created: 1777319847
-> Status: In Progress
+> Status: Complete
 
 ## Summary
 
