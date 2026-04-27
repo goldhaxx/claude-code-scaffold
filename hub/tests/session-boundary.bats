@@ -70,3 +70,106 @@ EOF
   echo "$output" | jq -e '.iso == null'
   echo "$output" | jq -e '.tz == null'
 }
+
+# =========================================================================
+# AC-1: SessionStart hook bumps counter (first-run init)
+# =========================================================================
+
+@test "AC-1: hook initializes counter to 1 on fresh node" {
+  set -e
+  fx="$TMPDIR_BATS"
+  mkdir -p "$fx/.ccanvil"
+  CLAUDE_PROJECT_DIR="$fx" run bash "$HOOK"
+  [ "$status" -eq 0 ]
+  [ -f "$fx/.ccanvil/state/session-counter" ]
+  [ "$(cat "$fx/.ccanvil/state/session-counter")" = "1" ]
+}
+
+# =========================================================================
+# AC-6: counter is monotonic across two SessionStart invocations
+# =========================================================================
+
+@test "AC-6: counter is monotonic across two SessionStart invocations" {
+  set -e
+  fx="$TMPDIR_BATS"
+  mkdir -p "$fx/.ccanvil"
+  CLAUDE_PROJECT_DIR="$fx" bash "$HOOK"
+  [ "$(cat "$fx/.ccanvil/state/session-counter")" = "1" ]
+  CLAUDE_PROJECT_DIR="$fx" bash "$HOOK"
+  [ "$(cat "$fx/.ccanvil/state/session-counter")" = "2" ]
+}
+
+# =========================================================================
+# AC-2: SessionStart hook stamps ISO boundary
+# =========================================================================
+
+@test "AC-2: hook writes session-boundary JSON with epoch, iso, tz" {
+  set -e
+  fx="$TMPDIR_BATS"
+  mkdir -p "$fx/.ccanvil"
+  CLAUDE_PROJECT_DIR="$fx" run bash "$HOOK"
+  [ "$status" -eq 0 ]
+  [ -f "$fx/.ccanvil/state/session-boundary" ]
+  jq -e '.epoch | type == "number"' < "$fx/.ccanvil/state/session-boundary"
+  jq -e '.iso | type == "string"' < "$fx/.ccanvil/state/session-boundary"
+  jq -e '.tz | type == "string" and length > 0' < "$fx/.ccanvil/state/session-boundary"
+  iso=$(jq -r '.iso' < "$fx/.ccanvil/state/session-boundary")
+  [[ "$iso" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}[+-][0-9]{2}:[0-9]{2}$ ]]
+}
+
+# =========================================================================
+# AC-7: TZ env override respected
+# =========================================================================
+
+@test "AC-7: TZ=UTC produces iso ending in +00:00" {
+  set -e
+  fx="$TMPDIR_BATS"
+  mkdir -p "$fx/.ccanvil"
+  TZ=UTC CLAUDE_PROJECT_DIR="$fx" run bash "$HOOK"
+  [ "$status" -eq 0 ]
+  iso=$(jq -r '.iso' < "$fx/.ccanvil/state/session-boundary")
+  [[ "$iso" == *"+00:00" ]]
+}
+
+# =========================================================================
+# AC-8: counter file corruption resets to 1 + warns
+# =========================================================================
+
+@test "AC-8: hook resets corrupted counter to 1 + warns" {
+  set -e
+  fx="$TMPDIR_BATS"
+  mkdir -p "$fx/.ccanvil/state"
+  echo "garbage" > "$fx/.ccanvil/state/session-counter"
+  CLAUDE_PROJECT_DIR="$fx" run --separate-stderr bash "$HOOK"
+  [ "$status" -eq 0 ]
+  [ "$(cat "$fx/.ccanvil/state/session-counter")" = "1" ]
+  [[ "$stderr" == *"non-integer"* ]]
+}
+
+# =========================================================================
+# AC-9: hook non-blocking when state dir is unwritable
+# =========================================================================
+
+@test "AC-9: hook exits 0 even when state dir is unwritable" {
+  if [[ "$EUID" -eq 0 ]]; then
+    skip "running as root — chmod 555 is bypassed"
+  fi
+  set -e
+  fx="$TMPDIR_BATS"
+  mkdir -p "$fx/.ccanvil/state"
+  chmod 555 "$fx/.ccanvil/state"
+  CLAUDE_PROJECT_DIR="$fx" run bash "$HOOK"
+  # Restore so teardown can clean up.
+  chmod 755 "$fx/.ccanvil/state"
+  [ "$status" -eq 0 ]
+}
+
+# =========================================================================
+# Hook registration — settings.json wires SessionStart
+# =========================================================================
+
+@test "settings.json registers SessionStart hook" {
+  set -e
+  jq -e '.hooks.SessionStart | type == "array" and length > 0' "$REPO_ROOT/.claude/settings.json"
+  grep -qF 'session-boundary.sh' "$REPO_ROOT/.claude/settings.json"
+}
