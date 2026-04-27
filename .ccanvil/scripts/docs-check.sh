@@ -2862,21 +2862,49 @@ cmd_archive_stasis() {
     esac
   done
 
-  local stasis_file="$project_dir/docs/stasis.md"
-  if [[ ! -f "$stasis_file" ]]; then
-    echo "ERROR: archive-stasis: docs/stasis.md not found at $stasis_file" >&2
-    return 1
+  # BTS-230: routing-aware source selection. On Linear-routed nodes the
+  # stasis lives in a Linear Document, not docs/stasis.md. Read content
+  # via cmd_artifact_read; try session-kind first (most common), then
+  # feature-kind via docs/spec.md fallback. Output destination
+  # (docs/sessions/<epoch>-<feature_id>.md) is unchanged.
+  local stasis_content=""
+  local route
+  route=$(_lifecycle_route stasis "$project_dir")
+
+  if [[ "$route" == "linear" ]]; then
+    stasis_content=$(cmd_artifact_read --kind stasis --stasis-kind session --project-dir "$project_dir" 2>/dev/null) || stasis_content=""
+    if [[ -z "$stasis_content" && -f "$project_dir/docs/spec.md" ]]; then
+      local fallback_feature
+      fallback_feature=$(grep -m1 '^> Feature:' "$project_dir/docs/spec.md" | sed -E 's/^> Feature:[[:space:]]*//' || true)
+      if [[ -n "$fallback_feature" ]]; then
+        stasis_content=$(cmd_artifact_read --kind stasis --feature "$fallback_feature" --project-dir "$project_dir" 2>/dev/null) || stasis_content=""
+      fi
+    fi
+    if [[ -z "$stasis_content" ]]; then
+      echo "ERROR: archive-stasis: routing.stasis=linear but no stasis content found (tried session-kind, feature-kind)" >&2
+      return 1
+    fi
+  else
+    local stasis_file="$project_dir/docs/stasis.md"
+    if [[ ! -f "$stasis_file" ]]; then
+      echo "ERROR: archive-stasis: docs/stasis.md not found at $stasis_file" >&2
+      return 1
+    fi
+    # Preserve trailing newline via sentinel pattern (bash strips trailing
+    # newlines on $(cat ...)). Required for byte-identical archives.
+    stasis_content=$(cat "$stasis_file"; printf x)
+    stasis_content=${stasis_content%x}
   fi
 
   local feature_id epoch
-  feature_id=$(grep -m1 '^> Feature:' "$stasis_file" | sed -E 's/^> Feature:[[:space:]]*//' || true)
+  feature_id=$(printf '%s\n' "$stasis_content" | grep -m1 '^> Feature:' | sed -E 's/^> Feature:[[:space:]]*//' || true)
   if [[ -z "$feature_id" ]]; then
     echo "ERROR: archive-stasis: stasis missing > Feature: metadata" >&2
     return 1
   fi
-  epoch=$(grep -m1 '^> Last updated:' "$stasis_file" | sed -E 's/^> Last updated:[[:space:]]*//' || true)
+  epoch=$(printf '%s\n' "$stasis_content" | grep -m1 '^> Last updated:' | sed -E 's/^> Last updated:[[:space:]]*//' || true)
   if [[ -z "$epoch" ]]; then
-    epoch=$(grep -m1 '^> Created:' "$stasis_file" | sed -E 's/^> Created:[[:space:]]*//' || true)
+    epoch=$(printf '%s\n' "$stasis_content" | grep -m1 '^> Created:' | sed -E 's/^> Created:[[:space:]]*//' || true)
   fi
   if [[ -z "$epoch" ]]; then
     echo "ERROR: archive-stasis: stasis missing > Last updated: or > Created: epoch" >&2
@@ -2888,7 +2916,7 @@ cmd_archive_stasis() {
   local dest="$project_dir/$rel_path"
 
   if [[ -f "$dest" ]]; then
-    if diff -q "$stasis_file" "$dest" >/dev/null 2>&1; then
+    if diff -q <(printf '%s' "$stasis_content") "$dest" >/dev/null 2>&1; then
       jq -n --arg path "$rel_path" \
         '{archived: false, path: $path, reason: "already-archived"}'
       return 0
@@ -2900,7 +2928,7 @@ cmd_archive_stasis() {
   fi
 
   mkdir -p "$sessions_dir"
-  cp "$stasis_file" "$dest"
+  printf '%s' "$stasis_content" > "$dest"
   jq -n --arg path "$rel_path" '{archived: true, path: $path}'
 }
 
