@@ -4,6 +4,8 @@
 > Work: [provider:id — only on feature-kind stasis; omit on session-kind]
 > Kind: [feature | session]
 > Last updated: [epoch]
+> Session: [N — monotonic counter from .ccanvil/state/session-counter, sourced via `docs-check.sh session-info`. Omit if counter=0 (fresh node).]
+> Boundary: [ISO-8601 local timestamp from .ccanvil/state/session-boundary, e.g. 2026-04-26T18:44:36-07:00. Omit if unavailable.]
 > Plan hash: [hash — only on feature-kind stasis]
 > Session objective: [what we set out to do]
 <!-- Reminder: if no plan exists yet, run /plan before /stasis (plan before stasis). -->

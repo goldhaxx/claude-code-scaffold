@@ -173,3 +173,33 @@ EOF
   jq -e '.hooks.SessionStart | type == "array" and length > 0' "$REPO_ROOT/.claude/settings.json"
   grep -qF 'session-boundary.sh' "$REPO_ROOT/.claude/settings.json"
 }
+
+# =========================================================================
+# AC-4: stasis template carries Session + Boundary metadata
+# =========================================================================
+
+@test "AC-4: stasis template includes > Session: line" {
+  grep -qE '^> Session:' "$REPO_ROOT/.ccanvil/templates/stasis.md"
+}
+
+@test "AC-4: stasis template includes > Boundary: line" {
+  grep -qE '^> Boundary:' "$REPO_ROOT/.ccanvil/templates/stasis.md"
+}
+
+@test "AC-4: stasis skill calls docs-check.sh session-info" {
+  grep -qF 'docs-check.sh session-info' "$REPO_ROOT/.claude/skills/stasis/SKILL.md"
+}
+
+# =========================================================================
+# AC-5: recall skill surfaces session + boundary
+# =========================================================================
+
+@test "AC-5: recall skill calls docs-check.sh session-info" {
+  grep -qF 'docs-check.sh session-info' "$REPO_ROOT/.claude/skills/recall/SKILL.md"
+}
+
+@test "AC-5: recall skill briefing prose mentions Session N" {
+  # The briefing renders a one-liner like "Session N — boundary ISO" guarded
+  # on counter > 0 to avoid zero-noise on fresh nodes.
+  grep -qE 'Session N|Session \\?\\?N' "$REPO_ROOT/.claude/skills/recall/SKILL.md"
+}
