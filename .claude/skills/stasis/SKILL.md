@@ -191,7 +191,12 @@ If none: "No candidates this session."
 
 ## Commit the snapshot
 
-12. Stage and commit `docs/stasis.md`:
+12. **Commit the live snapshot.** On local-routed nodes, stage and commit
+    `docs/stasis.md`. On Linear-routed nodes (`integrations.routing.stasis=linear`),
+    the canonical write went to Linear at the artifact-write step above —
+    skip the `git add docs/stasis.md` (file does not exist) and commit only
+    the `docs/sessions/` archive at step 12a. Detect via:
+    `route=$(jq -r '.integrations.routing.stasis // "local"' .claude/ccanvil.json .claude/ccanvil.local.json 2>/dev/null | grep -v '^$' | tail -1)`
     ```bash
     ALLOW_MAIN=1 git add docs/stasis.md
     ALLOW_MAIN=1 git -c commit.gpgsign=false commit -m "docs: stasis <feature-id>"

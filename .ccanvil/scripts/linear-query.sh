@@ -621,8 +621,11 @@ main() {
 }
 
 # -----------------------------------------------------------------------------
-# BTS-204: lifecycle-Document UUID namespace + deterministic ID derivation.
-# Stable namespace UUID v4, pinned forever — changing it breaks every existing
+# BTS-204: lifecycle-Document deterministic ID namespace.
+# Pinned hex string used as the salt for SHA-256-based deterministic ID
+# derivation. The output is UUID-shaped (8-4-4-4-12 hex) but is NOT an
+# RFC-4122 v5 UUID — version/variant bits are not set. Linear's API accepts
+# any UUID-format string. Changing this constant breaks every existing
 # document mapping. Don't.
 # -----------------------------------------------------------------------------
 BTS_NS="5b8e4a8e-4f3c-4d2a-9c1e-bf204550b91d"

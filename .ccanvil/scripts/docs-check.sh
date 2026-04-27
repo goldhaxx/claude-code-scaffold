@@ -3878,6 +3878,9 @@ _active_feature_id() {
     return 0
   fi
   if [[ -f "$project_dir/docs/spec.md" ]]; then
+    # Strip "> Work: " prefix, then strip an explicit provider prefix like
+    # "linear:" or "local:". Ticket IDs themselves are uppercase (e.g.,
+    # BTS-204), so they cannot match `^[a-z]+:` and remain untouched.
     local work
     work=$(grep -E '^> Work:' "$project_dir/docs/spec.md" 2>/dev/null | head -1 | sed -E 's/^> Work:[[:space:]]*//; s/^[a-z]+://')
     if [[ -n "$work" ]]; then
@@ -4046,7 +4049,7 @@ cmd_ssot_migrate() {
         skipped=$((skipped + 1))
         continue
       fi
-      if cat "$local_path" | cmd_artifact_write --kind "$kind" --feature "$feature" >/dev/null 2>&1; then
+      if cmd_artifact_write --kind "$kind" --feature "$feature" < "$local_path" >/dev/null 2>&1; then
         rm -f "$local_path"
         migrated=$((migrated + 1))
       else
@@ -4136,9 +4139,24 @@ cmd_artifact_read() {
 
   local doc_id
   doc_id=$(bash "$script_dir/linear-query.sh" resolve-document-id --kind "$resolve_kind" --ticket "$ticket")
-  bash "$script_dir/linear-query.sh" get-document "$doc_id" 2>/dev/null | jq -r '.content // empty'
-  local rc=${PIPESTATUS[0]}
-  return "$rc"
+  # W-2 fix: surface GraphQL errors instead of swallowing them. Skills calling
+  # artifact-read need to distinguish "not found" (route legitimately empty)
+  # from "auth/network failure" (substrate problem).
+  local err
+  err=$(mktemp); local content rc
+  content=$(bash "$script_dir/linear-query.sh" get-document "$doc_id" 2>"$err"); rc=$?
+  if [[ $rc -ne 0 ]]; then
+    cat "$err" >&2
+    rm -f "$err"
+    # Distinguish not-found from real errors. linear-query.sh emits "Entity not
+    # found: Document" for missing; everything else is a substrate problem.
+    if grep -q "Entity not found" "$err" 2>/dev/null || grep -q "Entity not found" <<<"$err"; then
+      return 2
+    fi
+    return 3
+  fi
+  rm -f "$err"
+  printf '%s\n' "$content" | jq -r '.content // empty'
 }
 
 # cmd_artifact_write — write artifact content to the routed destination.
@@ -4218,6 +4236,10 @@ ERROR: concurrent edit detected on Linear Document $doc_id.
 The remote updatedAt has advanced past the cached value.
 Run: bash .ccanvil/scripts/linear-query.sh document-history $doc_id
 to see what changed. Set ALLOW_CONCURRENT_EDIT_OVERRIDE=1 to force-write.
+
+NOTE: this check is not atomic with the write — sub-second races still
+exist. Override only when you've reviewed the divergence and the remote
+edit is acceptable to discard. Multi-agent atomicity is out of scope.
 EOF
       return 4
     fi
