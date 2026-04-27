@@ -3,7 +3,7 @@
 > Feature: bts-206-session-boundary-counter
 > Work: linear:BTS-206
 > Created: 1777254424
-> Status: In Progress
+> Status: Complete
 
 ## Summary
 
