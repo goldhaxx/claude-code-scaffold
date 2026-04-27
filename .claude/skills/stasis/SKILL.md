@@ -96,38 +96,59 @@ Decisions made, alternatives considered, failed approaches. Anything the next se
 ### ## Determinism Review
 Follow `.claude/rules/self-review.md`. Review operations from this session; flag ones that should become scripts/hooks. Fill `operations_reviewed: <count>`, `candidates_found: <count>`, plus a bullet per candidate or "No candidates this session." **This section is mandatory** — validate will flag it as missing-determinism-review if empty.
 
-**BTS-115: dual-capture each candidate as a Linear idea.** After writing the section, for each candidate (skip entirely if `candidates_found == 0` or the resolved provider is `local`):
+**BTS-115: dual-capture each candidate as an idea.** After writing the section, for each candidate (skip entirely if `candidates_found == 0`):
 
 1. **Derive a deterministic title:** `Determinism: <candidate-slug>` where `<candidate-slug>` is the bolded operation name from the bullet (markdown `**` markers stripped, trimmed, ≤80 chars). Stable across sessions — same input, same title.
-2. **Dedup against existing ideas:**
+2. **Dedup against existing ideas (Linear-routed only):**
    ```bash
    IDEA_LIST=$(bash .ccanvil/scripts/operations.sh resolve idea.list --project-dir .)
    provider=$(echo "$IDEA_LIST" | jq -r '.provider')
-   [[ "$provider" != "linear" ]] && continue   # local-routed: skip the capture step entirely
-   listing=$(eval "$(echo "$IDEA_LIST" | jq -r '.invocation.command')")
-   match=$(echo "$listing" | jq -r --arg t "$TITLE" '[.[] | select(.title == $t)] | .[0].id // ""')
-   if [[ -n "$match" ]]; then
-     echo "dedup: skipped '$TITLE' — existing idea $match"
-     continue
+   if [[ "$provider" == "linear" ]]; then
+     listing=$(eval "$(echo "$IDEA_LIST" | jq -r '.invocation.command')")
+     match=$(echo "$listing" | jq -r --arg t "$TITLE" '[.[] | select(.title == $t)] | .[0].id // ""')
+     if [[ -n "$match" ]]; then
+       echo "dedup: skipped '$TITLE' — existing idea $match"
+       continue
+     fi
    fi
    ```
-3. **Capture via the BTS-166 http substrate:**
+3. **Capture via the resolved provider (BTS-205: local-routed no longer skipped):**
    ```bash
    RESOLUTION=$(bash .ccanvil/scripts/operations.sh resolve idea.add --project-dir .)
+   mechanism=$(echo "$RESOLUTION" | jq -r '.mechanism')
    cmd=$(echo "$RESOLUTION" | jq -r '.invocation.command')
-   if jq -n --arg title "$TITLE" --arg description "$BODY" \
-        '{title:$title, description:$description}' \
-        | eval "$cmd --input-json -" >/dev/null 2>&1; then
+   captured=0
+   case "$mechanism" in
+     bash)
+       # Local-routed: idea-add appends to .ccanvil/ideas.log
+       if bash .ccanvil/scripts/docs-check.sh idea-add "$BODY" --title "$TITLE" --project-dir . >/dev/null 2>&1; then
+         captured=1
+       fi
+       ;;
+     http)
+       # Linear-routed: dispatch the resolved http command
+       if jq -n --arg title "$TITLE" --arg description "$BODY" \
+            '{title:$title, description:$description}' \
+            | eval "$cmd --input-json -" >/dev/null 2>&1; then
+         captured=1
+       fi
+       ;;
+   esac
+   if (( captured == 1 )); then
      echo "Captured idea: $TITLE"
    else
-     # Pending-log fallback — replay later via /idea sync.
-     bash .ccanvil/scripts/docs-check.sh idea-pending-append \
-       --op add --title "$TITLE" --body "$BODY"
-     echo "PENDING: capture queued for /idea sync"
+     # Pending-log fallback. BTS-205: idea-pending-append now writes to
+     # .ccanvil/dual-capture-emergency.log if its own primary log write
+     # also fails — determinism candidates never evaporate silently.
+     if bash .ccanvil/scripts/docs-check.sh idea-pending-append --op add --title "$TITLE" --body "$BODY"; then
+       echo "PENDING: capture queued for /idea sync ($TITLE)"
+     else
+       echo "ERROR: dual-capture failed all paths (primary + pending + emergency) for $TITLE" >&2
+     fi
    fi
    ```
 
-The capture body is the bullet's full text (operation, what happened, deterministic replacement, impact). Capture failure NEVER aborts the stasis flow — pending-log fallback guarantees forward progress.
+The capture body is the bullet's full text (operation, what happened, deterministic replacement, impact). Capture failure NEVER aborts the stasis flow — the pending-log + emergency-log chain guarantees forward progress.
 
 ### ## Evidence Gaps (BTS-201)
 **Always present** — never omitted. Surfaces session captures that look like bug reports but lack reproducible evidence (per `.claude/rules/evidence-required-for-captures.md`).

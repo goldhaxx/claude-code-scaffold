@@ -4056,7 +4056,22 @@ cmd_idea_pending_append() {
       ;;
   esac
 
-  printf '%s\n' "$entry" >> "$pending"
+  # BTS-205: emergency dead-letter when primary log write fails.
+  # /stasis dual-capture's pending-log fallback was the only safety net;
+  # if the pending log itself was unwritable (perms, exotic FS issue),
+  # determinism candidates evaporated silently. Now the helper writes
+  # to .ccanvil/dual-capture-emergency.log as a last-resort, with a
+  # WARN to stderr so /stasis surfaces the degradation.
+  if ! printf '%s\n' "$entry" >> "$pending" 2>/dev/null; then
+    local emergency="$project_dir/.ccanvil/dual-capture-emergency.log"
+    if printf '%s\n' "$entry" >> "$emergency" 2>/dev/null; then
+      echo "WARN: idea-pending-append: primary log write failed; entry written to emergency log ($emergency)" >&2
+      return 0
+    else
+      echo "ERROR: idea-pending-append: both primary and emergency log writes failed" >&2
+      return 1
+    fi
+  fi
 }
 
 # ---------------------------------------------------------------------------
