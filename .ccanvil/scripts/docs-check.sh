@@ -290,12 +290,29 @@ doc_entry() {
 # Exit: always 0. Reading is fault-tolerant — corruption surfaces as 0/null,
 # never as a non-zero exit. The SessionStart hook is what resets corruption.
 # ---------------------------------------------------------------------------
+# @manifest
+# purpose: Read session-counter + session-boundary state files and emit a JSON envelope (counter, epoch, iso, tz) for /recall and /stasis cold-start briefings
+# input: --project-dir <path>
+# output: stdout JSON envelope {counter, epoch, iso, tz}
+# output: exit-codes 0 ok, 2 on unknown flag
+# caller: skill:/recall
+# caller: skill:/stasis
+# depends-on: jq
+# side-effect: reads-state-file
+# failure-mode: unknown-flag | exit=2 | visible=stderr-Usage
+# failure-mode: non-integer-counter | exit=0 | visible=stderr-WARN | mitigation=read-as-0-and-continue
+# contract: never-fails-on-missing-state-files
+# contract: single-fork-jq-emission
+# anchor: BTS-206 (session counter substrate)
+# anchor: BTS-207 (single-fork jq read)
+# anchor: BTS-241 (manifest seed)
 cmd_session_info() {
   local project_dir="."
   while [[ $# -gt 0 ]]; do
     case "$1" in
       --project-dir) project_dir="${2:-.}"; shift 2 ;;
       --) shift; break ;;
+      # @failure-mode: unknown-flag
       --*) echo "Usage: docs-check.sh session-info [--project-dir <path>]" >&2; exit 2 ;;
       *) shift ;;
     esac
@@ -306,11 +323,13 @@ cmd_session_info() {
   boundary_path="$project_dir/.ccanvil/state/session-boundary"
 
   counter=0
+  # @side-effect: reads-state-file
   if [[ -f "$counter_path" ]]; then
     raw=$(tr -d '[:space:]' < "$counter_path" 2>/dev/null || echo "")
     if [[ "$raw" =~ ^[0-9]+$ ]]; then
       counter="$raw"
     else
+      # @failure-mode: non-integer-counter
       echo "WARN: session-counter contains non-integer; reading as 0" >&2
     fi
   fi
@@ -337,6 +356,27 @@ cmd_session_info() {
 #
 # Output: JSON object with spec, plan, stasis entries.
 # ---------------------------------------------------------------------------
+# @manifest
+# purpose: Extract metadata + compute content hashes for spec/plan/stasis docs in the active docs dir; emit a JSON envelope for /recall, /radar, /idea, drift-watchdog, and other consumers that need fresh doc state
+# input: --project-dir <path>
+# input: positional <docs-dir> (legacy)
+# output: stdout JSON {spec, plan, stasis, last_compact_ts}
+# output: exit-codes 0 ok, 2 unknown-flag
+# caller: skill:/recall
+# caller: skill:/radar
+# caller: skill:/stasis
+# caller: skill:/idea
+# caller: skill:/drift-watchdog
+# depends-on: jq
+# depends-on: doc_entry
+# side-effect: reads-spec-plan-stasis
+# failure-mode: unknown-flag | exit=2 | visible=stderr-Usage
+# failure-mode: missing-doc | exit=0 | visible=null-entry-in-output | mitigation=consumer-handles-null
+# contract: emits-null-entries-for-missing-docs
+# contract: never-fails-on-missing-files
+# anchor: BTS-113 (last-compact-ts surfacing)
+# anchor: BTS-212 (arg loop refactor)
+# anchor: BTS-241 (manifest seed)
 cmd_status() {
   # BTS-212: arg loop — accepts --project-dir <path> or legacy positional
   # docs_dir. Unknown flags emit Usage + exit 2.
@@ -345,6 +385,7 @@ cmd_status() {
     case "$1" in
       --project-dir) project_dir="${2:-.}"; shift 2 ;;
       --) shift; break ;;
+      # @failure-mode: unknown-flag
       --*) echo "Usage: docs-check.sh status [--project-dir <path>] [<docs-dir>]" >&2; exit 2 ;;
       *) break ;;
     esac
@@ -356,6 +397,8 @@ cmd_status() {
     docs_dir="${1:-$DEFAULT_DOCS_DIR}"
   fi
 
+  # @side-effect: reads-spec-plan-stasis
+  # @failure-mode: missing-doc
   local spec_entry plan_entry stasis_entry
   spec_entry=$(doc_entry "$docs_dir/spec.md" "spec")
   plan_entry=$(doc_entry "$docs_dir/plan.md" "plan")
@@ -1373,13 +1416,32 @@ cmd_pr_cleanup() {
 # Splits on the FIRST colon only so provider-ids containing colons survive
 # (e.g. a hypothetical `linear:BTS-1:subtask` would emit id="BTS-1:subtask").
 # ---------------------------------------------------------------------------
+# @manifest
+# purpose: Parse the Work: metadata line from a spec file and emit {provider, id} JSON; legacy/malformed Work fields are silently skipped (empty stdout, success) so callers can chain extract → dispatch
+# input: positional <spec-file>
+# output: stdout JSON {provider, id} when Work: present and well-formed
+# output: stdout empty when Work: absent or malformed
+# output: exit-codes 0 ok, 1 spec-not-found, 2 missing-required-arg
+# depends-on: jq
+# depends-on: parse_metadata
+# side-effect: reads-spec-file
+# failure-mode: missing-spec-arg | exit=2 | visible=stderr-Usage | mitigation=pass-spec-file-path
+# failure-mode: spec-not-found | exit=1 | visible=stderr-error | mitigation=verify-path-exists
+# failure-mode: legacy-no-work | exit=0 | visible=empty-stdout | mitigation=callers-skip-empty-output
+# contract: malformed-work-emits-empty-not-error
+# anchor: BTS-130 (Work: schema)
+# anchor: BTS-241 (manifest seed)
 cmd_extract_work() {
+  # @failure-mode: missing-spec-arg
   local spec_file="${1:?Usage: extract-work <spec-file>}"
   if [[ ! -f "$spec_file" ]]; then
+    # @failure-mode: spec-not-found
     echo "ERROR: spec file not found: $spec_file" >&2
     exit 1
   fi
 
+  # @side-effect: reads-spec-file
+  # @failure-mode: legacy-no-work
   local work
   work=$(parse_metadata "$spec_file" | jq -r '.work // empty')
   # No Work: — legacy spec, grandfathered. Empty stdout, success.
@@ -1414,6 +1476,26 @@ cmd_extract_work() {
 #   Work: local:<uid>               → log skip (scope is Linear-only, AC-6)
 #   Work: <other>:<id>              → log skip (no adapter, AC-7)
 # ---------------------------------------------------------------------------
+# @manifest
+# purpose: Map a feature branch to its linked Linear ticket and emit an AUTO-TRANSITION marker on stdout for a /activate-class skill wrapper to dispatch via ticket.transition
+# input: positional <branch-name>
+# input: positional <role> (e.g. todo, in_progress, done)
+# input: positional [docs-dir]
+# output: stdout "AUTO-TRANSITION: {provider, id, role}" line on linear: spec branches
+# output: stdout silent on legacy/non-claude/non-linear branches
+# output: exit-codes 0 always (graceful degradation by design)
+# caller: cmd_activate
+# depends-on: cmd_extract_work
+# depends-on: jq
+# side-effect: emits-auto-transition-marker
+# failure-mode: non-claude-branch | exit=0 | visible=silent
+# failure-mode: missing-spec | exit=0 | visible=silent | mitigation=expected-on-non-spec-branches
+# failure-mode: legacy-no-work | exit=0 | visible=silent | mitigation=expected-on-pre-BTS-130-specs
+# contract: never-fails-activation
+# contract: idempotent-on-already-transitioned-tickets
+# anchor: BTS-136 (auto-transition markers)
+# anchor: BTS-149 (enqueue-on-failure-only)
+# anchor: BTS-241 (manifest seed)
 cmd_auto_transition_emit() {
   # BTS-136 — emit AUTO-TRANSITION marker for a given role. Mirror of
   # cmd_auto_close_emit's decision tree — only difference is the role is
@@ -1422,17 +1504,20 @@ cmd_auto_transition_emit() {
   local role="${2:?Usage: auto-transition-emit <branch-name> <role> [docs-dir]}"
   local docs_dir="${3:-$DEFAULT_DOCS_DIR}"
 
+  # @failure-mode: non-claude-branch
   if [[ ! "$branch" =~ ^claude/[^/]+/(.+)$ ]]; then
     return 0
   fi
   local feature_id="${BASH_REMATCH[1]}"
   local spec_file="${docs_dir}/specs/${feature_id}.md"
+  # @failure-mode: missing-spec
   if [[ ! -f "$spec_file" ]]; then
     return 0
   fi
 
   local work_json
   work_json=$(cmd_extract_work "$spec_file")
+  # @failure-mode: legacy-no-work
   if [[ -z "$work_json" ]]; then
     return 0
   fi
@@ -1443,6 +1528,7 @@ cmd_auto_transition_emit() {
 
   case "$provider" in
     linear)
+      # @side-effect: emits-auto-transition-marker
       # BTS-149 AC-10: emit the AUTO-TRANSITION marker only — no pre-enqueue.
       # The /activate skill enqueues to .ccanvil/ideas-pending.log only on
       # MCP failure (via idea-pending-append). Inverts the BTS-148
@@ -1461,24 +1547,49 @@ cmd_auto_transition_emit() {
   esac
 }
 
+# @manifest
+# purpose: Map a landed feature branch to its linked Linear ticket and emit an AUTO-CLOSE marker on stdout for /land or /ship to dispatch via ticket.transition (role=done)
+# input: positional <branch-name>
+# input: positional [docs-dir]
+# output: stdout "AUTO-CLOSE: {provider, id, role:done}" line on linear: spec branches
+# output: stdout informational skip messages on legacy/non-claude/local/other-provider branches
+# output: exit-codes 0 always (graceful degradation; never fails landing)
+# caller: cmd_land
+# depends-on: cmd_extract_work
+# depends-on: jq
+# side-effect: reads-spec-file
+# side-effect: emits-auto-close-marker
+# failure-mode: non-claude-branch | exit=0 | visible=stdout-skip-message
+# failure-mode: missing-spec | exit=0 | visible=silent | mitigation=expected-on-non-spec-branches
+# failure-mode: legacy-no-work | exit=0 | visible=silent
+# failure-mode: local-provider | exit=0 | visible=stdout-skip-message | mitigation=BTS-119-Linear-only-scope
+# failure-mode: unknown-provider | exit=0 | visible=stdout-skip-message
+# contract: linear-only-emits-marker
+# contract: never-fails-landing
+# anchor: BTS-119 (auto-close substrate)
+# anchor: BTS-241 (manifest seed)
 cmd_auto_close_emit() {
   local branch="${1:?Usage: auto-close-emit <branch-name> [docs-dir]}"
   local docs_dir="${2:-$DEFAULT_DOCS_DIR}"
 
   if [[ ! "$branch" =~ ^claude/[^/]+/(.+)$ ]]; then
+    # @failure-mode: non-claude-branch
     echo "auto-close: no feature-id detected in last merge commit — skipping"
     return 0
   fi
   local feature_id="${BASH_REMATCH[1]}"
   local spec_file="${docs_dir}/specs/${feature_id}.md"
+  # @failure-mode: missing-spec
   if [[ ! -f "$spec_file" ]]; then
     return 0
   fi
 
+  # @side-effect: reads-spec-file
   local work_json
   work_json=$(cmd_extract_work "$spec_file")
   # Legacy spec without Work: → cmd_extract_work prints nothing.
   if [[ -z "$work_json" ]]; then
+    # @failure-mode: legacy-no-work
     return 0
   fi
 
@@ -1488,13 +1599,16 @@ cmd_auto_close_emit() {
 
   case "$provider" in
     linear)
+      # @side-effect: emits-auto-close-marker
       jq -cn --arg id "$id" '{provider:"linear",id:$id,role:"done"}' | \
         sed 's/^/AUTO-CLOSE: /'
       ;;
     local)
+      # @failure-mode: local-provider
       echo "auto-close: local provider — skipping (BTS-119 Linear-only)"
       ;;
     *)
+      # @failure-mode: unknown-provider
       echo "auto-close: provider '${provider}' — no adapter, skipping"
       ;;
   esac
@@ -1750,6 +1864,22 @@ cmd_land_recover_branch() {
 #
 # Exits 2 with a stderr error when invoked outside a git repository.
 # ---------------------------------------------------------------------------
+# @manifest
+# purpose: Inspect git remote and classify the working tree as github / local-only / other-remote so /pr and /ship can branch on push semantics; host-extracted classification avoids substring poisoning by paths that contain "github.com"
+# input: --project-dir <path>
+# output: stdout JSON {type, has_remote, remote_url} where type ∈ {github, local, other-remote}
+# output: exit-codes 0 ok, 2 unknown-flag/cd-failure/not-git
+# caller: skill:/pr
+# depends-on: jq
+# side-effect: reads-git-remote-config
+# failure-mode: unknown-flag | exit=2 | visible=stderr-Usage
+# failure-mode: cd-failure | exit=2 | visible=stderr-error | mitigation=verify-project-dir-exists
+# failure-mode: not-in-git-repo | exit=2 | visible=stderr-error | mitigation=run-from-inside-git-worktree
+# contract: host-not-substring-classification
+# contract: github-enterprise-on-non-github-com-classified-as-other-remote
+# anchor: BTS-72 (repo-type substrate origin)
+# anchor: BTS-212 (arg loop refactor)
+# anchor: BTS-241 (manifest seed)
 cmd_detect_repo_type() {
   # BTS-212: arg loop — detect-repo-type takes no positionals; reject all flags
   # except --project-dir which scopes the cwd for the git inspection.
@@ -1758,13 +1888,17 @@ cmd_detect_repo_type() {
     case "$1" in
       --project-dir) project_dir_flag="${2:-.}"; shift 2 ;;
       --) shift; break ;;
+      # @failure-mode: unknown-flag
       --*) echo "Usage: docs-check.sh detect-repo-type [--project-dir <path>]" >&2; exit 2 ;;
       *) break ;;
     esac
   done
   if [[ -n "$project_dir_flag" ]]; then
+    # @failure-mode: cd-failure
     cd "$project_dir_flag" 2>/dev/null || { echo "ERROR: cannot cd to $project_dir_flag" >&2; return 2; }
   fi
+  # @failure-mode: not-in-git-repo
+  # @side-effect: reads-git-remote-config
   if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
     echo "ERROR: detect-repo-type: not in a git repository" >&2
     return 2

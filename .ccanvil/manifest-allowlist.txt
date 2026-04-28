@@ -23,3 +23,12 @@
 .claude/rules/tdd.md
 .claude/agents/code-reviewer.md
 .claude/commands/pr.md
+
+# BTS-241: docs-check.sh lifecycle cluster (Session 2 of manifest rollout).
+# Batch 1 — foundational primitives.
+.ccanvil/scripts/docs-check.sh:cmd_session_info
+.ccanvil/scripts/docs-check.sh:cmd_status
+.ccanvil/scripts/docs-check.sh:cmd_extract_work
+.ccanvil/scripts/docs-check.sh:cmd_auto_transition_emit
+.ccanvil/scripts/docs-check.sh:cmd_auto_close_emit
+.ccanvil/scripts/docs-check.sh:cmd_detect_repo_type
