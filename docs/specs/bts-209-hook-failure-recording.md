@@ -4,7 +4,7 @@
 > Work: linear:BTS-209
 > Created: 1777343134
 > Subject: canonical hook failure recording — loud, never-block, never-snuff
-> Status: In Progress
+> Status: Complete
 
 ## Summary
 
