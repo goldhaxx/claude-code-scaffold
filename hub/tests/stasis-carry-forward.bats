@@ -262,9 +262,88 @@ EOF
 }
 
 # =========================================================================
+# BTS-238 regex-escape: slug containing `+` matches its dual-capture
+# =========================================================================
+
+@test "BTS-238 AC-3: slug with + matches literal-titled idea" {
+  set -e
+  stasis_content=$(cat <<'EOF'
+## Determinism Review
+
+* operations_reviewed: 1
+* candidates_found: 1
+* **spec dispatch + activate concurrent-edit race**: every spec ship hits the race. Impact: medium.
+EOF
+)
+
+  fixture=$(jq -n '[
+    {id:"BTS-237", title:"Determinism: spec dispatch + activate concurrent-edit race", status:"Backlog"}
+  ]' | write_fixture issues.json)
+
+  run bash "$SCRIPT" stasis-carry-forward --stasis-content - --input-json "$fixture" <<<"$stasis_content"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '.count_carry_forward == 0'
+  echo "$output" | jq -e '.candidates[0].has_idea == true'
+  echo "$output" | jq -e '.candidates[0].idea_id == "BTS-237"'
+}
+
+@test "BTS-238 AC-4: slug with each individual regex metacharacter matches its literal-titled idea" {
+  set -e
+  local fixture_path="$TMPDIR_BATS/issues-mc.json"
+  # Walk the metacharacters the gsub is supposed to escape. We use the plain
+  # bullet shape (`* slug: ...`) — not bolded — so the parser's leading-text
+  # extraction path handles slugs containing characters that would otherwise
+  # break the bolded-shape regex (e.g. `*`).
+  for char in '+' '?' '(' ')' '[' ']' '{' '}' '|' '^' '$' '.'; do
+    local slug="alpha ${char} beta"
+    local stasis_content
+    stasis_content=$(printf '## Determinism Review\n\n* candidates_found: 1\n* %s: stuff. Impact: low.\n' "$slug")
+    jq -n --arg t "Determinism: $slug" '[{id:"BTS-9999", title:$t, status:"Backlog"}]' > "$fixture_path"
+
+    run bash "$SCRIPT" stasis-carry-forward --stasis-content - --input-json "$fixture_path" <<<"$stasis_content"
+    if [ "$status" -ne 0 ]; then
+      echo "FAIL: metacharacter '$char' produced non-zero exit:" >&2
+      echo "$output" >&2
+      return 1
+    fi
+    if ! echo "$output" | jq -e '.candidates[0].has_idea == true' >/dev/null; then
+      echo "FAIL: metacharacter '$char' (slug='$slug') did not match literal-titled idea" >&2
+      echo "$output" >&2
+      return 1
+    fi
+  done
+}
+
+@test "BTS-238 AC-5: slug with + does NOT match an idea title using a different character at that position" {
+  set -e
+  stasis_content=$(cat <<'EOF'
+## Determinism Review
+
+* candidates_found: 1
+* **foo + bar**: stuff. Impact: low.
+EOF
+)
+
+  # Idea title uses '-' where slug has '+' — must NOT match (this is the
+  # specificity guarantee — the fix preserves literal matching, not regex).
+  fixture=$(jq -n '[
+    {id:"BTS-9990", title:"Determinism: foo - bar", status:"Backlog"}
+  ]' | write_fixture issues.json)
+
+  run bash "$SCRIPT" stasis-carry-forward --stasis-content - --input-json "$fixture" <<<"$stasis_content"
+  [ "$status" -eq 0 ]
+  echo "$output" | jq -e '.candidates[0].has_idea == false'
+  echo "$output" | jq -e '.count_carry_forward == 1'
+}
+
+# =========================================================================
 # Drift-guard: BTS-232 reference inline in docs-check.sh
 # =========================================================================
 
 @test "drift: BTS-232 referenced inline in docs-check.sh" {
   grep -q "BTS-232" "$SCRIPT"
+}
+
+@test "drift: BTS-238 referenced inline in docs-check.sh" {
+  grep -q "BTS-238" "$SCRIPT"
 }
