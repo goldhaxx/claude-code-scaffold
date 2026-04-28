@@ -4595,11 +4595,17 @@ cmd_stasis_carry_forward() {
 
   # 5. For each candidate slug, case-insensitive substring match against
   # idea titles starting with "Determinism: ".
+  # BTS-238: jq's gsub replacement uses named-capture interpolation
+  # (`\(.name)`), not numbered backrefs. Original pattern `[...]` with no
+  # capture group produced a malformed replacement string. Fix: use a named
+  # capture group `(?<c>...)` and reference it via `\(.c)` in the replacement.
+  # Output `\<char>` (one literal backslash + matched char) escapes regex
+  # metacharacters in the slug correctly.
   local matched_json
   matched_json=$(jq --argjson issues "$issues" '
     [.[] | . as $c |
       $issues
-      | map(select(.title | test("(?i)Determinism:.*" + ($c.slug | gsub("[][\\\\.\\^\\$\\*\\+\\?\\(\\)\\{\\}\\|]"; "\\\\\\(.\\)")))))
+      | map(select(.title | test("(?i)Determinism:.*" + ($c.slug | gsub("(?<c>[][\\\\.\\^\\$\\*\\+\\?\\(\\)\\{\\}\\|])"; "\\\(.c)")))))
       | if length > 0 then
           $c + {has_idea: true, idea_id: .[0].id}
         else
