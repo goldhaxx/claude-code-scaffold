@@ -2603,6 +2603,22 @@ cmd_radar_gather() {
 # Idea management
 # ---------------------------------------------------------------------------
 
+# @manifest
+# purpose: Append a new idea to the local provider's gitignored .ccanvil/ideas.log JSONL store with status="triage" and an epoch UID; counterpart to the http (Linear) capture path resolved by operations.sh idea.add
+# input: positional <body>
+# input: --title <title>
+# input: --parent <ref> (capture-time parent link)
+# input: positional <project-dir>
+# output: stdout JSON {id, title, status:"triage"}
+# output: exit-codes 0 ok, 2 missing-body
+# caller: skill:/idea
+# depends-on: jq
+# side-effect: appends-ideas-log
+# failure-mode: missing-body | exit=2 | visible=stderr-Usage
+# contract: epoch-UID-monotonic
+# anchor: BTS-70 (idea UID schema)
+# anchor: BTS-162 (capture-time parent)
+# anchor: BTS-241 (manifest seed)
 cmd_idea_add() {
   local body=""
   local title=""
@@ -2641,6 +2657,7 @@ cmd_idea_add() {
     esac
   done
 
+  # @failure-mode: missing-body
   [[ -n "$body" ]] || { echo "Usage: docs-check.sh idea-add <body> [--title TITLE] [--parent REF] [--project-dir <path>]" >&2; exit 2; }
 
   # Defense-in-depth: on Linear-configured nodes, captures must route
@@ -2667,6 +2684,7 @@ cmd_idea_add() {
   uid=$(head -c 2 /dev/urandom | xxd -p)
   epoch=$(date +%s)
 
+  # @side-effect: appends-ideas-log
   if [[ -n "$parent" ]]; then
     jq -cn --arg uid "$uid" --argjson created "$epoch" \
            --arg title "$title" --arg body "$body" --arg parent "$parent" \
@@ -2693,6 +2711,23 @@ cmd_idea_add() {
 #     [--source-skill NAME] [--context TEXT] [--family A,B,C] \
 #     [project-dir]
 # ---------------------------------------------------------------------------
+# @manifest
+# purpose: BTS-172 — compose an idea body from a base body plus optional decoration flags (source-skill anchor, surfaced-at context, family cross-reference); deterministic + side-effect-free for testability
+# input: --body <text>
+# input: --source-skill <name>
+# input: --context <text>
+# input: --family <BTS-A,BTS-B,...>
+# output: stdout templated body string
+# output: exit-codes 0 ok, 2 missing-body/empty-flag-arg
+# caller: skill:/idea
+# depends-on: printf
+# side-effect: emits-templated-body-stdout
+# failure-mode: missing-body | exit=1 | visible=stderr-Usage
+# failure-mode: empty-flag-arg | exit=2 | visible=stderr-error | mitigation=pass-non-empty-arg
+# contract: deterministic-given-same-input
+# contract: testable-in-isolation
+# anchor: BTS-172 (idea-template-body substrate)
+# anchor: BTS-241 (manifest seed)
 cmd_idea_template_body() {
   local body=""
   local source_skill=""
@@ -2706,6 +2741,7 @@ cmd_idea_template_body() {
         body="$2"; shift 2 ;;
       --source-skill)
         if [[ -z "$2" ]]; then
+          # @failure-mode: empty-flag-arg
           echo "ERROR: idea-template-body: --source-skill requires a non-empty value" >&2
           return 2
         fi
@@ -2733,6 +2769,7 @@ cmd_idea_template_body() {
     esac
   done
 
+  # @failure-mode: missing-body
   [[ -n "$body" ]] || { echo "Usage: idea-template-body --body BODY [--source-skill X] [--context X] [--family A,B] [project-dir]" >&2; return 1; }
 
   # Compose output. Each section is emitted only when its flag is set;
@@ -2771,9 +2808,25 @@ cmd_idea_template_body() {
   [[ "$need_blank" == true ]] && out+=$'\n'
   out+="$body"
 
+  # @side-effect: emits-templated-body-stdout
   printf '%s\n' "$out"
 }
 
+# @manifest
+# purpose: List ideas from the local provider's gitignored .ccanvil/ideas.log JSONL store, with optional status filter and archive inclusion; default view excludes terminal (canceled, duplicate) and deferred (icebox) states
+# input: --status <s>
+# input: --include-archive
+# input: --project-dir <path>
+# input: positional <project-dir> (legacy)
+# output: stdout JSON array [{id, title, status, createdAt}]
+# output: exit-codes 0 ok, 2 unknown-flag
+# depends-on: jq
+# side-effect: reads-ideas-log
+# failure-mode: unknown-flag | exit=2 | visible=stderr-Usage
+# failure-mode: missing-log | exit=0 | visible=empty-array | mitigation=expected-on-fresh-projects
+# contract: empty-array-when-no-ideas
+# contract: excludes-terminal-and-deferred-by-default
+# anchor: BTS-241 (manifest seed)
 cmd_idea_list() {
   local filter_status=""
   local project_dir="."
@@ -2785,6 +2838,7 @@ cmd_idea_list() {
       --include-archive) include_archive=1; shift ;;
       --project-dir)     project_dir="${2:-.}"; shift 2 ;;
       --) shift; break ;;
+      # @failure-mode: unknown-flag
       --*) echo "Usage: docs-check.sh idea-list [--status <s>] [--include-archive] [--project-dir <path>] [<project-dir>]" >&2; exit 2 ;;
       *)                 project_dir="$1"; shift ;;
     esac
@@ -2806,8 +2860,10 @@ cmd_idea_list() {
       echo "ARCHIVE:"
       local ideas_log="$project_dir/.ccanvil/ideas.log"
       if [[ -f "$ideas_log" ]]; then
+        # @side-effect: reads-ideas-log
         grep -v '^# ' "$ideas_log" | jq -s "[.[] | {id: .uid, created: .created, title: .title, body: .body, status: .status}]" 2>/dev/null || echo "[]"
       else
+        # @failure-mode: missing-log
         echo "[]"
       fi
     fi
@@ -2844,6 +2900,20 @@ cmd_idea_list() {
   fi
 }
 
+# @manifest
+# purpose: Aggregate the gitignored .ccanvil/ideas.log JSONL into per-status counts ({total, triage, backlog, icebox, ...}); renamed from cmd_idea_count in BTS-164 when cmd_idea_count became a provider-aware dispatcher
+# input: --project-dir <path>
+# input: positional <project-dir>
+# output: stdout JSON {total, <status>: <count>, ...}
+# output: exit-codes 0 ok, 2 unknown-flag
+# caller: cmd_idea_count
+# depends-on: jq
+# side-effect: reads-ideas-log
+# failure-mode: unknown-flag | exit=2 | visible=stderr-Usage
+# failure-mode: missing-log | exit=0 | visible=zeroed-counts
+# contract: zeroed-counts-when-log-absent
+# anchor: BTS-164 (provider-aware idea-count split)
+# anchor: BTS-241 (manifest seed)
 cmd_idea_count_local() {
   # Reads the gitignored .ccanvil/ideas.log JSONL and aggregates by status.
   # Renamed from cmd_idea_count in BTS-164 — cmd_idea_count is now a thin
@@ -2855,6 +2925,7 @@ cmd_idea_count_local() {
     case "$1" in
       --project-dir) project_dir_flag="${2:-.}"; shift 2 ;;
       --) shift; break ;;
+      # @failure-mode: unknown-flag
       --*) echo "Usage: docs-check.sh idea-count-local [--project-dir <path>] [<project-dir>]" >&2; exit 2 ;;
       *) break ;;
     esac
@@ -2868,10 +2939,12 @@ cmd_idea_count_local() {
   # for the triage counter so existing callers (radar-gather et al.) don't
   # regress.
   if [[ ! -f "$ideas_log" ]]; then
+    # @failure-mode: missing-log
     jq -n '{total:0, triage:0, backlog:0, icebox:0, canceled:0, duplicate:0, new:0, promoted:0, parked:0, dismissed:0, merged:0}'
     return 0
   fi
 
+  # @side-effect: reads-ideas-log
   grep -v '^# ' "$ideas_log" | jq -s '
     def triage_set: ["triage", "new"];
     def backlog_set: ["backlog", "promoted"];
@@ -2894,6 +2967,22 @@ cmd_idea_count_local() {
     }'
 }
 
+# @manifest
+# purpose: BTS-164 — provider-aware idea counter; dispatches to cmd_idea_count_local on local-routed projects or to linear-query.sh aggregation on linear-routed; same output shape regardless of mechanism so radar-gather and /recall stay provider-neutral
+# input: --project-dir <path>
+# input: positional <project-dir>
+# output: stdout JSON {total, triage, backlog, icebox, canceled, duplicate, new, promoted, parked, dismissed, merged}
+# output: exit-codes 0 ok, 1 resolver-failure, 2 unknown-flag
+# caller: cmd_radar_gather
+# depends-on: cmd_idea_count_local
+# depends-on: jq
+# side-effect: reads-config-files
+# side-effect: queries-provider
+# failure-mode: unknown-flag | exit=2 | visible=stderr-Usage
+# failure-mode: resolver-failure | exit=1 | visible=propagated-from-operations.sh | mitigation=verify-config-and-LINEAR_API_KEY
+# contract: provider-neutral-output-shape
+# anchor: BTS-164 (provider-aware idea-count)
+# anchor: BTS-241 (manifest seed)
 cmd_idea_count() {
   # BTS-164: provider-aware idea counter. Resolves idea.count to determine
   # whether to read the local JSONL log (mechanism=bash) or shell out to
@@ -2906,6 +2995,7 @@ cmd_idea_count() {
     case "$1" in
       --project-dir) project_dir_flag="${2:-.}"; shift 2 ;;
       --) shift; break ;;
+      # @failure-mode: unknown-flag
       --*) echo "Usage: docs-check.sh idea-count [--project-dir <path>] [<project-dir>]" >&2; exit 2 ;;
       *) break ;;
     esac
@@ -2913,6 +3003,8 @@ cmd_idea_count() {
   local project_dir="${project_dir_flag:-${1:-.}}"
   local ops="$(dirname "$0")/operations.sh"
 
+  # @side-effect: reads-config-files
+  # @side-effect: queries-provider
   local resolution
   resolution=$(bash "$ops" resolve idea.count --project-dir "$project_dir" 2>/dev/null) || {
     # Resolver failure → fall back to local-log read. Keeps radar-gather
@@ -2965,6 +3057,7 @@ cmd_idea_count() {
         }'
       ;;
     *)
+      # @failure-mode: resolver-failure
       echo "ERROR: idea-count: unknown mechanism '$mechanism'" >&2
       return 1
       ;;
@@ -3063,6 +3156,22 @@ cmd_idea_review_icebox() {
   '
 }
 
+# @manifest
+# purpose: Update an idea's status field in the local provider's ideas.log via deterministic in-place rewrite (preserves order, tolerates blank lines, no jq -c re-encode that could mangle existing fields)
+# input: --project-dir <path>
+# input: positional <uid>
+# input: positional <status>
+# input: positional <project-dir>
+# output: stdout success message
+# output: exit-codes 0 ok, 1 missing-args/uid-not-found, 2 unknown-flag
+# caller: skill:/idea
+# depends-on: jq
+# side-effect: rewrites-ideas-log
+# failure-mode: unknown-flag | exit=2 | visible=stderr-Usage
+# failure-mode: missing-args | exit=2 | visible=stderr-Usage
+# failure-mode: uid-not-found | exit=1 | visible=stderr-error | mitigation=verify-uid-via-/idea-list
+# contract: status-transition-tolerant-no-validation
+# anchor: BTS-241 (manifest seed)
 cmd_idea_update() {
   # BTS-212: arg loop
   local project_dir_flag=""
@@ -3070,6 +3179,7 @@ cmd_idea_update() {
     case "$1" in
       --project-dir) project_dir_flag="${2:-.}"; shift 2 ;;
       --) shift; break ;;
+      # @failure-mode: unknown-flag
       --*) echo "Usage: docs-check.sh idea-update [--project-dir <path>] <uid> <status> [<project-dir>]" >&2; exit 2 ;;
       *) break ;;
     esac
@@ -3077,10 +3187,12 @@ cmd_idea_update() {
   local uid="${1:-}"
   local new_status="${2:-}"
   if [[ -z "$uid" || -z "$new_status" ]]; then
+    # @failure-mode: missing-args
     echo "Usage: docs-check.sh idea-update [--project-dir <path>] <uid> <status> [<project-dir>]" >&2
     exit 2
   fi
   local project_dir="${project_dir_flag:-${3:-.}}"
+  # @side-effect: rewrites-ideas-log
   local ideas_log="$project_dir/.ccanvil/ideas.log"
 
   # Accept new vocab (triage/backlog/icebox/canceled/duplicate) and legacy
@@ -3099,6 +3211,7 @@ cmd_idea_update() {
 
   # Confirm the uid exists before rewriting.
   if ! grep -q "\"uid\":\"$uid\"" "$ideas_log"; then
+    # @failure-mode: uid-not-found
     echo "ERROR: idea with uid '$uid' not found" >&2
     exit 1
   fi

@@ -62,3 +62,10 @@
 .ccanvil/scripts/docs-check.sh:cmd_remote_presence
 .ccanvil/scripts/docs-check.sh:cmd_radar_gather
 .ccanvil/scripts/docs-check.sh:cmd_legacy_refs_scan
+# Batch 2 — idea capture/list/count/update.
+.ccanvil/scripts/docs-check.sh:cmd_idea_add
+.ccanvil/scripts/docs-check.sh:cmd_idea_template_body
+.ccanvil/scripts/docs-check.sh:cmd_idea_list
+.ccanvil/scripts/docs-check.sh:cmd_idea_count_local
+.ccanvil/scripts/docs-check.sh:cmd_idea_count
+.ccanvil/scripts/docs-check.sh:cmd_idea_update
