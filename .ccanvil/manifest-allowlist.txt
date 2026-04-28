@@ -11,3 +11,7 @@
 .ccanvil/scripts/docs-check.sh:cmd_artifact_write
 .ccanvil/scripts/docs-check.sh:cmd_ship_finalize
 .ccanvil/scripts/docs-check.sh:cmd_idea_pending_replay
+.ccanvil/scripts/module-manifest.sh:cmd_extract
+.ccanvil/scripts/module-manifest.sh:cmd_validate
+.ccanvil/scripts/module-manifest.sh:cmd_query
+.ccanvil/scripts/module-manifest.sh:cmd_index

@@ -41,12 +41,29 @@ _validate_failure_mode_value() {
   return 0
 }
 
+# @manifest
+# purpose: Parse # @manifest blocks from a single file → JSON array, one object per block.
+# input: positional <path>
+# output: stdout JSON array
+# output: exit-codes 0 ok, 2 usage-error|file-not-found|malformed-manifest
+# depends-on: jq
+# depends-on: _validate_failure_mode_value
+# depends-on: _compose_block
+# side-effect: writes-temp-file
+# failure-mode: missing-path-arg | exit=2 | visible=stderr-usage
+# failure-mode: file-not-found | exit=2 | visible=stderr-error
+# failure-mode: malformed-manifest | exit=2 | visible=stderr-MALFORMED
+# contract: emits-empty-array-for-no-blocks
+# contract: never-partial-write-on-malformed
+# anchor: BTS-239 (origin)
 cmd_extract() {
   local path="${1:-}"
+  # @failure-mode: missing-path-arg
   if [[ -z "$path" ]]; then
     echo "Usage: module-manifest.sh extract <path>" >&2
     return 2
   fi
+  # @failure-mode: file-not-found
   if [[ ! -f "$path" ]]; then
     echo "ERROR: file not found: $path" >&2
     return 2
@@ -62,6 +79,7 @@ cmd_extract() {
   local total="$idx"
 
   local tmp
+  # @side-effect: writes-temp-file
   tmp=$(mktemp)
   # shellcheck disable=SC2064
   trap "rm -f '$tmp'" RETURN
@@ -88,6 +106,7 @@ cmd_extract() {
         local key="${BASH_REMATCH[1]}"
         local val="${BASH_REMATCH[2]}"
         if [[ "$key" == "failure-mode" ]]; then
+          # @failure-mode: malformed-manifest
           _validate_failure_mode_value "$val" "$path" "$lineno" || return 2
         fi
         block_data+="$key"$'\t'"$val"$'\n'
@@ -215,6 +234,23 @@ _caller_actually_calls_primitive() {
   return 1
 }
 
+# @manifest
+# purpose: Walk allowlist; for each entry, extract + validate manifest against required-keys, declared callers, depends-on, and source markers; emit drift envelope.
+# input: --json
+# input: --allowlist <path>
+# output: stdout JSON envelope on --json (coverage, drift, status)
+# output: stderr DRIFT lines per drift incident
+# output: exit-codes 0 clean, 2 drift detected
+# depends-on: cmd_extract
+# depends-on: jq
+# depends-on: _function_body_grep
+# depends-on: _caller_actually_calls_primitive
+# side-effect: emits-DRIFT-stderr
+# failure-mode: drift-found | exit=2 | visible=stderr-DRIFT-and-json-envelope
+# contract: returns-0-on-empty-allowlist
+# contract: emits-coverage-and-drift-arrays
+# contract: bidirectional-validation-caller-and-marker
+# anchor: BTS-239 (origin)
 cmd_validate() {
   local json_mode=0 allowlist=""
   while [[ $# -gt 0 ]]; do
@@ -256,6 +292,8 @@ cmd_validate() {
     fi
 
     if [[ ! -f "$path" ]]; then
+      # @side-effect: emits-DRIFT-stderr
+      # @failure-mode: drift-found
       drift_records+=("$(jq -nc --arg p "$path" --arg id "$id" '{path:$p, id:$id, reason:"file-not-found"}')")
       echo "DRIFT: $path:$id reason=file-not-found" >&2
       continue
@@ -431,12 +469,27 @@ _maybe_regenerate_index() {
   fi
 }
 
+# @manifest
+# purpose: Filter the manifest index by `<key>:<value>` substring match across scalar and array fields.
+# input: positional <expr> (form `<key>:<value>`)
+# output: stdout JSON array of matching manifest objects
+# output: exit-codes 0 always (empty array on no match), 2 on usage error
+# depends-on: jq
+# depends-on: _maybe_regenerate_index
+# side-effect: regenerates-index-if-stale
+# failure-mode: missing-expr | exit=2 | visible=stderr-usage
+# failure-mode: malformed-expr | exit=2 | visible=stderr-error
+# contract: returns-empty-array-on-no-match
+# contract: matches-substring-not-exact
+# anchor: BTS-239 (origin)
 cmd_query() {
   local expr="${1:-}"
+  # @failure-mode: missing-expr
   if [[ -z "$expr" ]]; then
     echo "Usage: module-manifest.sh query <key>:<value>" >&2
     return 2
   fi
+  # @failure-mode: malformed-expr
   if [[ "$expr" != *":"* ]]; then
     echo "ERROR: query expression must be <key>:<value>" >&2
     return 2
@@ -445,6 +498,7 @@ cmd_query() {
   local val="${expr#*:}"
 
   local out=".ccanvil/state/manifests.json"
+  # @side-effect: regenerates-index-if-stale
   _maybe_regenerate_index "$out" || return $?
 
   jq --arg k "$key" --arg v "$val" '
@@ -456,6 +510,19 @@ cmd_query() {
   ' "$out"
 }
 
+# @manifest
+# purpose: Walk source dirs, extract each .sh file's manifests, merge into a sorted JSON object keyed `<path>:<id>`, atomically write to `.ccanvil/state/manifests.json`.
+# input: implicit (cwd-relative .ccanvil/scripts, .claude/hooks, .claude/hooks/_lib)
+# output: stdout (none — writes to file)
+# output: exit-codes 0 ok, 2 extract-failed
+# depends-on: cmd_extract
+# depends-on: jq
+# side-effect: writes-manifests-json
+# failure-mode: extract-failed | exit=2 | visible=propagated-from-cmd_extract
+# contract: deterministic-lexicographically-sorted-keys
+# contract: empty-object-when-no-sources
+# contract: atomic-write-via-mv
+# anchor: BTS-239 (origin)
 cmd_index() {
   local out=".ccanvil/state/manifests.json"
   local src_dirs=(".ccanvil/scripts" ".claude/hooks" ".claude/hooks/_lib")
@@ -475,6 +542,7 @@ cmd_index() {
     for f in "$d"/*.sh; do
       [[ ! -f "$f" ]] && continue
       local entries
+      # @failure-mode: extract-failed
       entries=$(cmd_extract "$f") || return 2
       # Skip empty arrays (no manifest blocks in this file).
       if [[ "$entries" == "[]" ]]; then
@@ -489,6 +557,7 @@ cmd_index() {
   else
     jq -s 'map({(.key): .val}) | add | to_entries | sort_by(.key) | from_entries' < "$tmp" > "$out.tmp"
   fi
+  # @side-effect: writes-manifests-json
   mv "$out.tmp" "$out"
 }
 
