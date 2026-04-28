@@ -50,6 +50,10 @@
 
 No evidence gaps this session.
 
+## Manifest Coverage
+
+[BTS-239: Layer 2 self-describing-systems substrate coverage. Format: `<covered> / <total> (allowlist), drift incidents: <N>`. Populated by `bash .ccanvil/scripts/module-manifest.sh validate --json | jq -r '"\(.coverage.covered) / \(.coverage.total) (allowlist), drift incidents: \(.drift | length)"'`. When the allowlist is empty or absent, render the literal `Manifest coverage: N/A (no allowlist yet).`]
+
 ## Cross-Session Patterns
 
 [Any determinism-review candidates or audit-session findings that also appeared in the previous stasis. Run `docs-check.sh legacy-refs-scan` as part of this check. If no prior stasis exists: "First stasis — no prior state to compare." If no patterns: "No recurring patterns."]

@@ -30,6 +30,7 @@ Collect these inputs via scripts — all deterministic, all cheap:
 9. `bash .ccanvil/scripts/context-budget.sh check` (if available) — context budget HEALTHY/WARNING/CRITICAL.
 10. `git log --oneline -20` — recent commit history.
 11. `git show HEAD~1:docs/stasis.md 2>/dev/null || true` — the prior stasis snapshot, if any. If the command fails (no prior), proceed and note "First stasis — no prior state to compare" in the Cross-Session Patterns section.
+12. `bash .ccanvil/scripts/module-manifest.sh validate --json 2>/dev/null` (BTS-239, if `.ccanvil/manifest-allowlist.txt` exists) — capture `{coverage: {covered, total}, drift: [...], status}` for the Manifest Coverage section. When the allowlist is missing or empty, the substrate emits `{coverage:{covered:0,total:0}, drift:[], status:"ok"}` — surface the literal `Manifest coverage: N/A (no allowlist yet).` instead.
 
 ## Determine stasis kind — feature vs session
 
@@ -179,6 +180,23 @@ No evidence gaps this session.
 The empty-state literal is parseable by `/recall`'s briefing renderer — it determines whether to surface the carry-forward heading or stay silent. Never mutate the literal phrasing.
 
 This section closes the BTS-198 failure mode: a "Likely root cause" capture that slipped through prior stasis review and almost shipped a regex carve-out for a phantom rule. The protocol is documented in `.claude/rules/evidence-required-for-captures.md`.
+
+### ## Manifest Coverage (BTS-239)
+Surfaces Layer 2 (Self-Describing Systems) coverage. Required section.
+
+When step 12 returned a populated envelope (allowlist exists), render the populated form:
+
+```
+<covered> / <total> (allowlist), drift incidents: <N>
+```
+
+Compose via:
+
+```bash
+echo "$VALIDATE_JSON" | jq -r '"\(.coverage.covered) / \(.coverage.total) (allowlist), drift incidents: \(.drift | length)"'
+```
+
+When the allowlist is missing or `total == 0`, render the literal `Manifest coverage: N/A (no allowlist yet).` Substrate spec at `.ccanvil/templates/manifest.md`.
 
 ### ## Permissions Review Pending (BTS-149)
 Conditional section — include ONLY when `(promote-review.counts.total + check.danger) > 0`. When both counts are 0, OMIT this section entirely (no noise).
