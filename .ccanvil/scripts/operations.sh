@@ -1063,15 +1063,23 @@ cmd_exec() {
   local mechanism
   mechanism=$(echo "$resolution" | jq -r '.mechanism')
 
-  if [[ "$mechanism" == "bash" ]]; then
-    # Extract and execute the command directly
-    local cmd
-    cmd=$(echo "$resolution" | jq -r '.invocation.command')
-    eval "$cmd"
-  else
-    # MCP or other mechanisms: output resolution JSON for Claude to dispatch
-    echo "$resolution"
-  fi
+  # BTS-211: bash AND http both carry .invocation.command (a shell command)
+  # and should be eval'd. mcp resolutions carry .invocation.tool +
+  # .invocation.params instead — caller must dispatch externally, so the
+  # envelope is emitted verbatim. Pre-fix, only bash was eval'd, silently
+  # breaking every caller of `operations.sh exec` for verbs migrated to
+  # http (BTS-175 backlog.list, idea.count, etc.).
+  case "$mechanism" in
+    bash|http)
+      local cmd
+      cmd=$(echo "$resolution" | jq -r '.invocation.command')
+      eval "$cmd"
+      ;;
+    *)
+      # mcp or any unknown mechanism: caller dispatches externally.
+      echo "$resolution"
+      ;;
+  esac
 }
 
 # ---------------------------------------------------------------------------
