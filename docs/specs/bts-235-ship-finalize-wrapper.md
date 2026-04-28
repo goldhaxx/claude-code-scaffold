@@ -3,7 +3,7 @@
 > Feature: bts-235-ship-finalize-wrapper
 > Work: linear:BTS-235
 > Created: 1777336342
-> Status: In Progress
+> Status: Complete
 
 ## Summary
 
