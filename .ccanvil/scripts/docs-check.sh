@@ -2404,6 +2404,21 @@ merge_config() {
 # (ccanvil.json + ccanvil.local.json). Returns "false" if files are
 # missing, key is missing, or features object doesn't exist.
 # ---------------------------------------------------------------------------
+# @manifest
+# purpose: Read a single feature flag (or any features.* boolean) from the merged ccanvil.json + ccanvil.local.json config; returns "false" for missing keys so callers can branch with `[[ $(config-get ...) == "true" ]]`
+# input: --project-dir <path>
+# input: positional <key>
+# input: positional <project-dir> (legacy)
+# output: stdout boolean string ("true" / "false")
+# output: exit-codes 0 ok, 1 merge-failure, 2 unknown-flag/missing-key
+# depends-on: merge_config
+# depends-on: jq
+# side-effect: reads-config-files
+# failure-mode: unknown-flag | exit=2 | visible=stderr-Usage
+# failure-mode: missing-key | exit=2 | visible=stderr-Usage
+# failure-mode: merge-failure | exit=1 | visible=propagated-from-merge_config | mitigation=verify-config-json
+# contract: missing-feature-key-returns-false-string
+# anchor: BTS-241 (manifest seed)
 cmd_config_get() {
   # BTS-212: arg loop — accepts --project-dir or legacy positional position 2.
   local project_dir_flag=""
@@ -2411,17 +2426,21 @@ cmd_config_get() {
     case "$1" in
       --project-dir) project_dir_flag="${2:-.}"; shift 2 ;;
       --) shift; break ;;
+      # @failure-mode: unknown-flag
       --*) echo "Usage: docs-check.sh config-get [--project-dir <path>] <key> [<project-dir>]" >&2; exit 2 ;;
       *) break ;;
     esac
   done
   local key="${1:-}"
   if [[ -z "$key" ]]; then
+    # @failure-mode: missing-key
     echo "Usage: docs-check.sh config-get [--project-dir <path>] <key> [<project-dir>]" >&2
     exit 2
   fi
   local project_dir="${project_dir_flag:-${2:-.}}"
 
+  # @side-effect: reads-config-files
+  # @failure-mode: merge-failure
   local merged
   merged=$(merge_config "$project_dir") || return 1
 
@@ -2439,6 +2458,21 @@ cmd_config_get() {
 # Radar — deterministic data gathering for /radar skill
 # ---------------------------------------------------------------------------
 
+# @manifest
+# purpose: Gather strategic project state for the /radar skill — active spec, recent completed specs, idea count, ccanvil-status, lifecycle envelope — into a single JSON envelope so /radar can render without orchestrating multiple shell calls
+# input: --project-dir <path>
+# input: positional <docs-dir> (legacy)
+# output: stdout JSON envelope {active_spec, completed_recent, idea_count, status, lifecycle}
+# output: exit-codes 0 always, 2 unknown-flag
+# caller: skill:/radar
+# depends-on: parse_metadata
+# depends-on: cmd_idea_count
+# depends-on: jq
+# side-effect: reads-spec-archive
+# side-effect: queries-idea-provider
+# failure-mode: unknown-flag | exit=2 | visible=stderr-Usage
+# contract: never-fails-on-missing-files
+# anchor: BTS-241 (manifest seed)
 cmd_radar_gather() {
   # BTS-212: arg loop — accepts --project-dir <path> or legacy positional
   # docs_dir. Unknown flags emit Usage + exit 2.
@@ -2447,6 +2481,7 @@ cmd_radar_gather() {
     case "$1" in
       --project-dir) project_dir="${2:-.}"; shift 2 ;;
       --) shift; break ;;
+      # @failure-mode: unknown-flag
       --*) echo "Usage: docs-check.sh radar-gather [--project-dir <path>] [<docs-dir>]" >&2; exit 2 ;;
       *) break ;;
     esac
@@ -2459,6 +2494,7 @@ cmd_radar_gather() {
   fi
   local result="{}"
 
+  # @side-effect: reads-spec-archive
   # Active spec
   if [[ -f "$docs_dir/spec.md" ]]; then
     local spec_meta
@@ -2499,6 +2535,7 @@ cmd_radar_gather() {
   local project_dir
   project_dir=$(dirname "$docs_dir")
   local fresh_counts
+  # @side-effect: queries-idea-provider
   if fresh_counts=$(cmd_idea_count "$project_dir" 2>/dev/null) && [[ -n "$fresh_counts" ]]; then
     idea_counts="$fresh_counts"
     # Icebox-stale augmentation only makes sense for local routing today
@@ -4221,6 +4258,24 @@ cmd_idea_setup() {
 # Output: JSON array [{file, line, match, scope}].
 # Exit: 0 if empty; 1 if any matches found.
 # ---------------------------------------------------------------------------
+# @manifest
+# purpose: Scan the project tree for legacy references (e.g. /catchup, /checkpoint, docs/checkpoint.md) that were retired in earlier ccanvil migrations; emits JSON array of matches with optional allowlist pre-filter
+# input: --respect-allowlist <path>
+# input: --project-dir <path>
+# input: positional <project-dir> (legacy)
+# output: stdout JSON array of {file, line, match} or empty []
+# output: exit-codes 0 ok, 2 unknown-flag/missing-allowlist-arg/allowlist-not-found
+# caller: skill:/stasis
+# depends-on: grep
+# depends-on: jq
+# side-effect: reads-project-tree
+# failure-mode: unknown-flag | exit=2 | visible=stderr-Usage
+# failure-mode: allowlist-not-found | exit=2 | visible=stderr-error | mitigation=verify-allowlist-path
+# failure-mode: missing-allowlist-arg | exit=2 | visible=stderr-error | mitigation=pass-path-after-flag
+# contract: empty-array-on-no-matches
+# contract: skips-git-node_modules-dist-generated
+# anchor: BTS-132 (respect-allowlist filter)
+# anchor: BTS-241 (manifest seed)
 cmd_legacy_refs_scan() {
   # BTS-132: optional --respect-allowlist <path> pre-filters raw matches
   # against a user-supplied allowlist (same ERE format as
@@ -4234,16 +4289,19 @@ cmd_legacy_refs_scan() {
       --respect-allowlist)
         allowlist="${2:-}"
         if [[ -z "$allowlist" ]]; then
+          # @failure-mode: missing-allowlist-arg
           echo "ERROR: --respect-allowlist requires a path argument" >&2
           return 2
         fi
         if [[ ! -f "$allowlist" ]]; then
+          # @failure-mode: allowlist-not-found
           echo "ERROR: allowlist file not found: $allowlist" >&2
           return 2
         fi
         shift 2 ;;
       --project-dir) project_dir_flag="${2:-.}"; shift 2 ;;
       --) shift; break ;;
+      # @failure-mode: unknown-flag
       --*) echo "Usage: docs-check.sh legacy-refs-scan [--respect-allowlist <path>] [--project-dir <path>] [<project-dir>]" >&2; exit 2 ;;
       *) break ;;
     esac
@@ -4256,6 +4314,7 @@ cmd_legacy_refs_scan() {
   # Collect matches via grep -rnE; skip .git, node_modules, and binary files.
   # -I: skip binary; -n: line numbers; --exclude-dir: skip common noise.
   # Tolerate empty grep output (exit 1 when no matches).
+  # @side-effect: reads-project-tree
   local raw_matches
   raw_matches=$(cd "$project_dir" && grep -rnIE \
     --exclude-dir=.git \
@@ -4726,6 +4785,18 @@ cmd_stamp_spec() {
 # Output (stdout, JSON): {has_origin: bool, url: string|null, git_repo: bool}
 # Exit code: always 0 (callers branch on has_origin, not status).
 # ---------------------------------------------------------------------------
+# @manifest
+# purpose: Probe whether the working tree is a git repo and whether origin is configured; emits {has_origin, url, git_repo} JSON envelope used by repo-type classification and init flows
+# input: --project-dir <path>
+# input: positional <repo-dir>
+# output: stdout JSON {has_origin, url, git_repo}
+# output: exit-codes 0 always, 2 unknown-flag
+# depends-on: git
+# depends-on: jq
+# side-effect: reads-git-config
+# failure-mode: unknown-flag | exit=2 | visible=stderr-Usage
+# contract: never-fails-on-non-git-repo
+# anchor: BTS-241 (manifest seed)
 cmd_remote_presence() {
   # BTS-212: arg loop
   local project_dir_flag=""
@@ -4733,12 +4804,14 @@ cmd_remote_presence() {
     case "$1" in
       --project-dir) project_dir_flag="${2:-.}"; shift 2 ;;
       --) shift; break ;;
+      # @failure-mode: unknown-flag
       --*) echo "Usage: docs-check.sh remote-presence [--project-dir <path>] [<repo-dir>]" >&2; exit 2 ;;
       *) break ;;
     esac
   done
   local repo_dir="${project_dir_flag:-${1:-.}}"
 
+  # @side-effect: reads-git-config
   local git_repo="false"
   local has_origin="false"
   local url="null"
@@ -5695,21 +5768,38 @@ cmd_ssot_migrate() {
 # Usage:
 #   docs-check.sh route-of <spec|plan|stasis> [--project-dir <dir>]
 # Outputs "linear" or "local" on stdout. Exit 2 on missing/unknown kind.
+# @manifest
+# purpose: Resolve which routing target (local|linear) governs a given lifecycle artifact (spec|plan|stasis) per ccanvil.json + ccanvil.local.json — read-only delegate to _lifecycle_route helper, exposed as a CLI surface for skills
+# input: --project-dir <path>
+# input: positional <kind> ∈ {spec, plan, stasis}
+# output: stdout routing target string ("local" or "linear")
+# output: exit-codes 0 ok, 2 unknown-flag/missing-kind
+# caller: skill:/spec
+# depends-on: _lifecycle_route
+# side-effect: reads-config-files
+# failure-mode: unknown-flag | exit=2 | visible=stderr-Usage
+# failure-mode: missing-kind | exit=2 | visible=stderr-Usage
+# contract: returns-local-by-default-when-unconfigured
+# anchor: BTS-204 (route-aware lifecycle)
+# anchor: BTS-241 (manifest seed)
 cmd_route_of() {
   local kind="" project_dir="."
   while [[ $# -gt 0 ]]; do
     case "$1" in
       --project-dir) project_dir="${2:-.}"; shift 2 ;;
       --) shift; break ;;
+      # @failure-mode: unknown-flag
       --*) echo "Usage: docs-check.sh route-of <spec|plan|stasis> [--project-dir <path>]" >&2; exit 2 ;;
       spec|plan|stasis) kind="$1"; shift ;;
       *) shift ;;
     esac
   done
   if [[ -z "$kind" ]]; then
+    # @failure-mode: missing-kind
     echo "Usage: docs-check.sh route-of <spec|plan|stasis> [--project-dir <dir>]" >&2
     return 2
   fi
+  # @side-effect: reads-config-files
   _lifecycle_route "$kind" "$project_dir"
 }
 
@@ -5719,6 +5809,24 @@ cmd_route_of() {
 #   --feature <BTS-N>           required when http-routed (or --stasis-kind feature)
 #   --stasis-kind <feature|session>  defaults to "feature"
 # Output: artifact content on stdout (markdown). Exit 0 on found, 2 on missing.
+# @manifest
+# purpose: BTS-204 — read spec/plan/stasis content from the routed source (local file system on local-routed nodes, Linear Document on linear-routed) and emit on stdout; provider-aware reader counterpart to cmd_artifact_write
+# input: --kind {spec|plan|stasis}
+# input: --feature <id>
+# input: --stasis-kind {feature|session}
+# input: --project-dir <path>
+# output: stdout markdown content
+# output: exit-codes 0 found, 2 missing/usage-error
+# caller: skill:/plan
+# caller: skill:/recall
+# caller: cmd_archive_stasis
+# depends-on: _lifecycle_route
+# side-effect: reads-local-doc-or-queries-linear
+# failure-mode: missing-kind | exit=2 | visible=stderr-error
+# failure-mode: not-found | exit=2 | visible=stderr-error
+# contract: route-aware-by-kind
+# anchor: BTS-204 (provider-aware artifact-read substrate)
+# anchor: BTS-241 (manifest seed)
 cmd_artifact_read() {
   local kind="" feature="" stasis_kind="feature" project_dir="."
   while [[ $# -gt 0 ]]; do
@@ -5732,6 +5840,8 @@ cmd_artifact_read() {
       *) shift ;;
     esac
   done
+  # @failure-mode: missing-kind
+  # @side-effect: reads-local-doc-or-queries-linear
   [[ -z "$kind" ]] && { echo "ERROR: artifact-read --kind is required" >&2; return 2; }
 
   local route
@@ -5818,6 +5928,7 @@ cmd_artifact_read() {
         ;;
     esac
     rm -f "$err"
+    # @failure-mode: not-found
     [[ "$warn_class" == "not-found" ]] && return 2
     return 3
   fi

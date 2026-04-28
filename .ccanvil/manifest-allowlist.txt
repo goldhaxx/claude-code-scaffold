@@ -53,3 +53,12 @@
 .ccanvil/scripts/docs-check.sh:cmd_archive_stasis
 .ccanvil/scripts/docs-check.sh:cmd_sessions_list
 .ccanvil/scripts/docs-check.sh:cmd_stamp_spec
+
+# BTS-242 — Session 3: docs-check.sh capture+audit cluster.
+# Batch 1 — artifact + route + config primitives.
+.ccanvil/scripts/docs-check.sh:cmd_artifact_read
+.ccanvil/scripts/docs-check.sh:cmd_route_of
+.ccanvil/scripts/docs-check.sh:cmd_config_get
+.ccanvil/scripts/docs-check.sh:cmd_remote_presence
+.ccanvil/scripts/docs-check.sh:cmd_radar_gather
+.ccanvil/scripts/docs-check.sh:cmd_legacy_refs_scan
