@@ -17,58 +17,48 @@ ccanvil makes AI-assisted development fast, reliable, and consistent across proj
 
 ## Active Theme
 
-**Stabilization & Maturation** — drain the backlog to zero, prove the system stays there, then evaluate the next theme. The substrate-maturity arc (SSOT-Linear, http resolver, dual-capture resilience, ship-finalize) has converged enough that the marginal capability is now smaller than the marginal stabilization gap. We've reached the point where **substrate maturation surfaces previously-invisible bugs faster than they can be closed** — a defect-discovery-rate-exceeds-defect-closure-rate condition. The cure is bounded: cap capture velocity, drain to zero, hold there.
+**Dark Code / Three-Layer Solution** — addressing the operator/code-intuition disconnect that surfaces when autonomous-shipping reaches substrate maturity. Adapted from Nate B Jones' framework: (1) Spec-Driven Development (force comprehension before generation — ccanvil already does this, assess where it needs strengthening), (2) Self-Describing Systems (module manifests with structural + semantic context, failure modes, behavioral contracts readable by humans and AI — biggest gap today), (3) Comprehension Gate (review step where senior engineers + AI pose critical questions about design and dependencies).
 
-*Started: 2026-04-27 (session 9, mid-conversation).* Reason: 4 ships per session at substrate maturity has produced a steady drip of dogfood-surfaced gaps that outruns closure throughput. Auto mode + Claude Code shipping is working well; the bottleneck is no longer impl velocity, it's discovery cadence. Rather than ship more capability, ship *less*, drain what's open, harden discoverability.
+*Started: 2026-04-27 (session 9, end-of-conversation rollover).* Reason: Stabilization & Maturation theme exit criteria met (backlog/triage = 0, 9 fixes shipped in one turn validating substrate maturity). The remaining theme-rollover-blocker — code-intuition disconnect — is precisely what Dark Code addresses. The two themes connect: stabilization proved the substrate works autonomously; Dark Code keeps the operator connected to that substrate as it evolves.
 
-**Capture rules during stabilization** — strict, agent-enforced where possible:
+**Source material:** https://www.youtube.com/watch?v=E1idsrv79tI. Transcript review pending — first ship is research, not implementation.
 
-- New captures allowed ONLY if (a) evidence-backed bug blocking active work, or (b) security-critical.
-- Speculative ideas, optimization candidates, refactors, and "nice-to-have" determinism candidates → straight to **Icebox**, not Triage. Re-evaluate at theme exit.
-- No new substrate primitives. Bugs in existing substrate are in scope; new capability work is not.
-- Determinism candidates surfaced by `/stasis` Determinism Review continue to dual-capture, but auto-route to Icebox during stabilization (not Triage).
-- WIP-limit: one active spec at a time. No theme work, no exploratory architecture.
+**Phase plan:**
 
-**Exit criteria** — all four must hold simultaneously for 14 consecutive days:
+1. **Research lap.** Read the Nate B Jones video transcript end-to-end. Map each of the three layers to ccanvil's current shape:
+   - Layer 1 (Spec-Driven): is the existing /spec → /plan → impl flow strong enough? Where does it leak?
+   - Layer 2 (Self-Describing): does any ccanvil substrate carry behavioral-contract metadata? What would a module manifest look like for a substrate primitive (cmd_artifact_write, ship-finalize, etc.)?
+   - Layer 3 (Comprehension Gate): how does this interact with /review and code-reviewer agent? Is the gate before-spec, before-merge, or both?
+2. **Spec the actionable layer(s).** Likely Layer 2 first — biggest current gap, highest leverage for the operator-disconnect concern. Spec a manifest format + a substrate primitive to enforce/parse it.
+3. **First ship.** Self-describing by construction: the manifest format ships with its own manifest demonstrating the layer it implements. Dogfood-as-validation.
+4. **Iterate.** Each subsequent ship adds manifests to existing substrate primitives, with incremental coverage tracked in /stasis.
 
-1. **Backlog ≤ 5** (allowing one or two long-tail tickets to persist as ambient horizon items).
-2. **Triage = 0** at the end of every session.
-3. **Icebox not growing** — captures during the phase route there but don't compound; rate decays.
-4. **No new captures for 7 consecutive days** by the end of the phase.
+**Capture rules** — relaxed from stabilization, but still disciplined:
 
-When all four hold, the system has converged. Then evaluate the next theme.
+- Bug captures: same evidence-required protocol (BTS-201).
+- Speculative/optimization captures: now allowed in Triage (not auto-Iced).
+- New substrate primitives: in scope when they advance Layer 1/2/3.
+- WIP-limit: still one active spec at a time. No parallel theme work.
 
-**Reconnection mechanism** — the operator has noted the autonomous-shipping flow has created a code-intuition disconnect (real concern, not a bug). Rather than hand-shipping (the operator has explicitly chosen full-autonomous), the antidote is **substrate transparency**: the next theme will likely lean on Nate B Jones' Dark Code framework (self-describing systems with module manifests, failure modes, behavioral contracts) to keep the operator connected to the substrate without forcing manual labor. Dark Code feels prescient here — flagged as the prime next-theme candidate.
+**Live signal — stabilization holding:**
+
+If new captures land at >2/week cadence during this theme, that's the signal stabilization didn't actually converge. Pause Dark Code work and re-stabilize. The 14-day-soak guardrail from the prior theme is replaced by this live throughput check.
+
+**Stabilization & Maturation theme — completed 2026-04-27.** 9 ships in one turn (BTS-215, 238, 237, 207, 211, 236, 209, 208, 183). Tests 1826 → 1839 (+13 net after dead-code sweep). Backlog 13 → 0. Drift-watchdog cluster (BTS-191–197) canceled. http-canonical rule codified in `.claude/rules/provider-integration.md`. `/ship` substrate (BTS-235) and `> Subject:` metadata (BTS-236) made the autonomous lifecycle reliably end-to-end.
 
 ## Maturity Signal (theme-agnostic)
 
-A separate, durable measure of system maturity: **opening the project shows triage = 0, backlog = 0, icebox = 0 — and stays there.** New bugs, determinism candidates, and self-improvement requests stop arriving at a steady cadence because the substrate has converged. Today: 0 triage, 9 backlog, 2 icebox. The Stabilization & Maturation theme drives toward this signal directly.
+A separate, durable measure of system maturity: **opening the project shows triage = 0, backlog = 0, icebox = 0 — and stays there.** New bugs, determinism candidates, and self-improvement requests stop arriving at a steady cadence because the substrate has converged. Today: 0 triage, 0 backlog, 2 icebox. Within reach.
 
-## Up Next — Stabilization Drain Order
+## Up Next — Dark Code Phase 1
 
-**Phase 1: Small ships** (mechanical, located, low design-ambiguity):
+1. **Research lap** — read the Nate B Jones video transcript end-to-end. Map the three layers to ccanvil's current shape (questions in the Active Theme block above). Output: a research note in `docs/research/dark-code-mapping.md` (or similar) with one section per layer, current-state assessment, and proposed first-ship scope.
 
-1. **BTS-215** — `docs-check.sh` usage string sync with dispatch table (P4, mechanical sweep)
-2. **BTS-238** — `stasis-carry-forward` regex-escape gsub fix (P3, located at line 4602, one-character replacement-string change)
-3. **BTS-237** — spec dispatch + activate concurrent-edit race (P3, foundational — every spec ship pays the cost; either content-hash skip or single-writer pattern)
-4. **BTS-207** — `cmd_session_info` jq forks reduction (P4, single-jq rewrite)
-5. **BTS-211** — `operations.sh exec` http-mechanism dispatch fix (P3, dispatch-shape change)
-6. **BTS-236** — `derive-pr-title` structural pivot to `> Subject:` spec metadata field (P3, light design choice)
+2. **Spec the first ship** — likely Layer 2 (Self-Describing Systems / module manifests). Open question: does the manifest live in-source as a comment block, in a sibling `.manifest.yaml`, in the ccanvil substrate metadata, or somewhere else? Research lap should answer.
 
-**Phase 2: Operator-decision** (small but require design call on instrumentation shape):
+3. **Implement the first ship** — manifest format + parser/validator + manifests for ~3 substrate primitives as the seed examples (likely cmd_artifact_write, cmd_ship_finalize, cmd_idea_pending_replay — the three that exercise the most contracts).
 
-7. **BTS-209** — Canonize hook failure-handling pattern (loud, never-block, never-snuff)
-8. **BTS-208** — Hook + skill execution timing instrumentation
-
-**Phase 3: Architectural review** (last — these may inform the next theme's framing):
-
-9. **BTS-183** — Provider integration strategy: end-to-end http-or-MCP cohesion review
-10. **BTS-217** — SSOT-Linear routing-flip dogfood (closes the BTS-204 arc; demand-side validation step)
-
-**Then evaluate next theme.** Working candidates:
-
-- **Dark Code / Three-Layer Solution** — Nate B Jones' framework. Three layers: (1) Spec-Driven Development (already partially implemented), (2) Self-Describing Systems (biggest gap today — module manifests with structural + semantic context, failure modes, behavioral contracts readable by humans and AI), (3) Comprehension Gate (review step where senior engineers + AI pose critical questions about design). Source: https://www.youtube.com/watch?v=E1idsrv79tI. The operator flagged this as prescient relative to the autonomy/disconnection tension. Strong candidate for next theme — would directly address the "I'm no longer connected to the code underneath" concern surfaced in session 9.
-- **"Simplicity through leverage" / Raptor v1→v3** — modular personality packs (see Next Theme — Direction below). Less directly tied to current pain; better as a Phase-2 theme.
+4. **Soak observation** — track new-capture cadence as Dark Code ships land. If captures stay <2/week, stabilization held and Dark Code's substrate growth is offset by its disconnection-prevention value. If captures spike, pause and re-stabilize.
 
 ## Next Theme — Direction (not yet committed)
 
