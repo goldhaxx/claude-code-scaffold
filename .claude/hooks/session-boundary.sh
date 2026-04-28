@@ -17,15 +17,23 @@ ROOT="${CLAUDE_PROJECT_DIR:-$(pwd)}"
 STATE_DIR="$ROOT/.ccanvil/state"
 COUNTER_PATH="$STATE_DIR/session-counter"
 BOUNDARY_PATH="$STATE_DIR/session-boundary"
-HELPER="$ROOT/.claude/hooks/_lib/record-failure.sh"
+# BTS-209/208: helper resolves relative to the hook's own location.
+HELPER="$(dirname "${BASH_SOURCE[0]}")/_lib/record-failure.sh"
 
 # BTS-209: source helper if present; fall back to no-op when missing
 # (stderr WARN paths still fire — loud is preserved without the helper).
+# BTS-208: same helper exposes _timer_start / _timer_duration_ms / _timer_emit.
 if [[ -f "$HELPER" ]]; then
   source "$HELPER"
 else
   _hook_record_failure() { :; }
+  _timer_start() { date +%s 2>/dev/null || echo 0; }
+  _timer_duration_ms() { echo 0; }
+  _timer_emit() { :; }
 fi
+
+# BTS-208: timing instrumentation — start before any work
+_t_start=$(_timer_start)
 
 mkdir -p "$STATE_DIR" 2>/dev/null || {
   echo "WARN: session-boundary: cannot create $STATE_DIR" >&2
@@ -97,5 +105,8 @@ jq -n --argjson epoch "$epoch" --arg iso "$iso" --arg tz "$tz" \
     _hook_record_failure "session-boundary" "boundary-write" "boundary write or mv failed"
     exit 0
   }
+
+# BTS-208: emit timing on completion (best-effort; never fails the hook)
+_timer_emit "hook" "session-boundary" "$(_timer_duration_ms "$_t_start")"
 
 exit 0
