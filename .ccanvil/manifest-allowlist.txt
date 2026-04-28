@@ -39,3 +39,10 @@
 .ccanvil/scripts/docs-check.sh:cmd_pr_cleanup
 .ccanvil/scripts/docs-check.sh:cmd_land
 .ccanvil/scripts/docs-check.sh:cmd_lifecycle_state
+# Batch 3 — lifecycle entrypoints.
+.ccanvil/scripts/docs-check.sh:cmd_validate
+.ccanvil/scripts/docs-check.sh:cmd_recommend
+.ccanvil/scripts/docs-check.sh:cmd_audit_session
+.ccanvil/scripts/docs-check.sh:cmd_list_specs
+.ccanvil/scripts/docs-check.sh:cmd_activate
+.ccanvil/scripts/docs-check.sh:cmd_complete

@@ -438,6 +438,26 @@ cmd_status() {
 #
 # Output: JSON with result, details array, and per-doc status.
 # ---------------------------------------------------------------------------
+# @manifest
+# purpose: Cross-validate spec/plan/stasis alignment — detect mismatched feature_ids, stale plans (spec hash drift), and stale stasis (plan hash drift); priority order mismatched > stale-plan > stale-stasis > aligned
+# input: --project-dir <path>
+# input: positional <docs-dir> (legacy)
+# output: stdout JSON {result, details:[], status:{spec, plan, stasis}}
+# output: exit-codes 0 always (result encoded in JSON), 2 unknown-flag
+# caller: cmd_lifecycle_state
+# caller: cmd_recommend
+# depends-on: cmd_status
+# depends-on: jq
+# side-effect: reads-spec-plan-stasis
+# failure-mode: unknown-flag | exit=2 | visible=stderr-Usage
+# failure-mode: aligned | exit=0 | visible=json-result-aligned
+# failure-mode: mismatched | exit=0 | visible=json-result-mismatched | mitigation=consumer-acts-on-result-field
+# failure-mode: stale-plan | exit=0 | visible=json-result-stale-plan | mitigation=re-run-/plan
+# failure-mode: stale-stasis | exit=0 | visible=json-result-stale-stasis | mitigation=re-run-/stasis
+# contract: priority-order-deterministic
+# contract: never-fails-on-missing-files
+# anchor: BTS-130 (Work: schema)
+# anchor: BTS-241 (manifest seed)
 cmd_validate() {
   # BTS-212: arg loop
   local project_dir=""
@@ -445,6 +465,7 @@ cmd_validate() {
     case "$1" in
       --project-dir) project_dir="${2:-.}"; shift 2 ;;
       --) shift; break ;;
+      # @failure-mode: unknown-flag
       --*) echo "Usage: docs-check.sh validate [--project-dir <path>] [<docs-dir>]" >&2; exit 2 ;;
       *) break ;;
     esac
@@ -455,6 +476,7 @@ cmd_validate() {
   else
     docs_dir="${1:-$DEFAULT_DOCS_DIR}"
   fi
+  # @side-effect: reads-spec-plan-stasis
   local status_json
   status_json=$(cmd_status "$docs_dir")
 
@@ -464,6 +486,7 @@ cmd_validate() {
   stasis_exists=$(echo "$status_json" | jq -r '.stasis.exists')
 
   local details="[]"
+  # @failure-mode: aligned
   local result="aligned"
 
   # Extract feature_ids
@@ -582,6 +605,7 @@ cmd_validate() {
       fi
     done
     if $mismatch; then
+      # @failure-mode: mismatched
       result="mismatched"
       if $use_work; then
         details=$(echo "$details" | jq '. + ["Work: references do not match across documents"]')
@@ -598,6 +622,7 @@ cmd_validate() {
     plan_stored_spec_hash=$(echo "$status_json" | jq -r '.plan.spec_hash // empty')
 
     if [[ -n "$plan_stored_spec_hash" && -n "$spec_current_hash" && "$spec_current_hash" != "$plan_stored_spec_hash" ]]; then
+      # @failure-mode: stale-plan
       result="stale-plan"
       details=$(echo "$details" | jq '. + ["spec content changed since plan was written"]')
     fi
@@ -610,6 +635,7 @@ cmd_validate() {
     stasis_stored_plan_hash=$(echo "$status_json" | jq -r '.stasis.plan_hash // empty')
 
     if [[ -n "$stasis_stored_plan_hash" && -n "$plan_current_hash" && "$plan_current_hash" != "$stasis_stored_plan_hash" ]]; then
+      # @failure-mode: stale-stasis
       result="stale-stasis"
       details=$(echo "$details" | jq '. + ["plan content changed since stasis was written"]')
     fi
@@ -665,6 +691,21 @@ cmd_validate() {
 #
 # Output: JSON with next_action and reason.
 # ---------------------------------------------------------------------------
+# @manifest
+# purpose: Recommend the next lifecycle action based on validate result + spec/plan/stasis presence + post-compact freshness — feeds /radar / /recall briefings
+# input: --project-dir <path>
+# input: positional <docs-dir> (legacy)
+# output: stdout JSON {action, reason, command} or null
+# output: exit-codes 0 ok, 2 unknown-flag
+# depends-on: cmd_lifecycle_state
+# depends-on: cmd_list_specs
+# depends-on: jq
+# side-effect: reads-lifecycle-state
+# failure-mode: unknown-flag | exit=2 | visible=stderr-Usage
+# contract: never-fails-on-missing-files
+# contract: prefers-actions-that-unblock-current-state
+# anchor: BTS-113 (last-compact-ts integration)
+# anchor: BTS-241 (manifest seed)
 cmd_recommend() {
   # BTS-20: state derivation delegated to cmd_lifecycle_state — single
   # source of truth for "where in the lifecycle are we?" Recommend's job
@@ -676,6 +717,7 @@ cmd_recommend() {
     case "$1" in
       --project-dir) project_dir="${2:-.}"; shift 2 ;;
       --) shift; break ;;
+      # @failure-mode: unknown-flag
       --*) echo "Usage: docs-check.sh recommend [--project-dir <path>] [<docs-dir>]" >&2; exit 2 ;;
       *) break ;;
     esac
@@ -688,6 +730,7 @@ cmd_recommend() {
   fi
   local project_root="$(dirname "$docs_dir")"
 
+  # @side-effect: reads-lifecycle-state
   local envelope state
   envelope=$(cmd_lifecycle_state --project-dir "$project_root")
   state=$(echo "$envelope" | jq -r '.state')
@@ -834,6 +877,20 @@ AUDIT_PATTERNS=(
   "wget|^\\+([[:space:]]*)wget[[:space:]]"
 )
 
+# @manifest
+# purpose: Scan git diffs since last stasis for stochastic-shaped patterns (Claude running cp/jq/find/diff/grep/git directly that should be a script call) and emit findings — post-hoc safety net for the warm-context determinism review
+# input: --since <commit>
+# input: --project-dir <path>
+# input: positional <repo-dir>
+# output: stdout markdown findings + counts
+# output: exit-codes 0 always (findings encoded in output), 2 unknown-flag
+# caller: skill:/recall
+# depends-on: git
+# side-effect: reads-git-diff
+# failure-mode: unknown-flag | exit=2 | visible=stderr-Usage
+# contract: never-fails-on-empty-diff
+# contract: post-hoc-not-pre-emptive
+# anchor: BTS-241 (manifest seed)
 cmd_audit_session() {
   local since_commit=""
   local repo_dir="."
@@ -850,6 +907,7 @@ cmd_audit_session() {
         shift 2
         ;;
       --) shift; break ;;
+      # @failure-mode: unknown-flag
       --*) echo "Usage: docs-check.sh audit-session [--since <commit>] [--project-dir <path>] [<repo-dir>]" >&2; exit 2 ;;
       *)
         repo_dir="$1"
@@ -863,6 +921,7 @@ cmd_audit_session() {
     since_commit=$(git -C "$repo_dir" log --format=%H -10 | tail -1 2>/dev/null || echo "HEAD~10")
   fi
 
+  # @side-effect: reads-git-diff
   # Get diff (unified=0 for changed lines only)
   local diff_output
   diff_output=$(git -C "$repo_dir" diff --unified=0 "${since_commit}..HEAD" 2>/dev/null || echo "")
@@ -969,6 +1028,20 @@ cmd_audit_session() {
 # Output: JSON array of {feature_id, status, created} for each spec file.
 # Returns [] if docs/specs/ is empty or doesn't exist.
 # ---------------------------------------------------------------------------
+# @manifest
+# purpose: List all specs in docs/specs/ as JSON [{feature_id, status}] for backlog enumeration; consumed by cmd_recommend, /radar, and the local-routed backlog.list resolution
+# input: --project-dir <path>
+# input: positional <docs-dir> (legacy)
+# output: stdout JSON array [{feature_id, status, last_updated}]
+# output: exit-codes 0 ok (empty array if no specs), 2 unknown-flag
+# caller: cmd_recommend
+# depends-on: parse_metadata
+# depends-on: jq
+# side-effect: reads-spec-archive
+# failure-mode: unknown-flag | exit=2 | visible=stderr-Usage
+# failure-mode: empty-archive | exit=0 | visible=stdout-empty-array | mitigation=expected-on-fresh-projects
+# contract: empty-array-not-error-on-empty-archive
+# anchor: BTS-241 (manifest seed)
 cmd_list_specs() {
   # BTS-212: arg loop
   local project_dir=""
@@ -976,6 +1049,7 @@ cmd_list_specs() {
     case "$1" in
       --project-dir) project_dir="${2:-.}"; shift 2 ;;
       --) shift; break ;;
+      # @failure-mode: unknown-flag
       --*) echo "Usage: docs-check.sh list-specs [--project-dir <path>] [<docs-dir>]" >&2; exit 2 ;;
       *) break ;;
     esac
@@ -986,9 +1060,11 @@ cmd_list_specs() {
   else
     docs_dir="${1:-$DEFAULT_DOCS_DIR}"
   fi
+  # @side-effect: reads-spec-archive
   local specs_dir="$docs_dir/specs"
 
   if [[ ! -d "$specs_dir" ]]; then
+    # @failure-mode: empty-archive
     echo "[]"
     return 0
   fi
@@ -1029,6 +1105,36 @@ cmd_list_specs() {
 # updates spec status to "In Progress".
 # Fails if: feature-id not found, another spec is In Progress, worktree dirty.
 # ---------------------------------------------------------------------------
+# @manifest
+# purpose: Activate a Draft spec — pre-flight sync-check, copy spec to docs/spec.md, create + push feature branch, open draft GitHub PR, dispatch artifact to Linear when route=linear, emit AUTO-TRANSITION marker for /activate to flip the linked Linear ticket → In Progress
+# input: --force-sync
+# input: --no-auto-push
+# input: --project-dir <path>
+# input: positional <feature-id>
+# input: positional [docs-dir]
+# output: stdout activation messages + branch/PR URL + AUTO-TRANSITION marker
+# output: exit-codes 0 ok, 1 spec-not-found/dirty-tree/sync-failure/branch-failure, 2 unknown-flag/missing-feature-id
+# caller: skill:/activate
+# depends-on: cmd_sync_check
+# depends-on: cmd_auto_transition_emit
+# depends-on: parse_metadata
+# depends-on: git
+# depends-on: gh
+# side-effect: copies-spec-to-active
+# side-effect: creates-feature-branch
+# side-effect: pushes-to-origin
+# side-effect: creates-draft-pr
+# side-effect: dispatches-spec-to-linear
+# failure-mode: unknown-flag | exit=2 | visible=stderr-Usage
+# failure-mode: missing-feature-id | exit=2 | visible=stderr-Usage
+# failure-mode: activation-blocked | exit=1 | visible=stderr-error | mitigation=resolve-blocker-and-retry
+# contract: spec-status-flips-to-in-progress
+# contract: never-leaves-partial-state-on-failure
+# contract: emits-auto-transition-marker-on-linear-routed-specs
+# anchor: BTS-145 (auto-push origin main)
+# anchor: BTS-136 (auto-transition emission)
+# anchor: BTS-213 (route-aware Linear dispatch)
+# anchor: BTS-241 (manifest seed)
 cmd_activate() {
   # Parse args: <feature-id> [--force-local-ahead|--force-sync] [--no-auto-push] [docs-dir]
   # Flag can appear in any position among the positionals.
@@ -1048,6 +1154,7 @@ cmd_activate() {
       --no-auto-push) auto_push=false; shift ;;
       --project-dir) project_dir_flag="${2:-.}"; shift 2 ;;
       --) shift; break ;;
+      # @failure-mode: unknown-flag
       --*) echo "Usage: docs-check.sh activate [--force-sync] [--no-auto-push] [--project-dir <path>] <feature-id> [<docs-dir>]" >&2; exit 2 ;;
       *)
         if [[ -z "$feature_id" ]]; then feature_id="$1"
@@ -1057,6 +1164,7 @@ cmd_activate() {
         ;;
     esac
   done
+  # @failure-mode: missing-feature-id
   [[ -n "$feature_id" ]] || { echo "Usage: docs-check.sh activate [--force-sync] [--no-auto-push] [--project-dir <path>] <feature-id> [<docs-dir>]" >&2; exit 2; }
   if [[ -n "$project_dir_flag" && -z "$docs_dir" ]]; then
     docs_dir="$project_dir_flag/$DEFAULT_DOCS_DIR"
@@ -1186,7 +1294,7 @@ cmd_activate() {
     exit 1
   fi
 
-  # Create branch
+  # @side-effect: creates-feature-branch
   git -C "$repo_root" checkout -b "$branch_name" 2>/dev/null || {
     echo "ERROR: failed to create branch '$branch_name'" >&2
     exit 1
@@ -1195,18 +1303,21 @@ cmd_activate() {
   # Update status in specs/ to "In Progress"
   update_metadata_status "$spec_file" "In Progress"
 
+  # @side-effect: copies-spec-to-active
   # Copy spec to docs/spec.md (after status update so it gets the new status)
   cp "$spec_file" "$docs_dir/spec.md"
 
   # Auto-commit spec changes on the branch
   git -C "$repo_root" add "$spec_file" "$docs_dir/spec.md"
   git -C "$repo_root" commit -q -m "docs(lifecycle): activate $feature_id" || {
+    # @failure-mode: activation-blocked
     echo "ERROR: failed to commit spec changes on branch '$branch_name'" >&2
     exit 1
   }
 
   echo "Activated spec '$feature_id' on branch '$branch_name'"
 
+  # @side-effect: pushes-to-origin
   # Push branch and create draft PR (if remote exists and gh available)
   if git -C "$repo_root" remote get-url origin >/dev/null 2>&1; then
     git -C "$repo_root" push -u origin "$branch_name" 2>/dev/null || true
@@ -1215,6 +1326,7 @@ cmd_activate() {
       pr_title=$(cmd_derive_pr_title "$spec_file")
       local spec_body
       spec_body=$(cat "$spec_file")
+      # @side-effect: creates-draft-pr
       gh pr create --draft \
         --title "$pr_title" \
         --body "$(printf '## Spec\n\n%s\n\n---\n🤖 Generated with [Claude Code](https://claude.com/claude-code)' "$spec_body")" \
@@ -1241,6 +1353,7 @@ cmd_activate() {
   local project_dir
   project_dir=$(cd "$docs_dir/.." 2>/dev/null && pwd) || project_dir="."
   if [[ "$(_lifecycle_route spec "$project_dir")" == "linear" ]]; then
+    # @side-effect: dispatches-spec-to-linear
     if ! cmd_artifact_write --kind spec --feature "$feature_id" --project-dir "$project_dir" < "$docs_dir/spec.md" >/dev/null; then
       echo "WARN: activate completed locally but Linear spec dispatch failed." >&2
       echo "Retry: bash .ccanvil/scripts/docs-check.sh artifact-write --kind spec --feature $feature_id --project-dir $project_dir < $docs_dir/spec.md" >&2
@@ -1262,6 +1375,29 @@ cmd_activate() {
 # Updates spec status to "Complete". Clears docs/assumptions.md if it exists.
 # Fails if spec is not In Progress or feature-id not found.
 # ---------------------------------------------------------------------------
+# @manifest
+# purpose: Flip the active spec from In Progress → Complete in the archive (docs/specs/<id>.md), remove the active lifecycle docs (docs/spec.md, plan.md, stasis.md), and commit so the cleanup rides the squash-merge into main
+# input: --project-dir <path>
+# input: positional <feature-id>
+# input: positional [docs-dir]
+# output: stdout completion + archive transition messages
+# output: exit-codes 0 ok, 1 spec-not-found/wrong-status, 2 unknown-flag/missing-feature-id
+# caller: cmd_pr_cleanup
+# depends-on: parse_metadata
+# depends-on: update_metadata_status
+# depends-on: jq
+# depends-on: git
+# side-effect: flips-spec-status
+# side-effect: removes-active-lifecycle-docs
+# side-effect: commits-cleanup
+# failure-mode: unknown-flag | exit=2 | visible=stderr-Usage
+# failure-mode: missing-feature-id | exit=2 | visible=stderr-Usage
+# failure-mode: spec-not-found | exit=1 | visible=stderr-error | mitigation=verify-feature-id-matches-archive
+# failure-mode: wrong-status | exit=1 | visible=stderr-error | mitigation=activate-first-or-revert-state
+# contract: idempotent-when-already-complete-not-supported
+# contract: never-removes-archive-only-active-docs
+# anchor: BTS-212 (arg loop refactor)
+# anchor: BTS-241 (manifest seed)
 cmd_complete() {
   # BTS-212: arg loop
   local project_dir_flag=""
@@ -1269,12 +1405,14 @@ cmd_complete() {
     case "$1" in
       --project-dir) project_dir_flag="${2:-.}"; shift 2 ;;
       --) shift; break ;;
+      # @failure-mode: unknown-flag
       --*) echo "Usage: docs-check.sh complete [--project-dir <path>] <feature-id> [<docs-dir>]" >&2; exit 2 ;;
       *) break ;;
     esac
   done
   local feature_id="${1:-}"
   if [[ -z "$feature_id" ]]; then
+    # @failure-mode: missing-feature-id
     echo "Usage: docs-check.sh complete [--project-dir <path>] <feature-id> [<docs-dir>]" >&2
     exit 2
   fi
@@ -1299,6 +1437,7 @@ cmd_complete() {
   done
 
   if [[ -z "$spec_file" ]]; then
+    # @failure-mode: spec-not-found
     echo "ERROR: spec with feature_id '$feature_id' not found in $specs_dir" >&2
     exit 1
   fi
@@ -1307,10 +1446,12 @@ cmd_complete() {
   local current_status
   current_status=$(parse_metadata "$spec_file" | jq -r '.status // empty')
   if [[ "$current_status" != "In Progress" ]]; then
+    # @failure-mode: wrong-status
     echo "ERROR: spec '$feature_id' is '$current_status', not 'In Progress'" >&2
     exit 1
   fi
 
+  # @side-effect: flips-spec-status
   # Update status to Complete
   update_metadata_status "$spec_file" "Complete"
 
@@ -1331,9 +1472,11 @@ cmd_complete() {
     : > "$assumptions_file"
   fi
 
+  # @side-effect: removes-active-lifecycle-docs
   # Remove lifecycle docs (they're preserved in git history on the branch)
   rm -f "$docs_dir/spec.md" "$docs_dir/plan.md" "$docs_dir/stasis.md"
 
+  # @side-effect: commits-cleanup
   # Commit completion + cleanup
   local repo_root
   repo_root=$(cd "$docs_dir" 2>/dev/null && git rev-parse --show-toplevel 2>/dev/null) || repo_root="."
