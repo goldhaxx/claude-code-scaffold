@@ -5481,6 +5481,25 @@ cmd_lifecycle_state() {
 # Dispatch
 # ---------------------------------------------------------------------------
 
+# BTS-215: generate the usage line from the dispatch case below at runtime.
+# Single source of truth — adding a new verb to the case statement makes it
+# appear in usage output automatically. The drift-guard test in
+# hub/tests/usage-string-dispatch-sync.bats enforces this by construction.
+_print_usage() {
+  local script="${BASH_SOURCE[0]}"
+  local verbs
+  verbs=$(awk '
+    /^case "\$cmd" in$/ { in_case=1; next }
+    in_case && /^esac$/ { in_case=0 }
+    in_case && /^[[:space:]]*[a-z][a-z0-9-]+\)/ {
+      sub(/^[[:space:]]*/, "")
+      sub(/\).*$/, "")
+      print
+    }
+  ' "$script" | sort -u | paste -sd '|' -)
+  echo "Usage: docs-check.sh {$verbs} [args...]" >&2
+}
+
 cmd="${1:-}"
 shift || true
 
@@ -5537,7 +5556,7 @@ case "$cmd" in
   ssot-migrate)      cmd_ssot_migrate "$@" ;;
   session-info)      cmd_session_info "$@" ;;
   *)
-    echo "Usage: docs-check.sh {status|validate|recommend|audit-session|config-get|list-specs|activate|complete|pr-cleanup|land|idea-add|idea-list|idea-count|idea-update|idea-sync|idea-pending-replay|refresh-plan-hash|idea-migrate|idea-setup|idea-upgrade|title-from-body|legacy-refs-scan|stamp-spec|idea-pending-append|idea-pending-validate|remote-presence} [args...]" >&2
+    _print_usage
     exit 1
     ;;
 esac
