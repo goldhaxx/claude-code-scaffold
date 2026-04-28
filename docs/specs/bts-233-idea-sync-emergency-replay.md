@@ -3,7 +3,7 @@
 > Feature: bts-233-idea-sync-emergency-replay
 > Work: linear:BTS-233
 > Created: 1777335037
-> Status: In Progress
+> Status: Complete
 
 ## Summary
 
