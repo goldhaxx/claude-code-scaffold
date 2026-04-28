@@ -47,6 +47,7 @@ PROJECT_TREE_SUBCOMMANDS=(
   evidence-scan-session lifecycle-state
   artifact-read artifact-write route-of ssot-migrate
   session-info assert-pr-title remote-presence
+  stasis-carry-forward
 )
 
 # ---------------------------------------------------------------------------
@@ -4257,6 +4258,191 @@ cmd_evidence_scan_session() {
 }
 
 # ---------------------------------------------------------------------------
+# cmd_stasis_carry_forward (BTS-232) — surface determinism candidates from
+# the prior stasis that have no matching `Determinism: <slug>` Linear idea.
+#
+# Closes the BTS-205 read-side gap: BTS-205 fixed write-side resilience
+# (emergency dead-letter, mechanism-aware dispatch); BTS-232 verifies at read
+# time that each candidate listed in the prior stasis's `## Determinism Review`
+# section actually landed as an idea — surfacing any historical drops so the
+# operator can manually create the missing ticket.
+#
+# Test seams:
+#   --stasis-content -    read stasis content from stdin (overrides artifact-read)
+#   --input-json <path>   read idea listing from JSON file (overrides idea.list)
+#
+# Output JSON:
+#   {candidates:[{slug, has_idea, idea_id|null}], count_total, count_carry_forward}
+#   Plus optional `note: "no prior stasis"` when no stasis is found.
+# ---------------------------------------------------------------------------
+cmd_stasis_carry_forward() {
+  local project_dir="." input_json="" read_stdin=0
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --project-dir) project_dir="${2:-.}"; shift 2 ;;
+      --input-json) input_json="${2:-}"; shift 2 ;;
+      --stasis-content)
+        if [[ "${2:-}" == "-" ]]; then
+          read_stdin=1; shift 2
+        else
+          echo "ERROR: stasis-carry-forward: --stasis-content only accepts '-' (stdin)" >&2
+          return 2
+        fi
+        ;;
+      --) shift; break ;;
+      --*) echo "Usage: docs-check.sh stasis-carry-forward [--project-dir <path>] [--stasis-content -] [--input-json <path>]" >&2; exit 2 ;;
+      *) shift ;;
+    esac
+  done
+
+  # 1. Acquire stasis content
+  local stasis_content="" note=""
+  if (( read_stdin )); then
+    stasis_content=$(cat; printf x); stasis_content=${stasis_content%x}
+  else
+    stasis_content=$(cmd_artifact_read --kind stasis --stasis-kind session --project-dir "$project_dir" 2>/dev/null) || stasis_content=""
+    if [[ -z "$stasis_content" ]]; then
+      # Fallback: try feature-kind stasis (active feature on the branch)
+      local fid=""
+      if [[ -f "$project_dir/docs/spec.md" ]]; then
+        fid=$(grep -m1 '^> Feature:' "$project_dir/docs/spec.md" | sed -E 's/^> Feature:[[:space:]]*//' || true)
+      fi
+      if [[ -n "$fid" ]]; then
+        stasis_content=$(cmd_artifact_read --kind stasis --feature "$fid" --project-dir "$project_dir" 2>/dev/null) || stasis_content=""
+      fi
+    fi
+    if [[ -z "$stasis_content" ]]; then
+      jq -n '{candidates:[], count_total:0, count_carry_forward:0, note:"no prior stasis"}'
+      return 0
+    fi
+  fi
+
+  # 2. Extract `## Determinism Review` section
+  # awk-extract: from `## Determinism Review` line until next `## ` or EOF
+  local section
+  section=$(printf '%s\n' "$stasis_content" | awk '
+    /^## Determinism Review[[:space:]]*$/ { capture=1; next }
+    capture && /^## / { capture=0 }
+    capture { print }
+  ')
+
+  if [[ -z "$section" ]]; then
+    jq -n '{candidates:[], count_total:0, count_carry_forward:0, note:"no determinism-review section"}'
+    return 0
+  fi
+
+  # Empty-state literal short-circuit
+  if echo "$section" | grep -qF "No candidates this session."; then
+    jq -n '{candidates:[], count_total:0, count_carry_forward:0}'
+    return 0
+  fi
+
+  # 3. Extract candidate slugs from bullet lines.
+  # Skip metadata bullets (operations_reviewed, candidates_found).
+  local candidates_json='[]'
+  while IFS= read -r line; do
+    # Match bullet starts: `* ` or `- ` (with optional leading whitespace)
+    local body
+    if [[ "$line" =~ ^[[:space:]]*[\*\-][[:space:]]+(.*)$ ]]; then
+      body="${BASH_REMATCH[1]}"
+    else
+      continue
+    fi
+    # Skip empty literal phrase
+    [[ "$body" == "No candidates this session." ]] && continue
+
+    # Slug extraction
+    local slug=""
+    if [[ "$body" =~ ^\*\*([^*]+)\*\* ]]; then
+      # (a) bolded-shape: **slug**: ...
+      slug="${BASH_REMATCH[1]}"
+    elif [[ "$body" =~ ^\`([^\`]+)\` ]]; then
+      # (b) backtick-shape: `tok1` → `tok2` ...
+      # Concatenate consecutive backticked tokens joined by " → "
+      local rest="$body"
+      slug=""
+      while [[ "$rest" =~ ^\`([^\`]+)\`[[:space:]]*(→[[:space:]]*)?(.*)$ ]]; do
+        local tok="${BASH_REMATCH[1]}"
+        local sep="${BASH_REMATCH[2]}"
+        rest="${BASH_REMATCH[3]}"
+        if [[ -z "$slug" ]]; then
+          slug="$tok"
+        else
+          slug="$slug → $tok"
+        fi
+        # Stop if no more arrow-separator
+        [[ -z "$sep" ]] && break
+      done
+    else
+      # (c) plain: take leading text up to first `:` or 60 chars
+      slug="${body%%:*}"
+    fi
+
+    # Trim whitespace
+    slug="${slug#"${slug%%[![:space:]]*}"}"
+    slug="${slug%"${slug##*[![:space:]]}"}"
+    # Strip trailing colon (e.g. `**operations_reviewed:**` → `operations_reviewed`)
+    slug="${slug%:}"
+    # Cap at 60 chars
+    if (( ${#slug} > 60 )); then
+      slug="${slug:0:60}"
+    fi
+
+    [[ -z "$slug" ]] && continue
+    # Skip metadata pseudo-bullets (BTS-232: post-extract because they may be
+    # bolded `**operations_reviewed:**` and pass through case (a) above)
+    [[ "$slug" == "operations_reviewed" ]] && continue
+    [[ "$slug" == "candidates_found" ]] && continue
+
+    candidates_json=$(echo "$candidates_json" | jq --arg s "$slug" '. + [{slug:$s}]')
+  done <<< "$section"
+
+  # 4. Acquire idea listing
+  local issues='[]'
+  if [[ -n "$input_json" ]]; then
+    [[ ! -f "$input_json" ]] && {
+      echo "ERROR: stasis-carry-forward: --input-json file not found: $input_json" >&2
+      return 3
+    }
+    issues=$(cat "$input_json")
+  else
+    local ops="$(dirname "$0")/operations.sh"
+    local resolution
+    resolution=$(bash "$ops" resolve idea.list --project-dir "$project_dir" 2>/dev/null) || resolution=""
+    if [[ -n "$resolution" ]]; then
+      local cmd_str
+      cmd_str=$(printf '%s' "$resolution" | jq -r '.invocation.command // empty')
+      if [[ -n "$cmd_str" ]]; then
+        issues=$(eval "$cmd_str" 2>/dev/null) || issues='[]'
+      fi
+    fi
+  fi
+
+  # Validate JSON shape (graceful — empty array on bad input)
+  if ! echo "$issues" | jq -e 'type == "array"' >/dev/null 2>&1; then
+    issues='[]'
+  fi
+
+  # 5. For each candidate slug, case-insensitive substring match against
+  # idea titles starting with "Determinism: ".
+  local matched_json
+  matched_json=$(jq --argjson issues "$issues" '
+    [.[] | . as $c |
+      $issues
+      | map(select(.title | test("(?i)Determinism:.*" + ($c.slug | gsub("[][\\\\.\\^\\$\\*\\+\\?\\(\\)\\{\\}\\|]"; "\\\\\\(.\\)")))))
+      | if length > 0 then
+          $c + {has_idea: true, idea_id: .[0].id}
+        else
+          $c + {has_idea: false, idea_id: null}
+        end
+    ]
+  ' <<< "$candidates_json")
+
+  # 6. Compute counts + emit
+  jq '{candidates: ., count_total: length, count_carry_forward: ([.[] | select(.has_idea == false)] | length)}' <<< "$matched_json"
+}
+
+# ---------------------------------------------------------------------------
 # cmd_lifecycle_state (BTS-20) — Unified state envelope.
 #
 # Composes cmd_validate + git/marker state into a structured envelope:
@@ -5172,6 +5358,7 @@ case "$cmd" in
   idea-pending-validate) cmd_idea_pending_validate "$@" ;;
   remote-presence)   cmd_remote_presence "$@" ;;
   evidence-scan-session) cmd_evidence_scan_session "$@" ;;
+  stasis-carry-forward) cmd_stasis_carry_forward "$@" ;;
   lifecycle-state)   cmd_lifecycle_state "$@" ;;
   artifact-read)     cmd_artifact_read "$@" ;;
   artifact-write)    cmd_artifact_write "$@" ;;

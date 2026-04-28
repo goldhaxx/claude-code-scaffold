@@ -43,6 +43,7 @@ Report counts by status (Draft, Ready, In Progress, Complete) — or by Linear s
    name when prompted.
 
 6. If `docs/stasis.md` has a `## Determinism Review` section with candidates_found > 0, read it and prepare to surface those items.
+6aa. **BTS-232: carry-forward determinism candidates.** Run `bash .ccanvil/scripts/docs-check.sh stasis-carry-forward --project-dir .` and capture `{candidates, count_total, count_carry_forward}`. The substrate parses the prior stasis's `## Determinism Review` section, extracts each candidate's slug (tolerating both bolded `**slug**:` and backticked `` `tok` `` shapes), queries the current Linear idea listing, and reports which candidates have NO matching `Determinism: <slug>` idea — flagging silent dual-capture drops. Empty + no-prior-stasis cases emit `count_carry_forward: 0` without error.
 6a. **Cross-session history (BTS-22):** read up to the 3 most-recent archived stasis files via the `sessions-list` substrate primitive — replaces the prior git-archeology approach (`git show HEAD~1:docs/stasis.md`).
     ```bash
     sessions=$(bash .ccanvil/scripts/docs-check.sh sessions-list --limit 3 --project-dir .)
@@ -73,6 +74,7 @@ Then provide a brief summary:
 - **Evidence Gaps from prior session:** (BTS-201) — when step 10 found non-empty bullets, surface them under the literal heading `**Evidence Gaps from prior session:**` with one line per gap (`- BTS-X — <title> — <reason>`). When the section matched the empty-state literal `No evidence gaps this session.`, **OMIT this heading entirely** — silent on empty (no noise).
 - **Branch** — current branch name and whether it follows convention (from step 0d)
 - **Outstanding determinism improvements** — if the previous stasis's `## Determinism Review` had candidates, list them under this heading before the regular summary
+- **Carry-forward determinism candidates:** (BTS-232) — when `count_carry_forward > 0`, surface under the literal heading `**Carry-forward determinism candidates:**` with one bullet per `candidates[?has_idea==false].slug`. These are candidates listed in the prior stasis whose dual-capture didn't land — the operator should manually create the missing ticket. Silent when `count_carry_forward == 0` (no zero-noise).
 - **Post-stasis audit findings** — if `audit-session` found patterns since the last stasis, list them here
 - What was accomplished in previous sessions
 - Current state (clean/dirty, passing/failing tests)
