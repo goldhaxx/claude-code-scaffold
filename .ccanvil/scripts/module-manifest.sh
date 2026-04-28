@@ -151,6 +151,63 @@ _compose_block() {
   ' >> "$tmp"
 }
 
+# Search the body of <fn_id> in <path> for <pattern> (extended regex).
+# Returns 0 on match, 1 otherwise. Brace-counted; assumes well-formed bash.
+_function_body_grep() {
+  local path="$1" fn_id="$2" pattern="$3"
+  local in_fn=0 depth=0 line opens closes
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    if [[ "$in_fn" -eq 0 ]]; then
+      if [[ "$line" =~ ^${fn_id}\(\)[[:space:]]*\{ ]]; then
+        in_fn=1
+        depth=1
+        continue
+      fi
+    else
+      if printf '%s' "$line" | grep -qE -- "$pattern"; then
+        return 0
+      fi
+      opens=$(printf '%s' "$line" | tr -cd '{' | wc -c | tr -d ' ')
+      closes=$(printf '%s' "$line" | tr -cd '}' | wc -c | tr -d ' ')
+      depth=$((depth + opens - closes))
+      if [[ "$depth" -le 0 ]]; then
+        in_fn=0
+        depth=0
+      fi
+    fi
+  done < "$path"
+  return 1
+}
+
+# Verify that <caller_ref> actually invokes <primitive_id> somewhere.
+# Returns 0 if call relationship found, 1 otherwise.
+_caller_actually_calls_primitive() {
+  local caller_ref="$1" primitive_id="$2" project_dir="${3:-.}"
+
+  if [[ "$caller_ref" == skill:/* ]]; then
+    local skill_name="${caller_ref#skill:/}"
+    local skill_md="$project_dir/.claude/skills/$skill_name/SKILL.md"
+    if [[ -f "$skill_md" ]] && grep -qE "\\b${primitive_id}\\b" "$skill_md"; then
+      return 0
+    fi
+    return 1
+  fi
+
+  local search_dirs=(".ccanvil/scripts" ".claude/hooks" ".claude/hooks/_lib")
+  local d f
+  for d in "${search_dirs[@]}"; do
+    [[ ! -d "$project_dir/$d" ]] && continue
+    for f in "$project_dir/$d"/*.sh; do
+      [[ ! -f "$f" ]] && continue
+      if ! grep -qE "^${caller_ref}\\(\\)" "$f"; then continue; fi
+      if _function_body_grep "$f" "$caller_ref" "\\b${primitive_id}\\b"; then
+        return 0
+      fi
+    done
+  done
+  return 1
+}
+
 cmd_validate() {
   local json_mode=0 allowlist=""
   while [[ $# -gt 0 ]]; do
@@ -227,6 +284,87 @@ cmd_validate() {
       echo "DRIFT: $path:$id reason=missing-required-key value=$missing" >&2
       continue
     fi
+
+    # Deep validation: caller, depends-on, markers.
+    local deep_drift=""
+
+    # caller: each declared caller must actually invoke primitive_id.
+    local callers_json
+    callers_json=$(printf '%s' "$manifest" | jq -c '.caller // []')
+    if [[ "$callers_json" != "[]" && "$callers_json" != "null" ]]; then
+      local cr
+      while IFS= read -r cr; do
+        [[ -z "$cr" ]] && continue
+        if ! _caller_actually_calls_primitive "$cr" "$id" "."; then
+          drift_records+=("$(jq -nc --arg p "$path" --arg id "$id" --arg v "$cr" \
+            '{path:$p, id:$id, reason:"caller-not-found", value:$v}')")
+          echo "DRIFT: $path:$id reason=caller-not-found value=$cr" >&2
+          deep_drift="caller"
+          break
+        fi
+      done < <(printf '%s' "$callers_json" | jq -r '.[]')
+    fi
+    if [[ -n "$deep_drift" ]]; then continue; fi
+
+    # depends-on: each declared dependency must appear within primitive body.
+    local deps_json
+    deps_json=$(printf '%s' "$manifest" | jq -c '."depends-on" // []')
+    if [[ "$deps_json" != "[]" && "$deps_json" != "null" ]]; then
+      local dep
+      while IFS= read -r dep; do
+        [[ -z "$dep" ]] && continue
+        if ! _function_body_grep "$path" "$id" "\\b${dep}\\b"; then
+          drift_records+=("$(jq -nc --arg p "$path" --arg id "$id" --arg v "$dep" \
+            '{path:$p, id:$id, reason:"depends-on-not-found", value:$v}')")
+          echo "DRIFT: $path:$id reason=depends-on-not-found value=$dep" >&2
+          deep_drift="depends-on"
+          break
+        fi
+      done < <(printf '%s' "$deps_json" | jq -r '.[]')
+    fi
+    if [[ -n "$deep_drift" ]]; then continue; fi
+
+    # failure-mode markers: each declared failure-mode id must have @failure-mode: <id> in body.
+    local fms_json
+    fms_json=$(printf '%s' "$manifest" | jq -c '."failure-mode" // []')
+    if [[ "$fms_json" != "[]" && "$fms_json" != "null" ]]; then
+      local fm
+      while IFS= read -r fm; do
+        [[ -z "$fm" ]] && continue
+        local fm_id="${fm%%|*}"
+        fm_id="${fm_id## }"; fm_id="${fm_id%% }"
+        local fm_pattern="^[[:space:]]*#[[:space:]]*@failure-mode:[[:space:]]*${fm_id}([[:space:]]|$|\\|)"
+        if ! _function_body_grep "$path" "$id" "$fm_pattern"; then
+          drift_records+=("$(jq -nc --arg p "$path" --arg id "$id" --arg v "$fm_id" \
+            '{path:$p, id:$id, reason:"missing-failure-mode-marker", value:$v}')")
+          echo "DRIFT: $path:$id reason=missing-failure-mode-marker value=$fm_id" >&2
+          deep_drift="fm"
+          break
+        fi
+      done < <(printf '%s' "$fms_json" | jq -r '.[]')
+    fi
+    if [[ -n "$deep_drift" ]]; then continue; fi
+
+    # side-effect markers: each declared side-effect must have @side-effect: <value> in body.
+    local ses_json
+    ses_json=$(printf '%s' "$manifest" | jq -c '."side-effect" // []')
+    if [[ "$ses_json" != "[]" && "$ses_json" != "null" ]]; then
+      local se
+      while IFS= read -r se; do
+        [[ -z "$se" ]] && continue
+        local se_id="$se"
+        se_id="${se_id## }"; se_id="${se_id%% }"
+        local se_pattern="^[[:space:]]*#[[:space:]]*@side-effect:[[:space:]]*${se_id}([[:space:]]|$)"
+        if ! _function_body_grep "$path" "$id" "$se_pattern"; then
+          drift_records+=("$(jq -nc --arg p "$path" --arg id "$id" --arg v "$se_id" \
+            '{path:$p, id:$id, reason:"missing-side-effect-marker", value:$v}')")
+          echo "DRIFT: $path:$id reason=missing-side-effect-marker value=$se_id" >&2
+          deep_drift="se"
+          break
+        fi
+      done < <(printf '%s' "$ses_json" | jq -r '.[]')
+    fi
+    if [[ -n "$deep_drift" ]]; then continue; fi
 
     covered=$((covered+1))
   done
