@@ -151,6 +151,106 @@ _compose_block() {
   ' >> "$tmp"
 }
 
+cmd_validate() {
+  local json_mode=0 allowlist=""
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --json) json_mode=1; shift ;;
+      --allowlist) allowlist="$2"; shift 2 ;;
+      *) shift ;;
+    esac
+  done
+  [[ -z "$allowlist" ]] && allowlist=".ccanvil/manifest-allowlist.txt"
+
+  local entries=()
+  if [[ -f "$allowlist" ]]; then
+    local raw
+    while IFS= read -r raw || [[ -n "$raw" ]]; do
+      raw="${raw%%#*}"
+      raw="${raw## }"; raw="${raw%% }"
+      raw="${raw#"${raw%%[![:space:]]*}"}"
+      raw="${raw%"${raw##*[![:space:]]}"}"
+      [[ -z "$raw" ]] && continue
+      entries+=("$raw")
+    done < "$allowlist"
+  fi
+
+  local total="${#entries[@]}" covered=0
+  local drift_records=()
+
+  local required=("purpose" "input" "output" "side-effect" "failure-mode" "contract" "anchor")
+
+  local entry path id
+  if [[ "${#entries[@]}" -gt 0 ]]; then
+  for entry in "${entries[@]}"; do
+    if [[ "$entry" == *":"* ]]; then
+      path="${entry%%:*}"
+      id="${entry#*:}"
+    else
+      path="$entry"
+      id="$(basename "$path" .sh)"
+    fi
+
+    if [[ ! -f "$path" ]]; then
+      drift_records+=("$(jq -nc --arg p "$path" --arg id "$id" '{path:$p, id:$id, reason:"file-not-found"}')")
+      echo "DRIFT: $path:$id reason=file-not-found" >&2
+      continue
+    fi
+
+    local extracted
+    if ! extracted=$(cmd_extract "$path" 2>&1); then
+      drift_records+=("$(jq -nc --arg p "$path" --arg id "$id" '{path:$p, id:$id, reason:"extract-failed"}')")
+      echo "DRIFT: $path:$id reason=extract-failed" >&2
+      continue
+    fi
+
+    local manifest
+    manifest=$(printf '%s' "$extracted" | jq -c --arg id "$id" '.[] | select(.id == $id)' 2>/dev/null)
+    if [[ -z "$manifest" || "$manifest" == "null" ]]; then
+      drift_records+=("$(jq -nc --arg p "$path" --arg id "$id" '{path:$p, id:$id, reason:"manifest-not-found"}')")
+      echo "DRIFT: $path:$id reason=manifest-not-found" >&2
+      continue
+    fi
+
+    local rk missing=""
+    for rk in "${required[@]}"; do
+      local raw_val
+      raw_val=$(echo "$manifest" | jq --arg k "$rk" '.[$k] // empty')
+      if [[ -z "$raw_val" || "$raw_val" == "null" || "$raw_val" == '""' || "$raw_val" == "[]" ]]; then
+        missing="$rk"
+        break
+      fi
+    done
+    if [[ -n "$missing" ]]; then
+      drift_records+=("$(jq -nc --arg p "$path" --arg id "$id" --arg k "$missing" \
+        '{path:$p, id:$id, reason:"missing-required-key", value:$k}')")
+      echo "DRIFT: $path:$id reason=missing-required-key value=$missing" >&2
+      continue
+    fi
+
+    covered=$((covered+1))
+  done
+  fi
+
+  local drift_count="${#drift_records[@]}"
+  local status_str="ok"
+  if [[ "$drift_count" -gt 0 ]]; then status_str="drift"; fi
+
+  if [[ "$json_mode" -eq 1 ]]; then
+    local drift_arr="[]"
+    if [[ "$drift_count" -gt 0 ]]; then
+      drift_arr=$(printf '%s\n' "${drift_records[@]}" | jq -s '.')
+    fi
+    jq -n --argjson covered "$covered" --argjson total "$total" --argjson drift "$drift_arr" --arg status "$status_str" \
+      '{coverage:{covered:$covered, total:$total}, drift:$drift, status:$status}'
+  fi
+
+  if [[ "$drift_count" -gt 0 ]]; then
+    return 2
+  fi
+  return 0
+}
+
 _file_mtime() {
   # macOS BSD vs GNU stat compatibility shim.
   if stat -f %m "$1" >/dev/null 2>&1; then
@@ -251,7 +351,7 @@ cmd="${1:-}"
 shift || true
 case "$cmd" in
   extract)  cmd_extract "$@" ;;
-  validate) echo "TODO: validate not implemented yet (BTS-239 Step 4-5)" >&2; exit 1 ;;
+  validate) cmd_validate "$@" ;;
   query)    cmd_query "$@" ;;
   index)    cmd_index "$@" ;;
   "")       echo "Usage: module-manifest.sh {extract|validate|query|index} [args]" >&2; exit 2 ;;
