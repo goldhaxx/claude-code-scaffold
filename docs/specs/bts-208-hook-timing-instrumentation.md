@@ -4,7 +4,7 @@
 > Work: linear:BTS-208
 > Created: 1777343476
 > Subject: hook timing instrumentation primitive
-> Status: In Progress
+> Status: Complete
 
 ## Summary
 
