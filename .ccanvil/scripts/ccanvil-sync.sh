@@ -1153,11 +1153,32 @@ cmd_status() {
   echo "          NODE-ONLY=excluded from sync (use /ccanvil-ignore to set, ccanvil-sync.sh track to undo)"
 }
 
+# @manifest
+# purpose: Compute the hub-side commit window between the lockfile's last_version and current HEAD; emit commits + files-changed envelope so /ccanvil-pull can preview what new hub work would land
+# input: (none)
+# output: stdout JSON {status: up-to-date|behind, from, to, commit_count, commits[], files_changed[]}
+# output: exit-codes 0 ok, 1 missing-lockfile-or-hub-not-found-or-version-not-in-hub
+# caller: skill:/ccanvil-pull
+# depends-on: jq
+# depends-on: require_lockfile
+# depends-on: get_hub_source_raw
+# depends-on: git
+# depends-on: die
+# side-effect: reads-lockfile-and-hub-git
+# failure-mode: missing-lockfile | exit=1 | visible=stderr-die-from-require_lockfile | mitigation=run-init-first
+# failure-mode: hub-not-found | exit=1 | visible=stderr-die-Hub-not-found-at | mitigation=verify-hub-source-path
+# failure-mode: rewritten-history | exit=1 | visible=stderr-die-not-found-in-hub | mitigation=re-init-against-current-hub
+# contract: emits-up-to-date-envelope-when-versions-match
+# contract: read-only-git-inspection
+# anchor: BTS-243 (manifest seed)
 cmd_changelog() {
+  # @failure-mode: missing-lockfile
+  # @side-effect: reads-lockfile-and-hub-git
   require_lockfile
   local hub_root
   hub_root=$(get_hub_source_raw)
 
+  # @failure-mode: hub-not-found
   [[ -d "$hub_root" ]] || die "Hub not found at: $hub_root"
 
   local last_version
@@ -1175,6 +1196,7 @@ cmd_changelog() {
 
   # Validate last_version exists in hub repo
   if ! git -C "$hub_root" rev-parse "$last_version" >/dev/null 2>&1; then
+    # @failure-mode: rewritten-history
     die "Last synced version $last_version not found in hub repo. History may have been rewritten."
   fi
 
@@ -1201,7 +1223,29 @@ cmd_changelog() {
     '{"status":"behind","from":$from,"to":$to,"commit_count":$count,"commits":$commits,"files_changed":$files}'
 }
 
+# @manifest
+# purpose: Compute and render unified-diff between hub and local for one file or every modified file in the lockfile so operators can review pre-pull/push deltas
+# input: positional <file> (optional — when omitted, diffs all modified entries)
+# output: stdout unified-diff blocks (one per file, with === <file> === banner when iterating)
+# output: exit-codes 0 ok (diffs always pass-through), 1 missing-lockfile
+# caller: skill:/ccanvil-pull
+# caller: skill:/ccanvil-push
+# caller: .claude/agents/ccanvil-differ.md
+# depends-on: jq
+# depends-on: require_lockfile
+# depends-on: get_hub_source
+# depends-on: file_hash
+# depends-on: diff
+# side-effect: reads-lockfile-and-hub-files
+# failure-mode: missing-lockfile | exit=1 | visible=stderr-die-from-require_lockfile | mitigation=run-init-first
+# failure-mode: hub-file-missing | exit=0 | visible=stdout-File-not-in-hub | mitigation=informational-only
+# failure-mode: local-file-missing | exit=0 | visible=stdout-File-not-in-project | mitigation=informational-only
+# contract: read-only-diff-rendering
+# contract: skips-clean-and-unchanged-files-when-iterating
+# anchor: BTS-243 (manifest seed)
 cmd_diff() {
+  # @failure-mode: missing-lockfile
+  # @side-effect: reads-lockfile-and-hub-files
   require_lockfile
   local file="${1:-}"
   local hub_source
@@ -1211,11 +1255,13 @@ cmd_diff() {
     # Diff a specific file
     local hub_file="$hub_source/$file"
     if [[ ! -f "$hub_file" ]]; then
+      # @failure-mode: hub-file-missing
       echo "File not in hub: $file"
       [[ -f "$file" ]] && echo "(exists locally as local-only file)"
       return 0
     fi
     if [[ ! -f "$file" ]]; then
+      # @failure-mode: local-file-missing
       echo "File not in project: $file"
       echo "(exists in hub — run ccanvil-pull to add it)"
       return 0
@@ -1243,7 +1289,19 @@ cmd_diff() {
   fi
 }
 
+# @manifest
+# purpose: Emit the canonical sha256-prefix hash for a single file using file_hash so operators and substrate can compare local content against lockfile entries deterministically
+# input: positional <file>
+# output: stdout "<hash>  <file>" (sha256-prefix format from file_hash)
+# output: exit-codes 0 ok, 1 missing-positional-file
+# depends-on: file_hash
+# side-effect: pure-no-mutations
+# failure-mode: missing-positional-file | exit=1 | visible=stderr-Usage | mitigation=supply-file-arg
+# contract: pure-hash-emission
+# anchor: BTS-243 (manifest seed)
 cmd_hash() {
+  # @failure-mode: missing-positional-file
+  # @side-effect: pure-no-mutations
   local file="${1:?Usage: ccanvil-sync.sh hash <file>}"
   echo "$(file_hash "$file")  $file"
 }
@@ -1313,11 +1371,34 @@ cmd_lock_set_version() {
   safe_lock_mv "$tmp" "$LOCKFILE" "lock-set-version"
 }
 
+# @manifest
+# purpose: Compose a merged markdown file by taking the hub-managed section from the hub source and the node-specific section from the local file using exact-line delimiters (NODE-SPECIFIC-START or HUB-MANAGED-START) so /ccanvil-pull and init-apply can preserve project content while updating hub-owned content
+# input: positional <hub-file> <local-file>
+# output: stdout merged-file content (hub-section + delimiter + node-section, or vice-versa depending on delimiter shape)
+# output: exit-codes 0 ok, 1 missing-positional-or-files-or-no-delimiter
+# caller: cmd_init_apply
+# caller: cmd_pull_apply
+# depends-on: sed
+# depends-on: grep
+# depends-on: cat
+# depends-on: die
+# side-effect: pure-no-mutations
+# failure-mode: missing-positional | exit=1 | visible=stderr-Usage | mitigation=supply-both-args
+# failure-mode: hub-file-missing | exit=1 | visible=stderr-die-Hub-file-not-found | mitigation=verify-hub-path
+# failure-mode: local-file-missing | exit=1 | visible=stderr-die-Local-file-not-found | mitigation=verify-local-path
+# failure-mode: no-section-delimiter | exit=1 | visible=stderr-ERROR-No-section-delimiter | mitigation=add-NODE-SPECIFIC-START-or-HUB-MANAGED-START-to-hub-source
+# contract: stdout-merged-content-never-mutates-input-files
+# contract: handles-local-without-delimiter-by-wrapping-as-node-section
+# anchor: BTS-243 (manifest seed)
 cmd_section_merge() {
+  # @failure-mode: missing-positional
+  # @side-effect: pure-no-mutations
   local hub_file="${1:?Usage: ccanvil-sync.sh section-merge <hub-file> <local-file>}"
   local local_file="${2:?Usage: ccanvil-sync.sh section-merge <hub-file> <local-file>}"
 
+  # @failure-mode: hub-file-missing
   [[ -f "$hub_file" ]] || die "Hub file not found: $hub_file"
+  # @failure-mode: local-file-missing
   [[ -f "$local_file" ]] || die "Local file not found: $local_file"
 
   # Detect which delimiter the hub file uses
@@ -1328,6 +1409,7 @@ cmd_section_merge() {
     delimiter="<!-- HUB-MANAGED-START -->"
   else
     # No delimiter in hub file — not a section-merge file
+    # @failure-mode: no-section-delimiter
     echo "ERROR: No section delimiter found in hub file" >&2
     return 1
   fi
@@ -1378,13 +1460,35 @@ cmd_section_merge() {
 # ---------------------------------------------------------------------------
 
 # Node-only classification commands
+# @manifest
+# purpose: Mark a tracked lockfile entry as node-only so subsequent pull/push/promote operations skip it; idempotent on already-classified entries
+# input: positional <file>
+# output: stdout NODE-ONLY status line (or SKIP when already node-only)
+# output: writes lockfile sync field for the entry
+# output: exit-codes 0 ok, 1 missing-lockfile-or-file-not-tracked-or-missing-positional
+# caller: skill:/ccanvil-ignore
+# depends-on: jq
+# depends-on: require_lockfile
+# depends-on: get_sync_field
+# depends-on: safe_lock_mv
+# depends-on: mktemp
+# depends-on: die
+# side-effect: writes-lockfile-sync-field
+# failure-mode: missing-lockfile | exit=1 | visible=stderr-die-from-require_lockfile | mitigation=run-init-first
+# failure-mode: missing-positional | exit=1 | visible=stderr-Usage | mitigation=supply-file-arg
+# failure-mode: file-not-tracked | exit=1 | visible=stderr-die-File-not-tracked | mitigation=run-pull-or-init-to-track-first
+# contract: idempotent-on-already-node-only
+# anchor: BTS-243 (manifest seed)
 cmd_node_only() {
+  # @failure-mode: missing-lockfile
   require_lockfile
+  # @failure-mode: missing-positional
   local file="${1:?Usage: ccanvil-sync.sh node-only <file>}"
 
   # Verify file exists in lockfile
   local exists
   exists=$(jq -r --arg f "$file" '.files[$f] // "null"' "$LOCKFILE")
+  # @failure-mode: file-not-tracked
   [[ "$exists" != "null" ]] || die "File not tracked in lockfile: $file"
 
   local current_sync
@@ -1396,6 +1500,7 @@ cmd_node_only() {
 
   local tmp; tmp=$(mktemp)
   jq --arg f "$file" '.files[$f].sync = "node-only"' "$LOCKFILE" > "$tmp" || true
+  # @side-effect: writes-lockfile-sync-field
   safe_lock_mv "$tmp" "$LOCKFILE" "node-only $file"
 
   echo "NODE-ONLY: $file (excluded from future pull/push)"

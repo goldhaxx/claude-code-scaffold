@@ -91,3 +91,9 @@
 .ccanvil/scripts/ccanvil-sync.sh:cmd_init_apply
 .ccanvil/scripts/ccanvil-sync.sh:cmd_retrofit_check
 .ccanvil/scripts/ccanvil-sync.sh:cmd_status
+# Batch 2 — diff/hash/merge primitives.
+.ccanvil/scripts/ccanvil-sync.sh:cmd_changelog
+.ccanvil/scripts/ccanvil-sync.sh:cmd_diff
+.ccanvil/scripts/ccanvil-sync.sh:cmd_hash
+.ccanvil/scripts/ccanvil-sync.sh:cmd_section_merge
+.ccanvil/scripts/ccanvil-sync.sh:cmd_node_only
