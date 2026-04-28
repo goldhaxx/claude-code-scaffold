@@ -3,7 +3,7 @@
 > Feature: bts-236-derive-pr-title-subject-metadata
 > Work: linear:BTS-236
 > Created: 1777342700
-> Status: In Progress
+> Status: Complete
 
 ## Summary
 
