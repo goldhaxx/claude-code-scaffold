@@ -8,6 +8,31 @@ tools:
   - Bash(git diff:*)
   - Bash(git log:*)
 model: sonnet
+manifest:
+  id: code-reviewer
+  purpose: Review uncommitted changes for correctness, test coverage, security, conventions, and complexity; surface findings before commit
+  input:
+    - "context: current uncommitted git diff"
+    - "context: project CLAUDE.md conventions"
+  output:
+    - "review-notes: INFO / WARN / CRITICAL findings, each with rationale"
+  caller:
+    - .claude/commands/pr.md
+    - .claude/commands/review.md
+  depends-on:
+    - git
+  side-effect:
+    - "no-mutations (read-only sub-agent)"
+  failure-mode:
+    - "no-changes-found | exit=n/a | visible=empty-review | mitigation=run-after-edits"
+    - "false-positive-flag | exit=n/a | visible=warn-with-no-actual-issue | mitigation=operator-judgment-on-each-finding"
+  contract:
+    - read-only
+    - never-commits
+    - every-finding-has-rationale
+  anchor:
+    - BTS-78 (origin reviewer agent)
+    - BTS-240 (reference manifest seed)
 ---
 
 # Code Reviewer

@@ -30,13 +30,17 @@ setup() {
   done
 }
 
-@test "self-app: full validate over 7-entry allowlist exits 0" {
+@test "self-app: full validate over allowlist exits 0 (BTS-240: now 11 entries)" {
   set -e
   cd "$REPO_ROOT"
   run bash "$SCRIPT" validate --json
   [ "$status" -eq 0 ]
-  echo "$output" | jq -e '.coverage.covered == 7'
-  echo "$output" | jq -e '.coverage.total == 7'
+  # BTS-240 grew the allowlist from 7 → 11 (added 4 markdown reference manifests).
+  # Sessions 9-10 will grow it further. This test asserts coverage matches total
+  # — the actual count check is delegated to the production drift-guard test which
+  # asserts `covered == total` regardless of magnitude.
+  echo "$output" | jq -e '.coverage.covered == .coverage.total'
+  echo "$output" | jq -e '.coverage.covered >= 11'
   echo "$output" | jq -e '.status == "ok"'
 }
 

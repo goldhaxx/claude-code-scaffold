@@ -1,6 +1,46 @@
 ---
 name: spec
 description: "Write a feature specification with acceptance criteria. The first step after deciding to act on an idea."
+manifest:
+  id: spec
+  purpose: Write a feature specification with binary-testable acceptance criteria; first step after deciding to act on an idea
+  routes-by: /spec
+  input:
+    - "positional: <work-ref> (e.g. BTS-130, idea-29, linear:BTS-130)"
+    - "positional: <description>"
+    - "alt-form: idea <num> [description]"
+  output:
+    - "file: docs/specs/<feature-id>.md (always — local archive)"
+    - "artifact: Linear Document (when integrations.routing.spec=linear)"
+    - "state-transition: linked Linear ticket → Todo (when work-ref is linear:<id>)"
+  caller:
+    - .claude/commands/plan.md
+    - .claude/commands/activate.md
+    - .claude/skills/recall/SKILL.md
+    - .claude/skills/radar/SKILL.md
+    - .claude/skills/stasis/SKILL.md
+    - .ccanvil/scripts/docs-check.sh
+  depends-on:
+    - operations.sh
+    - docs-check.sh
+    - linear-query.sh
+  side-effect:
+    - writes-spec-archive
+    - dispatches-linear-document
+    - transitions-linear-ticket
+  failure-mode:
+    - "unresolvable-work-ref | exit=1 | visible=stderr-error | mitigation=run-/idea-first"
+    - "active-spec-in-flight | exit=1 | visible=warn-prompt | mitigation=/pr-and-/land-first"
+  contract:
+    - never-creates-branch
+    - never-implements
+    - work-ref-required
+    - one-spec-per-feature-branch
+  anchor:
+    - BTS-130 (origin spec skill)
+    - BTS-204 (provider-aware artifact-write)
+    - BTS-213 (route-aware Linear dispatch)
+    - BTS-240 (reference manifest seed)
 ---
 
 # Spec Skill

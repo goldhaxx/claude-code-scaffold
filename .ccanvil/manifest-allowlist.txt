@@ -15,3 +15,11 @@
 .ccanvil/scripts/module-manifest.sh:cmd_validate
 .ccanvil/scripts/module-manifest.sh:cmd_query
 .ccanvil/scripts/module-manifest.sh:cmd_index
+
+# BTS-240: 4 reference markdown manifests (Session 1 of manifest rollout).
+# Sessions 9-10 extend coverage to remaining markdown sub-shapes per
+# docs/manifest-rollout.md.
+.claude/skills/spec/SKILL.md:spec
+.claude/rules/tdd.md
+.claude/agents/code-reviewer.md
+.claude/commands/pr.md

@@ -1,3 +1,37 @@
+---
+manifest:
+  id: pr
+  purpose: Finalize a feature branch for merge — verify tests pass, validate spec/plan docs, clean up lifecycle archive, mark PR ready for review
+  routes-by: /pr
+  input:
+    - "flag: --skip-review (optional, bypasses code-reviewer gate)"
+  output:
+    - "github-state: PR moved from Draft to Ready"
+    - "side-effect: lifecycle docs (docs/spec.md, docs/plan.md) removed; archive committed"
+  depends-on:
+    - bats-report.sh
+    - docs-check.sh
+    - code-reviewer
+  side-effect:
+    - mutates-pr-state-on-github
+    - removes-lifecycle-docs
+    - commits-cleanup
+  failure-mode:
+    - "on-default-branch | exit=1 | visible=stderr-error | mitigation=activate-spec-first"
+    - "tests-failing | exit=1 | visible=test-output | mitigation=fix-and-retry"
+    - "lifecycle-blocked | exit=1 | visible=blocker-list | mitigation=resolve-blockers-from-envelope"
+    - "behind-base | exit=1 | visible=pr-guard-error | mitigation=rebase-on-main"
+  contract:
+    - never-runs-on-default-branch
+    - never-marks-ready-with-failing-tests
+    - cleanup-is-deterministic
+  anchor:
+    - BTS-118 (bats-report.sh integration)
+    - BTS-122 (pr-guard behind-base check)
+    - BTS-20 (lifecycle-state pre-flight)
+    - BTS-240 (reference manifest seed)
+---
+
 Finalize the current feature branch for merge.
 
 This command ensures the branch is ready for merge: tests pass, docs are validated, lifecycle docs are cleaned up, and the PR is marked ready for review.
