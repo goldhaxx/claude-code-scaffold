@@ -1506,12 +1506,34 @@ cmd_node_only() {
   echo "NODE-ONLY: $file (excluded from future pull/push)"
 }
 
+# @manifest
+# purpose: Restore a previously node-only lockfile entry to tracked sync so subsequent pull/push operations include it again; idempotent on already-tracked entries
+# input: positional <file>
+# output: stdout TRACKED status line (or SKIP when already tracked)
+# output: writes lockfile sync field for the entry
+# output: exit-codes 0 ok, 1 missing-lockfile-or-file-not-tracked-or-missing-positional
+# caller: skill:/ccanvil-ignore
+# depends-on: jq
+# depends-on: require_lockfile
+# depends-on: get_sync_field
+# depends-on: safe_lock_mv
+# depends-on: mktemp
+# depends-on: die
+# side-effect: writes-lockfile-sync-field
+# failure-mode: missing-lockfile | exit=1 | visible=stderr-die-from-require_lockfile | mitigation=run-init-first
+# failure-mode: missing-positional | exit=1 | visible=stderr-Usage | mitigation=supply-file-arg
+# failure-mode: file-not-tracked | exit=1 | visible=stderr-die-File-not-tracked | mitigation=verify-file-was-pulled-or-init
+# contract: idempotent-on-already-tracked
+# anchor: BTS-243 (manifest seed)
 cmd_track() {
+  # @failure-mode: missing-lockfile
   require_lockfile
+  # @failure-mode: missing-positional
   local file="${1:?Usage: ccanvil-sync.sh track <file>}"
 
   local exists
   exists=$(jq -r --arg f "$file" '.files[$f] // "null"' "$LOCKFILE")
+  # @failure-mode: file-not-tracked
   [[ "$exists" != "null" ]] || die "File not tracked in lockfile: $file"
 
   local current_sync
@@ -1523,6 +1545,7 @@ cmd_track() {
 
   local tmp; tmp=$(mktemp)
   jq --arg f "$file" '.files[$f].sync = "tracked"' "$LOCKFILE" > "$tmp" || true
+  # @side-effect: writes-lockfile-sync-field
   safe_lock_mv "$tmp" "$LOCKFILE" "track $file"
 
   echo "TRACKED: $file (re-included in future pull/push)"
@@ -1530,7 +1553,22 @@ cmd_track() {
 
 # classify: list all modified/local files that need classification
 # Output: JSON array of {file, status, origin, sync} for unclassified files
+# @manifest
+# purpose: Walk every lockfile entry and emit the subset that's modified or local-only AND not yet node-only so /ccanvil-push can present an actionable classification queue
+# input: (none)
+# output: stdout JSON array [{file, status, origin}] (empty array when nothing pending)
+# output: exit-codes 0 ok, 1 missing-lockfile
+# depends-on: jq
+# depends-on: require_lockfile
+# depends-on: get_sync_field
+# side-effect: reads-lockfile
+# failure-mode: missing-lockfile | exit=1 | visible=stderr-die-from-require_lockfile | mitigation=run-init-first
+# contract: emits-empty-array-when-no-candidates
+# contract: filters-out-node-only-and-clean-entries
+# anchor: BTS-243 (manifest seed)
 cmd_classify() {
+  # @failure-mode: missing-lockfile
+  # @side-effect: reads-lockfile
   require_lockfile
   local candidates="[]"
 
@@ -1551,13 +1589,44 @@ cmd_classify() {
 }
 
 # Pre-check: verify hub repo is clean and accessible
+# @manifest
+# purpose: Gate sync verbs on a clean hub working tree, a clean node working tree, and an up-to-date local sync script (auto-bootstrapping the script when the hub copy differs) so pull/push never operate over dirty state
+# input: (none)
+# output: stdout OK on clean state, BOOTSTRAPPED on script update, ERROR-prefixed lines on dirty state
+# output: writes .ccanvil/scripts/ccanvil-sync.sh + lockfile when bootstrap fires
+# output: exit-codes 0 ok-or-bootstrapped, 1 dirty-hub-or-dirty-node-or-missing-lockfile-or-hub-not-found
+# caller: skill:/ccanvil-pull
+# caller: skill:/ccanvil-push
+# depends-on: jq
+# depends-on: require_lockfile
+# depends-on: get_hub_source
+# depends-on: get_hub_source_raw
+# depends-on: file_hash
+# depends-on: safe_lock_mv
+# depends-on: mktemp
+# depends-on: cp
+# depends-on: git
+# depends-on: die
+# side-effect: reads-hub-and-node-git-status
+# side-effect: bootstraps-sync-script
+# side-effect: writes-lockfile-on-bootstrap
+# failure-mode: missing-lockfile | exit=1 | visible=stderr-die-from-require_lockfile | mitigation=run-init-first
+# failure-mode: hub-not-found | exit=1 | visible=stderr-die-Hub-not-found-at | mitigation=verify-hub-source-path
+# failure-mode: dirty-hub | exit=1 | visible=stderr-ERROR-Hub-repo-has-uncommitted-changes | mitigation=commit-or-stash-in-hub
+# failure-mode: dirty-node | exit=1 | visible=stderr-ERROR-This-project-has-uncommitted-changes | mitigation=commit-or-stash-in-node
+# contract: bootstrap-exits-0-and-asks-rerun
+# contract: emits-OK-only-when-fully-clean
+# anchor: BTS-243 (manifest seed)
 cmd_pre_check() {
+  # @failure-mode: missing-lockfile
+  # @side-effect: reads-hub-and-node-git-status
   require_lockfile
   local hub_source
   hub_source=$(get_hub_source)
   local hub_root
   hub_root=$(get_hub_source_raw)
 
+  # @failure-mode: hub-not-found
   [[ -d "$hub_source" ]] || die "Hub not found at: $hub_source"
 
   # Check hub repo is clean
@@ -1565,6 +1634,7 @@ cmd_pre_check() {
     local dirty
     dirty=$(git -C "$hub_root" status --porcelain 2>/dev/null)
     if [[ -n "$dirty" ]]; then
+      # @failure-mode: dirty-hub
       echo "ERROR: Hub repo has uncommitted changes:" >&2
       echo "$dirty" >&2
       echo "" >&2
@@ -1578,6 +1648,7 @@ cmd_pre_check() {
     local node_dirty
     node_dirty=$(git status --porcelain 2>/dev/null)
     if [[ -n "$node_dirty" ]]; then
+      # @failure-mode: dirty-node
       echo "ERROR: This project has uncommitted changes:" >&2
       echo "$node_dirty" >&2
       echo "" >&2
@@ -1594,6 +1665,7 @@ cmd_pre_check() {
     hub_hash=$(file_hash "$hub_script")
     local_hash=$(file_hash "$local_script")
     if [[ "$hub_hash" != "$local_hash" ]]; then
+      # @side-effect: bootstraps-sync-script
       cp "$hub_script" "$local_script"
       # Update lockfile hashes so status shows clean after bootstrap
       local new_hash
@@ -1602,6 +1674,7 @@ cmd_pre_check() {
       jq --arg f "$local_script" --arg h "$new_hash" \
         '.files[$f].hub_hash = $h | .files[$f].local_hash = $h | .files[$f].status = "clean"' \
         "$LOCKFILE" > "$tmp" || true
+      # @side-effect: writes-lockfile-on-bootstrap
       safe_lock_mv "$tmp" "$LOCKFILE" "bootstrap hash update"
       echo "BOOTSTRAPPED: Updated .ccanvil/scripts/ccanvil-sync.sh from hub"
       echo "  Re-run your command to use the updated script."

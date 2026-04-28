@@ -97,3 +97,7 @@
 .ccanvil/scripts/ccanvil-sync.sh:cmd_hash
 .ccanvil/scripts/ccanvil-sync.sh:cmd_section_merge
 .ccanvil/scripts/ccanvil-sync.sh:cmd_node_only
+# Batch 3 — track/classify/pre-check.
+.ccanvil/scripts/ccanvil-sync.sh:cmd_track
+.ccanvil/scripts/ccanvil-sync.sh:cmd_classify
+.ccanvil/scripts/ccanvil-sync.sh:cmd_pre_check
