@@ -4,7 +4,7 @@
 > Work: linear:BTS-243
 > Created: 1777416492
 > Subject: ccanvil-sync.sh sync-core cluster manifests
-> Status: Draft
+> Status: Complete
 
 ## Summary
 
