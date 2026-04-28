@@ -276,3 +276,141 @@ EOF
   [ -n "$end" ]
   ! sed -n "${start},${end}p" "$SCRIPT" | grep -q "sed -n '/^## Summary"
 }
+
+# =========================================================================
+# BTS-236 AC-2: prefer `> Subject:` over Summary extraction
+# =========================================================================
+
+_write_spec_with_subject() {
+  local path="$1"
+  local feature_id="$2"
+  local subject="$3"
+  local summary="$4"
+  cat > "$path" <<EOF
+# Feature: Test
+
+> Feature: $feature_id
+> Work: linear:BTS-X
+> Created: 1700000000
+> Subject: $subject
+> Status: Draft
+
+## Summary
+
+$summary
+
+## Acceptance Criteria
+
+- [ ] AC-1
+EOF
+}
+
+@test "BTS-236 AC-2: cmd_derive_pr_title prefers > Subject: over Summary first-line" {
+  set -e
+  _write_spec_with_subject "$PROJECT/docs/spec.md" "bts-236-test" \
+    "clean imperative line under 72 chars" \
+    "This is a verbose multi-clause sentence in the Summary that would otherwise be truncated at 80 chars."
+  run bash "$SCRIPT" derive-pr-title "$PROJECT/docs/spec.md"
+  [ "$status" -eq 0 ]
+  [ "$output" = "feat(bts-236-test): clean imperative line under 72 chars" ]
+}
+
+@test "BTS-236 AC-2: spec without > Subject: falls back to Summary first-line (regression)" {
+  set -e
+  _write_spec "$PROJECT/docs/spec.md" "bts-236-fallback" "Short legacy line."
+  run bash "$SCRIPT" derive-pr-title "$PROJECT/docs/spec.md"
+  [ "$status" -eq 0 ]
+  [ "$output" = "feat(bts-236-fallback): Short legacy line" ]
+}
+
+# =========================================================================
+# BTS-236 AC-1, AC-5, AC-6: cmd_stamp_spec inserts > Subject:
+# =========================================================================
+
+@test "BTS-236 AC-1: cmd_stamp_spec inserts > Subject: derived from H1" {
+  set -e
+  mkdir -p "$PROJECT/docs/specs"
+  cat > "$PROJECT/docs/specs/foo.md" <<'EOF'
+# Feature: stasis-carry-forward gsub regex-escape fix
+
+> Feature: foo
+> Work: linear:BTS-X
+> Created: PLACEHOLDER
+> Status: Draft
+
+## Summary
+
+Body.
+EOF
+  run bash "$SCRIPT" stamp-spec --project-dir "$PROJECT" foo
+  [ "$status" -eq 0 ]
+  grep -q '^> Subject: stasis-carry-forward gsub regex-escape fix$' "$PROJECT/docs/specs/foo.md"
+}
+
+@test "BTS-236 AC-5: cmd_stamp_spec re-run is idempotent (no duplicate > Subject:)" {
+  set -e
+  mkdir -p "$PROJECT/docs/specs"
+  cat > "$PROJECT/docs/specs/foo.md" <<'EOF'
+# Feature: a clean H1 line
+
+> Feature: foo
+> Work: linear:BTS-X
+> Created: PLACEHOLDER
+> Status: Draft
+
+## Summary
+
+Body.
+EOF
+  bash "$SCRIPT" stamp-spec --project-dir "$PROJECT" foo >/dev/null
+  bash "$SCRIPT" stamp-spec --project-dir "$PROJECT" foo >/dev/null
+  count=$(grep -c '^> Subject:' "$PROJECT/docs/specs/foo.md")
+  [ "$count" -eq 1 ]
+}
+
+@test "BTS-236 AC-6: cmd_stamp_spec on spec without H1 'Feature:' prefix skips Subject (graceful)" {
+  set -e
+  mkdir -p "$PROJECT/docs/specs"
+  cat > "$PROJECT/docs/specs/bar.md" <<'EOF'
+# Some Other Title
+
+> Feature: bar
+> Work: linear:BTS-X
+> Created: PLACEHOLDER
+> Status: Draft
+
+## Summary
+
+Body.
+EOF
+  run bash "$SCRIPT" stamp-spec --project-dir "$PROJECT" bar
+  [ "$status" -eq 0 ]
+  ! grep -q '^> Subject:' "$PROJECT/docs/specs/bar.md"
+}
+
+@test "BTS-236 AC-3: H1 longer than 72 chars is truncated with word-boundary walkback" {
+  set -e
+  mkdir -p "$PROJECT/docs/specs"
+  cat > "$PROJECT/docs/specs/longh1.md" <<'EOF'
+# Feature: this is a very long imperative title that exceeds seventy two characters in length easily
+
+> Feature: longh1
+> Work: linear:BTS-X
+> Created: PLACEHOLDER
+> Status: Draft
+
+## Summary
+
+Body.
+EOF
+  run bash "$SCRIPT" stamp-spec --project-dir "$PROJECT" longh1
+  [ "$status" -eq 0 ]
+  subject=$(grep '^> Subject:' "$PROJECT/docs/specs/longh1.md" | sed 's/^> Subject: //')
+  # Subject must be <= 72 chars and end on a word boundary
+  [ "${#subject}" -le 72 ]
+  [[ ! "$subject" =~ [[:space:]]$ ]]
+}
+
+@test "BTS-236 drift: BTS-236 referenced inline in docs-check.sh" {
+  grep -q "BTS-236" "$SCRIPT"
+}

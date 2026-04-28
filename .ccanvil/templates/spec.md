@@ -7,6 +7,8 @@
 
 <!-- Work: is the canonical coordination key. `feature-id` should be derived as `<slug>-<kebab-name>` where slug comes from `operations.sh resolve work.resolve <ref>`. Legacy specs without Work: are grandfathered by the validator. -->
 
+<!-- Subject: (BTS-236) optional — auto-populated by `stamp-spec` from this file's H1 (form `# Feature: <name>`). Used by cmd_derive_pr_title as the canonical PR subject after the `feat(<feature-id>):` prefix. Cap ≤72 chars (auto-truncated with word-boundary walkback). Override manually by editing the metadata block. Legacy specs without Subject: fall back to first-line-of-Summary truncation. -->
+
 ## Summary
 
 [One paragraph: what this feature does and why it matters to the user.]

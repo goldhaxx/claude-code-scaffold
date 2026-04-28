@@ -2821,6 +2821,21 @@ cmd_derive_pr_title() {
 
   local feature_id_meta first_line
   feature_id_meta=$(grep -m1 '^> Feature:' "$spec_file" | sed -E 's/^> Feature:[[:space:]]*//')
+
+  # BTS-236: structural pivot — prefer `> Subject:` metadata field over
+  # Summary first-line extraction. cmd_stamp_spec auto-populates Subject
+  # from the H1 at /spec time; operator may also override it manually.
+  # When present and non-empty, use directly (already shaped at /spec time
+  # — skip the period-strip + 80-char truncation paths).
+  # `|| true` guards against grep's exit-1 on no-match propagating up under
+  # `set -euo pipefail`.
+  local subject_line=""
+  subject_line=$(grep -m1 '^> Subject:' "$spec_file" 2>/dev/null | sed -E 's/^> Subject:[[:space:]]*//' || true)
+  if [[ -n "$subject_line" ]]; then
+    echo "feat(${feature_id_meta}): ${subject_line}"
+    return 0
+  fi
+
   first_line=$(sed -n '/^## Summary$/,/^## /{ /^## /d; /^$/d; p; }' "$spec_file" | head -1 | sed 's/^[[:space:]]*//')
 
   if [[ -z "$first_line" ]]; then
@@ -4056,11 +4071,45 @@ cmd_stamp_spec() {
   local epoch
   epoch=$(date +%s)
 
+  # BTS-236: derive a clean Subject line from the spec's H1 for use by
+  # cmd_derive_pr_title. The H1 (form `# Feature: <name>`) is naturally
+  # short and operator-controlled — a far better PR-subject source than
+  # the verbose Summary opener that produced mid-sentence truncated
+  # commit subjects on PRs #128, #131, #132, #133. Cap at 72 chars with
+  # word-boundary walkback. Skip when H1 doesn't match the expected form
+  # OR when a Subject line is already present (idempotent).
+  local subject=""
+  if ! grep -q '^> Subject:' "$spec_path"; then
+    local h1
+    h1=$(head -1 "$spec_path" | sed -nE 's/^# Feature: (.+)$/\1/p')
+    if [[ -n "$h1" ]]; then
+      subject="$h1"
+      if (( ${#subject} > 72 )); then
+        subject="${subject:0:72}"
+        local i ch
+        for (( i=71; i >= 72 - 16; i-- )); do
+          ch="${subject:i:1}"
+          if [[ "$ch" == " " || "$ch" == $'\t' || "$ch" == "-" || "$ch" == "," || "$ch" == ":" ]]; then
+            subject="${subject:0:i}"
+            break
+          fi
+        done
+        subject="${subject%"${subject##*[![:space:]]}"}"
+      fi
+    fi
+  fi
+
   # Replace the Created: line in place. Use a temp file for portability.
+  # If a Subject was derived, insert it immediately after Created.
   local tmp
   tmp="${spec_path}.stamp.tmp"
-  awk -v ep="$epoch" '
-    /^> Created:/ && !done { print "> Created: " ep; done=1; next }
+  awk -v ep="$epoch" -v subj="$subject" '
+    /^> Created:/ && !created_done {
+      print "> Created: " ep
+      if (subj != "") print "> Subject: " subj
+      created_done=1
+      next
+    }
     { print }
   ' "$spec_path" > "$tmp"
   mv "$tmp" "$spec_path"
