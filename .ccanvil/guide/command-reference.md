@@ -205,16 +205,16 @@ The `/idea` skill routes captures through `operations.sh` based on the node's pr
 | `manifest-check.sh check <readme>` | Full report: verified + stale (with diffs) + missing + untracked (with identity) |
 | `manifest-check.sh verify <paths...>` | Update lockfile entries for confirmed paths |
 
-## Module Manifest Substrate (BTS-239)
+## Module Manifest Substrate (BTS-239 + BTS-240)
 
-Layer 2 of the Dark Code framework — Self-Describing Systems. Each substrate primitive on `.ccanvil/manifest-allowlist.txt` carries a `# @manifest` comment block above its function definition. Format reference: `.ccanvil/templates/manifest.md`.
+Layer 2 of the Dark Code framework — Self-Describing Systems. Each substrate primitive on `.ccanvil/manifest-allowlist.txt` carries a manifest block — `# @manifest` shell comment above a function (function-level), or YAML `manifest:` key inside a markdown file's frontmatter (BTS-240). Format reference: `.ccanvil/templates/manifest.md`.
 
 | Command | What it does |
 |---------|-------------|
-| `module-manifest.sh extract <path>` | Parse `# @manifest` blocks from a single file → JSON array, one object per block. Repeated keys collapse to arrays; scalar keys (`id`, `purpose`, `routes-by`) emit as plain strings. Exit 2 on missing/file-not-found/malformed-manifest. |
-| `module-manifest.sh validate [--json] [--allowlist <path>]` | Walk allowlist, drift-check each entry: required keys present, `failure-mode` records parseable, declared `caller`/`depends-on` cross-checked against grep-of-source, `@failure-mode`/`@side-effect` source markers present in body. Emits `DRIFT: <path>:<id> reason=<class>` to stderr per drift. `--json` emits `{coverage:{covered,total}, drift:[...], status}`. Exit 0 clean / 2 drift. |
+| `module-manifest.sh extract <path>` | Parse manifest blocks from a single file → JSON array, one object per block. Branches on file extension: `.sh` reads `# @manifest` shell comment shape; `.md` reads YAML frontmatter `manifest:` key (BTS-240). Repeated keys collapse to arrays; scalar keys (`id`, `purpose`, `routes-by`) emit as plain strings. Exit 2 on missing/file-not-found/malformed-manifest. |
+| `module-manifest.sh validate [--json] [--allowlist <path>]` | Walk allowlist, drift-check each entry: required keys present, `failure-mode` records parseable, declared `caller`/`depends-on` cross-checked against grep-of-source, `@failure-mode`/`@side-effect` source markers present in body. Marker checks are SKIPPED for `.md` paths (BTS-240). For `.md` targets, body grep covers everything after the closing `---` (frontmatter excluded). Emits `DRIFT: <path>:<id> reason=<class>` to stderr per drift. `--json` emits `{coverage:{covered,total}, drift:[...], status}`. Exit 0 clean / 2 drift. |
 | `module-manifest.sh query '<key>:<value>'` | Substring-match filter against `.ccanvil/state/manifests.json` (regenerated lazily if mtime-stale). Returns JSON array of matching entries. Empty array on no match. Exit 0 always (2 on usage error). |
-| `module-manifest.sh index` | Walk `.ccanvil/scripts/`, `.claude/hooks/`, `.claude/hooks/_lib/` (`.sh` only), invoke `extract` per file, merge into a sorted JSON object keyed `<path>:<id>` at `.ccanvil/state/manifests.json` (gitignored). Atomic via `mv`; deterministic across runs. |
+| `module-manifest.sh index` | Walk `.ccanvil/scripts/`, `.claude/hooks/`, `.claude/hooks/_lib/` (`.sh` only) PLUS `.claude/skills/<n>/SKILL.md`, `.claude/rules/*.md`, `.claude/agents/*.md`, `.claude/commands/*.md` (BTS-240), invoke `extract` per file, merge into a sorted JSON object keyed `<path>:<id>` at `.ccanvil/state/manifests.json` (gitignored). Atomic via `mv`; deterministic across runs. |
 
 ## Stack Distribution Scripts
 
