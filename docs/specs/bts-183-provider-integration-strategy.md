@@ -4,7 +4,7 @@
 > Work: linear:BTS-183
 > Created: 1777343926
 > Subject: provider integration strategy — codify http-canonical, sweep MCP dead
-> Status: In Progress
+> Status: Complete
 
 ## Summary
 
