@@ -69,6 +69,12 @@ cmd_extract() {
     return 2
   fi
 
+  # BTS-240: markdown frontmatter branch.
+  if [[ "$path" == *.md ]]; then
+    _extract_markdown "$path"
+    return $?
+  fi
+
   # Read file into indexed array (bash 3.2 compatible — no mapfile).
   local lines=()
   local idx=0 line
@@ -143,7 +149,11 @@ _compose_block() {
     fi
     break
   done
-  [[ -z "$fn_id" ]] && fn_id="$(basename "$path" .sh)"
+  if [[ -z "$fn_id" ]]; then
+    # BTS-240: extension-agnostic basename fallback (handles .sh AND .md).
+    local _ext="${path##*.}"
+    fn_id="$(basename "$path" ".${_ext}")"
+  fi
 
   jq -n --arg id "$fn_id" --arg data "$block_data" '
     def scalar_keys: ["id", "purpose", "routes-by"];
@@ -163,6 +173,130 @@ _compose_block() {
         end
       )
   ' >> "$tmp"
+}
+
+# BTS-240: parse YAML frontmatter `manifest:` block from a markdown file
+# and emit one JSON manifest object via _compose_block. Constrained schema:
+# top-level frontmatter delimited by `---`; `manifest:` key at zero indent;
+# scalar values (`  key: val`) and array values (`  key:\n    - val`) only.
+# Anything outside this schema → MALFORMED + exit 2.
+_extract_markdown() {
+  local path="$1"
+  local lines=()
+  local idx=0 line
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    lines[idx]="$line"
+    idx=$((idx+1))
+  done < "$path"
+  local total="$idx"
+
+  local tmp
+  tmp=$(mktemp)
+  # shellcheck disable=SC2064
+  trap "rm -f '$tmp'" RETURN
+
+  # No content / no frontmatter at line 0 → emit [].
+  if [[ "$total" -lt 1 || "${lines[0]}" != "---" ]]; then
+    jq -s '.' < "$tmp"
+    return 0
+  fi
+
+  # Find the closing `---` between line 1 and EOF.
+  local fm_close=-1 i
+  for ((i=1; i<total; i++)); do
+    if [[ "${lines[i]}" == "---" ]]; then
+      fm_close="$i"
+      break
+    fi
+  done
+  if [[ "$fm_close" -lt 0 ]]; then
+    echo "MALFORMED: $path: unclosed frontmatter (no closing ---)" >&2
+    return 2
+  fi
+
+  # Locate `manifest:` zero-indent inside the frontmatter region.
+  local mf_start=-1
+  for ((i=1; i<fm_close; i++)); do
+    if [[ "${lines[i]}" =~ ^manifest:[[:space:]]*$ ]]; then
+      mf_start="$i"
+      break
+    fi
+  done
+  if [[ "$mf_start" -lt 0 ]]; then
+    # Frontmatter present but no manifest: key → emit [].
+    jq -s '.' < "$tmp"
+    return 0
+  fi
+
+  # Determine end of manifest: subtree (next zero-indent non-blank line, or fm_close).
+  local mf_end="$fm_close"
+  for ((i=mf_start+1; i<fm_close; i++)); do
+    line="${lines[i]}"
+    [[ -z "$line" ]] && continue
+    [[ "$line" =~ ^# ]] && continue   # YAML comments inside frontmatter — skip
+    if [[ "$line" =~ ^[^[:space:]] ]]; then
+      mf_end="$i"
+      break
+    fi
+  done
+
+  # Parse the manifest: subtree into block_data ("key\tval\n").
+  local block_data=""
+  local current_key="" in_array=0
+  for ((i=mf_start+1; i<mf_end; i++)); do
+    line="${lines[i]}"
+    [[ -z "$line" ]] && continue
+    [[ "$line" =~ ^[[:space:]]*# ]] && continue   # YAML comment line
+
+    # Scalar shape: `  <key>: <value>` (2-space indent).
+    if [[ "$line" =~ ^\ \ ([a-zA-Z][a-zA-Z0-9_-]*):[[:space:]]*(.*)$ ]]; then
+      local key="${BASH_REMATCH[1]}"
+      local val="${BASH_REMATCH[2]}"
+      # Strip surrounding quotes.
+      if [[ "$val" =~ ^\"(.*)\"$ ]]; then val="${BASH_REMATCH[1]}"; fi
+      if [[ "$val" =~ ^\'(.*)\'$ ]]; then val="${BASH_REMATCH[1]}"; fi
+      if [[ -z "$val" ]]; then
+        # Empty scalar → array-shape header. Subsequent `    - x` lines are children.
+        current_key="$key"
+        in_array=1
+      else
+        if [[ "$key" == "failure-mode" ]]; then
+          _validate_failure_mode_value "$val" "$path" "$((i+1))" || return 2
+        fi
+        block_data+="$key"$'\t'"$val"$'\n'
+        current_key=""
+        in_array=0
+      fi
+      continue
+    fi
+
+    # Array element: `    - <value>` (4-space indent).
+    if [[ "$line" =~ ^\ \ \ \ -[[:space:]]+(.*)$ ]]; then
+      if [[ "$in_array" -ne 1 || -z "$current_key" ]]; then
+        echo "MALFORMED: $path:$((i+1)): array item without parent key" >&2
+        return 2
+      fi
+      local val="${BASH_REMATCH[1]}"
+      if [[ "$val" =~ ^\"(.*)\"$ ]]; then val="${BASH_REMATCH[1]}"; fi
+      if [[ "$val" =~ ^\'(.*)\'$ ]]; then val="${BASH_REMATCH[1]}"; fi
+      if [[ "$current_key" == "failure-mode" ]]; then
+        _validate_failure_mode_value "$val" "$path" "$((i+1))" || return 2
+      fi
+      block_data+="$current_key"$'\t'"$val"$'\n'
+      continue
+    fi
+
+    # Anything else inside manifest: subtree is malformed.
+    echo "MALFORMED: $path:$((i+1)): unrecognized shape under manifest: ($line)" >&2
+    return 2
+  done
+
+  # Compose the block. block_end_idx points past the closing `---` so the
+  # _compose_block function-definition scan walks markdown body (finds nothing)
+  # and falls through to the basename fallback.
+  _compose_block "$path" "$((mf_start+1))" "$block_data" "$((fm_close+1))" "$tmp" "$total" || return 2
+
+  jq -s '.' < "$tmp"
 }
 
 # Search the body of <fn_id> in <path> for <pattern> (extended regex).
