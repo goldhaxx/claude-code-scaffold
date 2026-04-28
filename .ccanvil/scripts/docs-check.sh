@@ -4948,11 +4948,13 @@ _doc_cache_set_updated_at() {
 # Returns 1 if remote updatedAt has advanced past cache (concurrent edit detected).
 _doc_concurrent_edit_check() {
   local doc_id="$1" project_dir="${2:-.}"
-  local script_dir cached remote
+  local script_dir cached remote lq
   script_dir="$(dirname "${BASH_SOURCE[0]}")"
+  # BTS-237: LINEAR_QUERY_OVERRIDE for testability — see cmd_artifact_write.
+  lq="${LINEAR_QUERY_OVERRIDE:-$script_dir/linear-query.sh}"
   cached=$(_doc_cache_get_updated_at "$doc_id" "$project_dir")
   [[ -z "$cached" ]] && return 0   # No cache yet — first write; safe.
-  remote=$(bash "$script_dir/linear-query.sh" document-updated-at "$doc_id" 2>/dev/null | jq -r '.updatedAt // empty')
+  remote=$(bash "$lq" document-updated-at "$doc_id" 2>/dev/null | jq -r '.updatedAt // empty')
   [[ -z "$remote" ]] && return 0   # Document missing remote (will create); safe.
   if [[ "$remote" != "$cached" ]]; then
     return 1
@@ -5215,6 +5217,10 @@ cmd_artifact_write() {
   # Linear route — upsert.
   local script_dir resolve_kind ticket parent_field parent_value title
   script_dir="$(dirname "${BASH_SOURCE[0]}")"
+  # BTS-237: LINEAR_QUERY_OVERRIDE for testability — lets bats stub
+  # linear-query.sh responses without touching the live API. Production
+  # path uses the env var's default ($script_dir/linear-query.sh).
+  local lq="${LINEAR_QUERY_OVERRIDE:-$script_dir/linear-query.sh}"
   # BTS-217: normalize --feature input to canonical Linear ticket id.
   # Callers (cmd_activate, /spec skill prose) pass kebab feature_id like
   # "bts-217-flip-linear-routing"; manual operator calls pass "BTS-217".
@@ -5246,7 +5252,7 @@ cmd_artifact_write() {
   [[ -z "$ticket" ]] && { echo "ERROR: artifact-write $kind requires --feature" >&2; return 2; }
 
   if [[ "$parent_field" == "issueId" ]]; then
-    parent_value=$(bash "$script_dir/linear-query.sh" get-issue "$feature_ticket" 2>/dev/null | jq -r '.uuid // empty')
+    parent_value=$(bash "$lq" get-issue "$feature_ticket" 2>/dev/null | jq -r '.uuid // empty')
     [[ -z "$parent_value" ]] && { echo "ERROR: artifact-write could not resolve issue UUID for $feature_ticket (input: $feature)" >&2; return 3; }
   else
     parent_value=$(_session_stasis_ticket "$project_dir")
@@ -5254,7 +5260,7 @@ cmd_artifact_write() {
   fi
 
   local doc_id
-  doc_id=$(bash "$script_dir/linear-query.sh" resolve-document-id --kind "$resolve_kind" --ticket "$ticket")
+  doc_id=$(bash "$lq" resolve-document-id --kind "$resolve_kind" --ticket "$ticket")
 
   # BTS-204 Step 19: pre-write concurrent-edit check (AC-8).
   # If the cache has a known updatedAt and Linear's current updatedAt has
@@ -5277,23 +5283,34 @@ EOF
   fi
 
   local result
-  if bash "$script_dir/linear-query.sh" document-updated-at "$doc_id" >/dev/null 2>&1; then
+  local was_create=0
+  if bash "$lq" document-updated-at "$doc_id" >/dev/null 2>&1; then
     # Update path
     result=$(jq -n --arg id "$doc_id" --arg content "$content" '{id:$id, content:$content}' \
-      | bash "$script_dir/linear-query.sh" save-document --input-json -) || return $?
+      | bash "$lq" save-document --input-json -) || return $?
   else
     # Create path with caller-supplied UUID
+    was_create=1
     result=$(jq -n --arg id "$doc_id" --arg title "$title" --arg content "$content" \
       --arg parent_field "$parent_field" --arg parent "$parent_value" \
       '{id:$id, title:$title, content:$content} + ({} + (if $parent_field == "issueId" then {issueId:$parent} else {projectId:$parent} end))' \
-      | bash "$script_dir/linear-query.sh" save-document --create-with-id --input-json -) || return $?
+      | bash "$lq" save-document --create-with-id --input-json -) || return $?
   fi
   echo "$result"
-  # Cache the new updatedAt for next concurrent-edit check.
-  local new_ts
-  new_ts=$(printf '%s' "$result" | jq -r '.updatedAt // empty')
-  if [[ -n "$new_ts" ]]; then
-    _doc_cache_set_updated_at "$doc_id" "$new_ts" "$project_dir"
+  # BTS-237: cache updatedAt only after UPDATE, not CREATE. Caching the
+  # create-response timestamp produces a self-stale baseline that the very
+  # next UPDATE writer (typically cmd_activate after /spec) trips against
+  # — Linear's eventual-consistency / async normalizer can advance the
+  # remote updatedAt slightly after the create response returns. Skipping
+  # cache on CREATE lets the next writer see an empty cache (treated as
+  # "first write — safe") and proceed; that writer's UPDATE then seeds the
+  # cache for genuine concurrent-edit detection going forward.
+  if (( was_create == 0 )); then
+    local new_ts
+    new_ts=$(printf '%s' "$result" | jq -r '.updatedAt // empty')
+    if [[ -n "$new_ts" ]]; then
+      _doc_cache_set_updated_at "$doc_id" "$new_ts" "$project_dir"
+    fi
   fi
 }
 
