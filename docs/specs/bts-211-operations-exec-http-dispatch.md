@@ -3,7 +3,7 @@
 > Feature: bts-211-operations-exec-http-dispatch
 > Work: linear:BTS-211
 > Created: 1777342155
-> Status: In Progress
+> Status: Complete
 
 ## Summary
 
