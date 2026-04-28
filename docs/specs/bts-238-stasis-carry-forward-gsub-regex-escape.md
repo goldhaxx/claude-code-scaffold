@@ -3,7 +3,7 @@
 > Feature: bts-238-stasis-carry-forward-gsub-regex-escape
 > Work: linear:BTS-238
 > Created: 1777340646
-> Status: In Progress
+> Status: Complete
 
 ## Summary
 
