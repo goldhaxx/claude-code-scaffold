@@ -10,6 +10,34 @@
 # Usage:
 #   security-audit.sh [--files-only] [--history-only] [--json]
 
+# @manifest
+# purpose: Deterministic PII + secrets scanner — grep tracked files (and optionally `git log -p`) for hard-coded patterns (GitHub PATs, OpenAI/Anthropic keys, AWS access-key IDs, Slack tokens, Bearer tokens), absolute home paths, real-looking emails, and dangerous file extensions (.env, .pem, *.key, id_rsa, *.credentials). Supports a 2-shape allowlist (file-only legacy + per-finding triple). Used as the deterministic pre-flight in /review and as a CI gate; complements /review's reasoning-based pass.
+# input: --files-only (skip git history scan; faster pre-commit pre-flight)
+# input: --history-only (skip file scan; full forensic pass over history)
+# input: --json (emit `{findings:[{severity, category, location, detail}], total, pass}`)
+# input: -h / --help (print usage and exit 0)
+# input: env HOME (drives absolute-home-path PII pattern)
+# input: env USER (`whoami` resolves OS_USER for path patterns)
+# input: file `.security-audit-allowlist` (project-local, two-shape: legacy file-substr or `<file>::<category>::<detail>` triple per BTS-152)
+# output: stdout (human-mode): findings table grouped by severity (CRITICAL / WARN / INFO) plus "PASS" or "N findings" footer
+# output: stdout (--json): JSON envelope per the input description
+# output: stderr: progress lines ("Security audit: <project>", "OS user: <user>")
+# output: exit-codes 0 clean / 1 findings-detected / 2 not-a-git-repo or unknown-flag or malformed-allowlist
+# caller: skill:/review
+# caller: skill:/stasis
+# caller: skill:/security-audit
+# depends-on: git
+# depends-on: jq
+# depends-on: whoami
+# side-effect: writes-stderr-progress
+# failure-mode: not-a-git-repo | exit=2 | visible=stderr-error | mitigation=run-from-git-tree
+# failure-mode: unknown-flag | exit=2 | visible=stderr-error | mitigation=use-supported-flag
+# failure-mode: malformed-allowlist-line | exit=2 | visible=stderr-error-with-line-number | mitigation=fix-allowlist-syntax
+# failure-mode: findings-detected | exit=1 | visible=stdout-findings-table | mitigation=remediate-or-allowlist
+# contract: idempotent-on-rerun
+# contract: allowlist-loads-when-present-no-error-when-absent
+# anchor: BTS-251 (manifest seed)
+
 set -euo pipefail
 
 # ---------------------------------------------------------------------------
@@ -95,6 +123,7 @@ if [[ -f "$PROJECT_ALLOWLIST_FILE" ]]; then
       # Triple format. Use awk to split on `::` literal.
       parts=$(printf '%s' "$trimmed" | awk -F'::' '{print NF}')
       if [[ "$parts" -ne 3 ]]; then
+        # @failure-mode: malformed-allowlist-line
         echo "ERROR: $PROJECT_ALLOWLIST_FILE:$lineno: malformed triple (expected exactly 3 ::-separated segments, got $parts): $trimmed" >&2
         exit 2
       fi
@@ -340,6 +369,7 @@ print_findings_json() {
       '. + [{"severity": $s, "category": $c, "location": $l, "detail": $d}]')
   done
   echo "$result" | jq "{findings: ., total: length, pass: false}"
+  # @failure-mode: findings-detected
   return 1
 }
 
@@ -359,13 +389,17 @@ while [[ $# -gt 0 ]]; do
       echo "Exit 0 = clean, Exit 1 = findings detected."
       exit 0
       ;;
-    *) echo "Unknown option: $1" >&2; exit 2 ;;
+    *)
+      # @failure-mode: unknown-flag
+      echo "Unknown option: $1" >&2; exit 2 ;;
   esac
 done
 
 # Must be in a git repo
+# @failure-mode: not-a-git-repo
 git rev-parse HEAD >/dev/null 2>&1 || { echo "ERROR: Not a git repository" >&2; exit 2; }
 
+# @side-effect: writes-stderr-progress
 echo "Security audit: $(basename "$(pwd)")" >&2
 echo "OS user: $OS_USER" >&2
 echo "" >&2

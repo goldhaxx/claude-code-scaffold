@@ -5,6 +5,35 @@
 # Run the bats suite exactly once and emit structured output. Replaces the
 # 3×-invocation pattern (bats | tail; bats | grep ok; bats | grep not ok)
 # that was inflating /pr and /recall wall-time.
+
+# @manifest
+# purpose: Run the bats suite exactly once and derive PASS/FAIL/TOTAL counts, raw tail, and optional per-test timings from a single capture — replaces the BTS-118 3×-invocation pattern (bats|tail; bats|grep ok; bats|grep not ok) that was 3× the wall-time. Optionally parallelizes via `bats --jobs N` when GNU parallel is installed.
+# input: --parallel (use bats --jobs N where N=max(2, cpu/2))
+# input: --json (emit structured {ok, not_ok, total, tail, raw_exit, timings} to stdout)
+# input: --timings (run bats -T; append slowest-first timing table to human output)
+# input: --slow-top <N> (cap timing rows to N slowest; N=0 emits zero rows; non-integer fails with exit 2)
+# input: --help / -h (print usage and exit 0)
+# input: env BATS_REPORT_HAS_PARALLEL (=0 forces no-parallel branch even when parallel is installed; testability hook)
+# input: positional bats-args (target paths or filters like `-f 'pattern'`); defaults to `hub/tests/` when no path arg present
+# output: stdout (default): bats raw output + `---` separator + `PASS: <N> / FAIL: <M> / TOTAL: <T>`; with --timings, second `---` + `Timings (slowest first):` table
+# output: stdout (--json): JSON envelope `{ok, not_ok, total, tail, raw_exit, timings:[{test, ms}]}`
+# output: exit-code mirrors bats's exit (0 pass / non-zero fail / 2 invalid-arg)
+# caller: skill:/pr
+# caller: skill:/stasis
+# caller: .claude/rules/tdd.md
+# depends-on: bats
+# depends-on: jq
+# depends-on: mktemp
+# side-effect: writes-temp-file
+# side-effect: writes-stderr-warn-on-missing-parallel
+# failure-mode: invalid-slow-top | exit=2 | visible=stderr-error | mitigation=pass-non-negative-integer
+# failure-mode: bats-suite-failed | exit=passthrough | visible=stdout-not-ok-lines | mitigation=fix-failing-test
+# contract: single-bats-invocation
+# contract: silent-fallback-warn-on-missing-parallel
+# contract: counts-derived-from-single-capture
+# anchor: BTS-118 (origin)
+# anchor: BTS-137 (--timings / --slow-top)
+# anchor: BTS-251 (manifest seed)
 #
 # Usage:
 #   bats-report.sh [--parallel] [--json] [--timings] [--slow-top N] [--] [<bats-args>...]
@@ -48,6 +77,7 @@ while [[ $# -gt 0 ]]; do
       timings_mode=1
       shift
       if [[ -z "${1:-}" || ! "$1" =~ ^[0-9]+$ ]]; then
+        # @failure-mode: invalid-slow-top
         echo "ERROR: --slow-top requires a non-negative integer argument" >&2
         exit 2
       fi
@@ -96,6 +126,7 @@ if (( parallel_mode )); then
     (( jobs < 2 )) && jobs=2
     bats_cmd+=(--jobs "$jobs")
   else
+    # @side-effect: writes-stderr-warn-on-missing-parallel
     echo "WARN: --parallel requested but GNU parallel is not installed." >&2
     echo "" >&2
     echo "  To enable parallelism:" >&2
@@ -107,11 +138,13 @@ fi
 bats_cmd+=("${passthrough[@]+"${passthrough[@]}"}")
 
 # Run bats ONCE, capture to tempfile.
+# @side-effect: writes-temp-file
 tmp=$(mktemp)
 trap 'rm -f "$tmp"' EXIT
 
 "${bats_cmd[@]}" > "$tmp" 2>&1
 bats_exit=$?
+# @failure-mode: bats-suite-failed
 
 ok=$(grep -cE '^ok ' "$tmp" 2>/dev/null || true)
 not_ok=$(grep -cE '^not ok ' "$tmp" 2>/dev/null || true)

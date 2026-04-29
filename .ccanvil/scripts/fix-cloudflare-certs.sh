@@ -8,6 +8,30 @@
 #   ./scripts/fix-cloudflare-certs.sh          # Create bundle + print env exports
 #   ./scripts/fix-cloudflare-certs.sh --check   # Diagnose only, no changes
 #   eval "$(./scripts/fix-cloudflare-certs.sh)" # Apply env vars to current shell
+
+# @manifest
+# purpose: Diagnose and fix TLS certificate verification under Cloudflare WARP VPN — extract the WARP root CA from the system keychain (or `/Library/Application Support/Cloudflare/installed_cert.pem` when present), build a combined CA bundle at `~/.cloudflare-certs/combined-ca-bundle.pem`, and print the export lines for Node / Python / pip / curl / git / cargo / deno so the operator can `eval "$(...)"` or append to their shell profile.
+# input: positional --check (diagnose only; skip bundle creation; exit 0 after diagnosis)
+# input: env HOME (drives CERT_DIR=$HOME/.cloudflare-certs)
+# output: stderr: human diagnosis lines (color-coded [OK] / [WARN] / [FAIL])
+# output: stdout: shell-ready `export VAR=...` lines (eval-able)
+# output: file ~/.cloudflare-certs/combined-ca-bundle.pem (system certs + Cloudflare root)
+# output: file ~/.cloudflare-certs/cloudflare-warp-ca.pem (standalone Cloudflare root)
+# output: exit-codes 0 ok / 1 cf-cert-not-in-keychain or system-bundle-missing or extract-failed
+# caller: .claude/commands/fix-certs.md
+# depends-on: security
+# depends-on: pgrep
+# depends-on: mkdir
+# side-effect: writes-combined-bundle
+# side-effect: writes-standalone-cf-cert
+# side-effect: writes-stderr-diagnosis
+# failure-mode: cf-cert-not-in-keychain | exit=1 | visible=stderr-FAIL-with-IT-admin-hint | mitigation=ask-IT-to-install-WARP-root-CA
+# failure-mode: system-bundle-missing | exit=1 | visible=stderr-FAIL | mitigation=verify-/etc/ssl/cert.pem-exists
+# failure-mode: extract-failed | exit=1 | visible=stderr-FAIL | mitigation=verify-keychain-readable
+# contract: idempotent-on-rerun
+# contract: --check-is-side-effect-free
+# anchor: BTS-251 (manifest seed)
+
 set -euo pipefail
 
 CERT_DIR="$HOME/.cloudflare-certs"
@@ -41,6 +65,7 @@ fi
 if security find-certificate -c "Cloudflare" /Library/Keychains/System.keychain &>/dev/null; then
   echo -e "${GREEN}[OK]${NC} Cloudflare root CA found in system keychain" >&2
 else
+  # @failure-mode: cf-cert-not-in-keychain
   echo -e "${RED}[FAIL]${NC} Cloudflare root CA NOT found in system keychain" >&2
   echo "  → Ask your IT admin to install the Cloudflare WARP root CA" >&2
   exit 1
@@ -58,6 +83,7 @@ fi
 if [[ -f "$SYSTEM_CERTS" ]]; then
   echo -e "${GREEN}[OK]${NC} System CA bundle exists at: $SYSTEM_CERTS" >&2
 else
+  # @failure-mode: system-bundle-missing
   echo -e "${RED}[FAIL]${NC} System CA bundle not found at: $SYSTEM_CERTS" >&2
   exit 1
 fi
@@ -96,11 +122,13 @@ else
 fi
 
 if [[ -z "$cf_cert_content" ]]; then
+  # @failure-mode: extract-failed
   echo -e "${RED}[FAIL]${NC} Could not extract Cloudflare certificate" >&2
   exit 1
 fi
 
 # Combine: system certs + Cloudflare cert
+# @side-effect: writes-combined-bundle
 {
   cat "$SYSTEM_CERTS"
   echo ""
@@ -108,10 +136,12 @@ fi
   echo "$cf_cert_content"
 } > "$COMBINED_BUNDLE"
 
+# @side-effect: writes-stderr-diagnosis
 echo -e "${GREEN}[OK]${NC} Combined CA bundle created at: $COMBINED_BUNDLE" >&2
 
 # Also copy the standalone Cloudflare cert for tools that support "extra" certs
 standalone="$CERT_DIR/cloudflare-warp-ca.pem"
+# @side-effect: writes-standalone-cf-cert
 echo "$cf_cert_content" > "$standalone"
 echo -e "${GREEN}[OK]${NC} Standalone Cloudflare cert at: $standalone" >&2
 
