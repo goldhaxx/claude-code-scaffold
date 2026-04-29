@@ -3203,6 +3203,37 @@ cmd_events() {
 # Runs deterministic phases only (auto-update, section-merge, finalize).
 # Conflicts are collected and reported, not resolved.
 # Usage: broadcast [--dry-run]
+# @manifest
+# purpose: Push hub updates to every registered downstream node by iterating registry.json — for each node runs pre-check, stasis-rename migration, pull-plan classification, then deterministic auto-update + section-merge phases — collects conflicts and skip reasons for reporting and stamps registry's last_synced + last_synced_version per synced node so the operator can audit fleet-wide hub broadcast in one verb
+# input: --dry-run (optional; describe-only mode)
+# output: stdout per-node section banner + per-action log lines + final Broadcast Summary (Synced / Skipped / Unreachable + skip reasons + pending conflicts)
+# output: writes registry.json (per-node last_synced fields) + appends hub events log
+# output: exit-codes 0 ok-or-no-registered-nodes
+# depends-on: jq
+# depends-on: get_hub_source_raw
+# depends-on: migrate_registry
+# depends-on: append_event
+# depends-on: expand_path
+# depends-on: timestamp
+# depends-on: git
+# depends-on: bash
+# depends-on: pwd
+# depends-on: head
+# depends-on: sed
+# depends-on: grep
+# depends-on: mktemp
+# depends-on: mv
+# depends-on: rm
+# side-effect: writes-per-node-pull-output
+# side-effect: writes-registry-last-synced
+# side-effect: appends-hub-events-log
+# failure-mode: no-registry | exit=0 | visible=stdout-No-registered-nodes | mitigation=register-first-downstream-node
+# failure-mode: empty-registry | exit=0 | visible=stdout-No-registered-nodes | mitigation=register-first-downstream-node
+# failure-mode: per-node-pre-check-failure | exit=0 | visible=stdout-SKIP-pre-check-failed | mitigation=clean-the-failing-node-tree-and-retry
+# failure-mode: per-node-stasis-rename-ambiguous | exit=0 | visible=stdout-SKIP-stasis-migration | mitigation=resolve-the-ambiguous-stasis-state-on-the-node
+# contract: dry-run-makes-no-mutations
+# contract: registry-update-batched-after-loop-to-avoid-mid-broadcast-dirty-tree
+# anchor: BTS-244 (manifest seed)
 cmd_broadcast() {
   local dry_run=false
   if [[ "${1:-}" == "--dry-run" ]]; then
@@ -3219,6 +3250,7 @@ cmd_broadcast() {
 
   local registry="$hub_root/.ccanvil/registry.json"
   if [[ ! -f "$registry" ]]; then
+    # @failure-mode: no-registry
     echo "No registered nodes. Run 'ccanvil-sync.sh register' from a downstream project."
     return 0
   fi
@@ -3226,6 +3258,7 @@ cmd_broadcast() {
   local node_count
   node_count=$(jq '.nodes | length' "$registry")
   if [[ "$node_count" -eq 0 ]]; then
+    # @failure-mode: empty-registry
     echo "No registered nodes."
     return 0
   fi
@@ -3287,6 +3320,7 @@ cmd_broadcast() {
     # AC-2: run pre-check in node subshell
     local precheck_out
     precheck_out=$(cd "$node_path" && bash "$node_path/.ccanvil/scripts/ccanvil-sync.sh" pre-check 2>&1) || {
+      # @failure-mode: per-node-pre-check-failure
       echo "  SKIP: pre-check failed"
       echo "  $precheck_out" | head -5
       skipped=$((skipped + 1))
@@ -3333,6 +3367,7 @@ cmd_broadcast() {
     # skip the node so the user can resolve manually.
     local migration_out
     migration_out=$(cd "$node_path" && bash "$node_path/.ccanvil/scripts/ccanvil-sync.sh" migrate-stasis-artifact 2>&1) || {
+      # @failure-mode: per-node-stasis-rename-ambiguous
       echo "  SKIP: stasis-migration refused (both docs/checkpoint.md and docs/stasis.md exist)"
       echo "  $migration_out" | head -6
       skipped=$((skipped + 1))
@@ -3342,6 +3377,7 @@ cmd_broadcast() {
     if echo "$migration_out" | grep -qE "^(MIGRATED|REMOVED):"; then
       echo "$migration_out" | sed 's/^/  /'
       if ! $dry_run; then
+        # @side-effect: appends-hub-events-log
         append_event "$hub_root" "$(jq -nc \
           --arg u "$node_uuid" \
           --arg n "$node_name" \
@@ -3398,6 +3434,7 @@ cmd_broadcast() {
     auto_count=$(echo "$plan" | jq '[.[] | select(.action == "auto-update" or .action == "adopt-clean")] | length')
     if [[ "$auto_count" -gt 0 ]]; then
       echo "  Auto-updating $auto_count files..."
+      # @side-effect: writes-per-node-pull-output
       (cd "$node_path" && bash "$node_path/.ccanvil/scripts/ccanvil-sync.sh" pull-auto $dry_flag 2>&1) | sed 's/^/  /'
     fi
 
@@ -3439,6 +3476,7 @@ cmd_broadcast() {
         '.nodes[$u].last_synced = $t | .nodes[$u].last_synced_version = $v' \
         "$registry" > "$tmp" || true
       if [[ -s "$tmp" ]] && jq empty "$tmp" 2>/dev/null; then
+        # @side-effect: writes-registry-last-synced
         mv "$tmp" "$registry"
       else
         rm -f "$tmp"
@@ -3489,6 +3527,24 @@ cmd_broadcast() {
 # Per spec (BTS-116). Reuses file_hash + cmd_pull_apply; no new primitives.
 # ---------------------------------------------------------------------------
 
+# @manifest
+# purpose: Algorithmically classify divergence between local and hub copies of .claude/ccanvil.json into one of four resolution states (take-hub when content-identical, keep-local when local strictly extends hub, requires-review on value-divergence or local-removed-keys, no-conflict when both sides match or both missing) and auto-apply deterministic resolutions via cmd_pull_apply so /ccanvil-broadcast can resolve config conflicts without operator interaction
+# input: --dry-run (optional; describe-only mode)
+# output: stdout single JSON envelope {file, resolution, applied, reason, hub_hash, local_hash, +optional removed_keys/divergent_keys}
+# output: writes target ccanvil.json + lockfile entry on take-hub or keep-local
+# output: exit-codes 0 ok-or-no-conflict, 2 not-a-ccanvil-node, 3 requires-review-or-one-side-missing
+# depends-on: jq
+# depends-on: get_hub_source
+# depends-on: file_hash
+# depends-on: cmd_pull_apply
+# side-effect: writes-target-files-on-resolve
+# side-effect: writes-lockfile-entries-on-resolve
+# failure-mode: not-a-ccanvil-node | exit=2 | visible=stderr-broadcast-resolve-auto-not-a-ccanvil-node | mitigation=run-init-first
+# failure-mode: one-side-missing | exit=3 | visible=stdout-resolution-requires-review | mitigation=manually-decide-which-side-to-keep
+# failure-mode: requires-review-divergence | exit=3 | visible=stdout-resolution-requires-review | mitigation=manually-merge-divergent-or-removed-keys
+# contract: dry-run-makes-no-mutations
+# contract: emits-stable-json-envelope-shape
+# anchor: BTS-244 (manifest seed)
 cmd_broadcast_resolve_auto() {
   local dry_run=false
   if [[ "${1:-}" == "--dry-run" ]]; then
@@ -3496,6 +3552,7 @@ cmd_broadcast_resolve_auto() {
   fi
 
   if [[ ! -f "$LOCKFILE" ]]; then
+    # @failure-mode: not-a-ccanvil-node
     echo "broadcast-resolve-auto: not a ccanvil node (no .ccanvil/ccanvil.lock)" >&2
     exit 2
   fi
@@ -3529,6 +3586,8 @@ cmd_broadcast_resolve_auto() {
   if [[ "$local_hash" == "$hub_hash" ]]; then
     local applied_val=false
     if ! $dry_run; then
+      # @side-effect: writes-target-files-on-resolve
+      # @side-effect: writes-lockfile-entries-on-resolve
       if cmd_pull_apply "$file" take-hub >/dev/null 2>&1; then
         applied_val=true
       fi
@@ -3546,6 +3605,7 @@ cmd_broadcast_resolve_auto() {
 
   # Both files must exist for the structural superset / divergence checks.
   if [[ "$local_hash" == "MISSING" || "$hub_hash" == "MISSING" ]]; then
+    # @failure-mode: one-side-missing
     jq -n --arg f "$file" --arg lh "$local_hash" --arg hh "$hub_hash" '{
       file: $f,
       resolution: "requires-review",
@@ -3593,6 +3653,7 @@ cmd_broadcast_resolve_auto() {
   fi
 
   # Requires-review: prefer the most-specific reason (removed > divergent).
+  # @failure-mode: requires-review-divergence
   if [[ "$removed_count" -gt 0 ]]; then
     jq -n --arg f "$file" --arg lh "$local_hash" --arg hh "$hub_hash" --argjson removed "$removed_keys" '{
       file: $f,
@@ -3621,6 +3682,28 @@ cmd_broadcast_resolve_auto() {
 # Stack commands
 # ---------------------------------------------------------------------------
 
+# @manifest
+# purpose: Sync hub's global-commands/ccanvil-*.md files into the operator's user-level ~/.claude/commands/ directory — copies new files, skips byte-identical, surfaces conflicts (or overwrites with --force) so global slash commands stay aligned with the hub without polluting the user namespace
+# input: --force (optional; overwrite conflicts instead of reporting)
+# output: stdout per-conflict diff lines + final JSON {copied, skipped, conflicts}
+# output: writes ~/.claude/commands/ccanvil-*.md files
+# output: exit-codes 0 ok, 1 missing-lockfile-or-no-HOME
+# caller: skill:/ccanvil-pull-globals
+# depends-on: jq
+# depends-on: require_lockfile
+# depends-on: get_hub_source
+# depends-on: file_hash
+# depends-on: basename
+# depends-on: mkdir
+# depends-on: cp
+# depends-on: diff
+# depends-on: die
+# side-effect: writes-user-global-commands
+# failure-mode: missing-HOME | exit=1 | visible=stderr-die-HOME-is-not-set | mitigation=ensure-HOME-is-exported
+# failure-mode: missing-lockfile | exit=1 | visible=stderr-die-from-require_lockfile | mitigation=run-init-first
+# contract: only-touches-ccanvil-prefixed-files
+# contract: skips-byte-identical-without-warning
+# anchor: BTS-244 (manifest seed)
 cmd_pull_globals() {
   local force=false
   while [[ $# -gt 0 ]]; do
@@ -3630,8 +3713,10 @@ cmd_pull_globals() {
     esac
   done
 
+  # @failure-mode: missing-HOME
   [[ -n "${HOME:-}" ]] || die "\$HOME is not set"
 
+  # @failure-mode: missing-lockfile
   require_lockfile
   local hub_path
   hub_path=$(get_hub_source)
@@ -3652,6 +3737,7 @@ cmd_pull_globals() {
     dst="$dst_dir/$name"
 
     if [[ ! -f "$dst" ]]; then
+      # @side-effect: writes-user-global-commands
       cp "$src" "$dst"
       copied=$((copied + 1))
       continue

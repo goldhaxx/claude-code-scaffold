@@ -129,3 +129,7 @@
 .ccanvil/scripts/ccanvil-sync.sh:cmd_migrate_stasis_artifact
 .ccanvil/scripts/ccanvil-sync.sh:cmd_registry
 .ccanvil/scripts/ccanvil-sync.sh:cmd_events
+# Batch 4 — broadcast + globals.
+.ccanvil/scripts/ccanvil-sync.sh:cmd_broadcast
+.ccanvil/scripts/ccanvil-sync.sh:cmd_broadcast_resolve_auto
+.ccanvil/scripts/ccanvil-sync.sh:cmd_pull_globals
