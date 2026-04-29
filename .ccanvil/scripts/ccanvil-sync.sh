@@ -3768,7 +3768,22 @@ cmd_pull_globals() {
     '{copied: $c, skipped: $s, conflicts: $x}'
 }
 
+# @manifest
+# purpose: Walk every stack profile under hub/stacks/ and emit a JSON array of {id, description, files} envelopes so /ccanvil-init and operators can preview available tech-stack overlays before applying one
+# input: (none)
+# output: stdout JSON array (empty array when no stacks dir or no manifests)
+# output: exit-codes 0 ok, 1 missing-lockfile
+# depends-on: jq
+# depends-on: require_lockfile
+# depends-on: get_hub_source
+# side-effect: reads-stack-manifests
+# failure-mode: missing-lockfile | exit=1 | visible=stderr-die-from-require_lockfile | mitigation=run-init-first
+# contract: read-only
+# contract: emits-empty-array-when-no-stacks-dir
+# anchor: BTS-244 (manifest seed)
 cmd_stack_list() {
+  # @failure-mode: missing-lockfile
+  # @side-effect: reads-stack-manifests
   require_lockfile
   local hub_path
   hub_path=$(get_hub_source)
@@ -3789,14 +3804,53 @@ cmd_stack_list() {
   echo "$result"
 }
 
+# @manifest
+# purpose: Apply a tech-stack overlay to the current node — copies stack-owned files (skipping locally-customized targets per the patch-flow rule), section-merges a CLAUDE.md block bracketed by STACK:<id>-START/END markers, merges PreToolUse hooks into settings.json (deduping by command), and registers the stack in ccanvil.json's stacks[] so /ccanvil-init and re-pull workflows preserve the overlay
+# input: positional <stack-id>
+# output: stdout per-warning lines + final JSON {copied, skipped, errors}
+# output: writes target files + lockfile entries + CLAUDE.md section + settings.json hooks + ccanvil.json stacks[]
+# output: exit-codes 0 ok, 1 missing-lockfile-or-stack-not-found-or-missing-positional
+# caller: cmd_pull_apply
+# depends-on: jq
+# depends-on: require_lockfile
+# depends-on: get_hub_source
+# depends-on: file_hash
+# depends-on: bash
+# depends-on: awk
+# depends-on: grep
+# depends-on: cat
+# depends-on: cp
+# depends-on: chmod
+# depends-on: mkdir
+# depends-on: mv
+# depends-on: rm
+# depends-on: mktemp
+# depends-on: die
+# side-effect: writes-target-files
+# side-effect: writes-lockfile-entries
+# side-effect: writes-claude-md-section
+# side-effect: writes-settings-json-hooks
+# side-effect: writes-ccanvil-json-stacks
+# failure-mode: missing-lockfile | exit=1 | visible=stderr-die-from-require_lockfile | mitigation=run-init-first
+# failure-mode: missing-positional | exit=1 | visible=stderr-Usage | mitigation=supply-stack-id
+# failure-mode: stack-not-found | exit=1 | visible=stderr-die-Stack-not-found | mitigation=run-stack-list-first
+# failure-mode: missing-stack-source-per-entry | exit=0 | visible=stderr-WARNING-Missing-source | mitigation=increments-errors-counter-and-continues
+# failure-mode: invalid-settings-merge | exit=0 | visible=stderr-WARNING-settings-json-merge-produced-invalid-JSON | mitigation=increments-errors-counter
+# failure-mode: invalid-ccanvil-update | exit=0 | visible=stderr-WARNING-ccanvil-json-update-failed | mitigation=increments-errors-counter
+# contract: idempotent-on-already-applied-stack
+# contract: skips-locally-customized-files
+# anchor: BTS-244 (manifest seed)
 cmd_stack_apply() {
+  # @failure-mode: missing-positional
   local stack_id="${1:?Usage: ccanvil-sync.sh stack-apply <stack-id>}"
+  # @failure-mode: missing-lockfile
   require_lockfile
   local hub_path
   hub_path=$(get_hub_source)
   local stack_dir="$hub_path/hub/stacks/$stack_id"
   local manifest="$stack_dir/manifest.json"
 
+  # @failure-mode: stack-not-found
   [[ -f "$manifest" ]] || die "Stack not found: $stack_id (no manifest at $manifest)"
 
   local copied=0 skipped=0 errors=0
@@ -3811,6 +3865,7 @@ cmd_stack_apply() {
     action=$(jq -r ".files[$i].action" "$manifest")
 
     local source_path="$stack_dir/$source"
+    # @failure-mode: missing-stack-source-per-entry
     [[ -f "$source_path" ]] || { echo "WARNING: Missing source: $source" >&2; errors=$((errors + 1)); continue; }
 
     case "$action" in
@@ -3832,6 +3887,7 @@ cmd_stack_apply() {
           fi
         fi
         mkdir -p "$(dirname "$target")"
+        # @side-effect: writes-target-files
         cp "$source_path" "$target"
         # Preserve executable bit
         [[ -x "$source_path" ]] && chmod +x "$target"
@@ -3848,6 +3904,7 @@ cmd_stack_apply() {
     local hub_h local_h
     hub_h=$(file_hash "$source_path")
     local_h=$(file_hash "$target")
+    # @side-effect: writes-lockfile-entries
     bash "$0" lock-add "$target" "stack:$stack_id" "$hub_h" "$local_h" "clean"
   done
 
@@ -3886,6 +3943,7 @@ cmd_stack_apply() {
         mv "$tmp" "CLAUDE.md"
       else
         # Append to end
+        # @side-effect: writes-claude-md-section
         printf '\n' >> "CLAUDE.md"
         cat "$section_tmp" >> "CLAUDE.md"
       fi
@@ -3928,9 +3986,11 @@ cmd_stack_apply() {
         ' "$settings_path" > "$tmp"
       fi
       if [[ -s "$tmp" ]] && jq empty "$tmp" 2>/dev/null; then
+        # @side-effect: writes-settings-json-hooks
         mv "$tmp" "$settings_path"
       else
         rm -f "$tmp"
+        # @failure-mode: invalid-settings-merge
         echo "WARNING: settings.json merge produced invalid JSON" >&2
         errors=$((errors + 1))
       fi
@@ -3949,9 +4009,11 @@ cmd_stack_apply() {
     .stacks = ((.stacks // []) | if index($s) then . else . + [$s] end)
   ' "$ccanvil_json" > "$tmp"
   if [[ -s "$tmp" ]] && jq empty "$tmp" 2>/dev/null; then
+    # @side-effect: writes-ccanvil-json-stacks
     mv "$tmp" "$ccanvil_json"
   else
     rm -f "$tmp"
+    # @failure-mode: invalid-ccanvil-update
     echo "WARNING: ccanvil.json update failed" >&2
     errors=$((errors + 1))
   fi
@@ -3973,15 +4035,39 @@ require_jq
 # registered node's last_synced_version against the current hub HEAD.
 # ---------------------------------------------------------------------------
 
+# @manifest
+# purpose: Compute per-node drift envelopes by walking the hub's registry.json — for each registered node compares last_synced_version to current HEAD, intersects touched paths with hub's distributable file set, and emits a drift record (node UUID, name, drift_key, paths_drifted, commits_behind, summary) so /drift-watchdog can present a fleet-wide drift view without firing per-node Linear writes
+# input: env CCANVIL_REGISTRY (optional path override; defaults to .ccanvil/registry.json)
+# output: stdout JSON array of drift records (empty array when registry missing or no drift)
+# output: exit-codes 0 ok-or-no-registry-or-no-head
+# caller: skill:/drift-watchdog
+# depends-on: jq
+# depends-on: git
+# depends-on: scan_hub_files
+# depends-on: comm
+# depends-on: grep
+# depends-on: sort
+# depends-on: shasum
+# depends-on: cut
+# depends-on: pwd
+# side-effect: reads-registry-and-git-history
+# failure-mode: missing-registry | exit=0 | visible=stdout-empty-array | mitigation=register-first-downstream-node
+# failure-mode: missing-head | exit=0 | visible=stdout-empty-array | mitigation=run-from-git-repo
+# contract: filters-out-hub-private-paths-via-tracked_set-intersection
+# contract: skips-up-to-date-nodes
+# anchor: BTS-244 (manifest seed)
 cmd_drift_watchdog_list() {
+  # @side-effect: reads-registry-and-git-history
   local registry="${CCANVIL_REGISTRY:-.ccanvil/registry.json}"
   if [[ ! -f "$registry" ]]; then
+    # @failure-mode: missing-registry
     echo "[]"
     return 0
   fi
   local head_hash
   head_hash=$(git rev-parse HEAD 2>/dev/null || echo "")
   if [[ -z "$head_hash" ]]; then
+    # @failure-mode: missing-head
     echo "[]"
     return 0
   fi
@@ -4031,7 +4117,22 @@ cmd_drift_watchdog_list() {
   echo "$records"
 }
 
+# @manifest
+# purpose: Probe the runtime preconditions /drift-watchdog needs (Claude CLI in $PATH for headless invocation, and a working linear-query.sh viewer call) so the launchd-scheduled run can fail fast with a clear cause when either dependency is missing
+# input: env CCANVIL_LINEAR_QUERY (optional path override)
+# output: stdout JSON {claude_p_available, linear_query_works}
+# output: exit-codes 0 ok
+# caller: skill:/drift-watchdog
+# depends-on: jq
+# depends-on: bash
+# depends-on: command
+# side-effect: pure-no-mutations
+# failure-mode: never-fails | exit=0 | visible=stdout-bool-flags | mitigation=consumer-checks-flags
+# contract: emits-stable-shape-regardless-of-availability
+# anchor: BTS-244 (manifest seed)
 cmd_drift_watchdog_preflight() {
+  # @failure-mode: never-fails
+  # @side-effect: pure-no-mutations
   local linear_query="${CCANVIL_LINEAR_QUERY:-.ccanvil/scripts/linear-query.sh}"
   local claude_ok="false" linear_ok="false"
   if command -v claude >/dev/null 2>&1; then
@@ -4050,6 +4151,33 @@ cmd_drift_watchdog_preflight() {
     '{claude_p_available: $cp, linear_query_works: $lq}'
 }
 
+# @manifest
+# purpose: Idempotently install or reload the drift-watchdog launchd LaunchAgent — generates the plist via cmd_drift_watchdog_launchd_print, lints with plutil, optionally unloads the prior entry, copies into ~/Library/LaunchAgents/, loads with launchctl, and verifies via launchctl print so /drift-watchdog's weekly schedule survives operator reboots
+# input: --reload (optional; unload the prior entry before installing)
+# output: stdout JSON {installed, reloaded, plist_path, verified, +optional error}
+# output: writes ~/Library/LaunchAgents/com.ccanvil.drift-watchdog.plist + launchctl state
+# output: exit-codes 0 installed-and-verified, 2 plist-generation-or-lint-failed, 3 verify-failed
+# caller: skill:/drift-watchdog
+# depends-on: jq
+# depends-on: cmd_drift_watchdog_launchd_print
+# depends-on: launchctl
+# depends-on: plutil
+# depends-on: command
+# depends-on: cp
+# depends-on: rm
+# depends-on: mkdir
+# depends-on: mktemp
+# depends-on: id
+# depends-on: grep
+# side-effect: writes-launchd-plist
+# side-effect: loads-launchd-job
+# failure-mode: plist-generation-failed | exit=2 | visible=stdout-error-plist-generation-failed | mitigation=verify-print-substrate
+# failure-mode: plist-lint-failed | exit=2 | visible=stdout-error-plist-lint-failed | mitigation=inspect-printed-plist
+# failure-mode: verify-failed-launchctl-print-rc | exit=3 | visible=stdout-error-verify-failed | mitigation=inspect-launchctl-output
+# failure-mode: no-state-in-print-output | exit=3 | visible=stdout-error-no-state-in-print-output | mitigation=manual-launchctl-load
+# contract: idempotent-on-already-installed
+# contract: workspace-fence-bypass-required
+# anchor: BTS-244 (manifest seed)
 cmd_drift_watchdog_launchd_install() {
   # BTS-199: idempotent install/reload of the drift-watchdog launchd entry.
   # Wraps the four-step recipe (generate + lint + optional unload + cp + load
@@ -4085,6 +4213,7 @@ cmd_drift_watchdog_launchd_install() {
 
   if [[ ! -s "$tmp_plist" ]]; then
     rm -f "$tmp_plist"
+    # @failure-mode: plist-generation-failed
     jq -n '{installed:false, reloaded:false, error:"plist-generation-failed"}'
     return 2
   fi
@@ -4093,6 +4222,7 @@ cmd_drift_watchdog_launchd_install() {
   if command -v plutil >/dev/null 2>&1; then
     if ! plutil -lint "$tmp_plist" >/dev/null 2>&1; then
       rm -f "$tmp_plist"
+      # @failure-mode: plist-lint-failed
       jq -n '{installed:false, reloaded:false, error:"plist-lint-failed"}'
       return 2
     fi
@@ -4109,22 +4239,26 @@ cmd_drift_watchdog_launchd_install() {
 
   # 4. Copy plist into place
   mkdir -p "$(dirname "$plist_path")"
+  # @side-effect: writes-launchd-plist
   cp "$tmp_plist" "$plist_path"
   rm -f "$tmp_plist"
 
   # 5. Load (load -w; second invocation may exit non-zero but verify is authoritative)
+  # @side-effect: loads-launchd-job
   launchctl load -w "$plist_path" >/dev/null 2>&1 || true
 
   # 6. Verify via launchctl print. `set -e` is active at script-level — wrap
   # the call in `if !` so a non-zero rc does not abort before we can emit JSON.
   local print_out
   if ! print_out=$(launchctl print "gui/$(id -u)/com.ccanvil.drift-watchdog" 2>&1); then
+    # @failure-mode: verify-failed-launchctl-print-rc
     jq -n --arg p "$plist_path" --argjson r "$reloaded" \
       '{installed:true, reloaded:$r, plist_path:$p, verified:false, error:"verify-failed-launchctl-print-rc"}'
     return 3
   fi
 
   if ! echo "$print_out" | grep -q 'state'; then
+    # @failure-mode: no-state-in-print-output
     jq -n --arg p "$plist_path" --argjson r "$reloaded" \
       '{installed:true, reloaded:$r, plist_path:$p, verified:false, error:"no-state-in-print-output"}'
     return 3
@@ -4134,7 +4268,24 @@ cmd_drift_watchdog_launchd_install() {
     '{installed:true, reloaded:$r, plist_path:$p, verified:true}'
 }
 
+# @manifest
+# purpose: Render the drift-watchdog launchd LaunchAgent plist on stdout — bakes in the operator's current $PATH (so claude resolves under launchd's sparse environment), the hub's working dir, and a Mondays-9:13 schedule — so cmd_drift_watchdog_launchd_install has a deterministic plist source
+# input: env PATH (embedded into the rendered plist)
+# output: stdout XML plist content
+# output: exit-codes 0 ok
+# caller: cmd_drift_watchdog_launchd_install
+# depends-on: git
+# depends-on: pwd
+# depends-on: sed
+# depends-on: cat
+# side-effect: pure-no-mutations
+# failure-mode: never-fails | exit=0 | visible=stdout-plist | mitigation=consumer-checks-plist-not-empty
+# contract: stable-shape-across-invocations
+# contract: escapes-XML-special-chars-in-PATH
+# anchor: BTS-244 (manifest seed)
 cmd_drift_watchdog_launchd_print() {
+  # @side-effect: pure-no-mutations
+  # @failure-mode: never-fails
   local hub_dir
   hub_dir=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
   # launchd's default PATH excludes Homebrew (and most user-installed bins) —

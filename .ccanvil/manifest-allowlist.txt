@@ -133,3 +133,10 @@
 .ccanvil/scripts/ccanvil-sync.sh:cmd_broadcast
 .ccanvil/scripts/ccanvil-sync.sh:cmd_broadcast_resolve_auto
 .ccanvil/scripts/ccanvil-sync.sh:cmd_pull_globals
+# Batch 5 — stacks + drift-watchdog.
+.ccanvil/scripts/ccanvil-sync.sh:cmd_stack_list
+.ccanvil/scripts/ccanvil-sync.sh:cmd_stack_apply
+.ccanvil/scripts/ccanvil-sync.sh:cmd_drift_watchdog_list
+.ccanvil/scripts/ccanvil-sync.sh:cmd_drift_watchdog_preflight
+.ccanvil/scripts/ccanvil-sync.sh:cmd_drift_watchdog_launchd_install
+.ccanvil/scripts/ccanvil-sync.sh:cmd_drift_watchdog_launchd_print
