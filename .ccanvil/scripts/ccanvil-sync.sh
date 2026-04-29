@@ -1306,14 +1306,46 @@ cmd_hash() {
   echo "$(file_hash "$file")  $file"
 }
 
+# @manifest
+# purpose: Read a single lockfile entry by file-path key and emit its full descriptor (origin, hub_hash, local_hash, status, sync) or the literal "not found" so substrate consumers can probe per-file state without parsing the lockfile themselves
+# input: positional <file>
+# output: stdout JSON object (entry descriptor) or "not found" string
+# output: exit-codes 0 ok, 1 missing-lockfile-or-missing-positional
+# depends-on: jq
+# depends-on: require_lockfile
+# side-effect: reads-lockfile
+# failure-mode: missing-lockfile | exit=1 | visible=stderr-die-from-require_lockfile | mitigation=run-init-first
+# failure-mode: missing-positional | exit=1 | visible=stderr-Usage | mitigation=supply-file-arg
+# contract: never-mutates-state
+# anchor: BTS-244 (manifest seed)
 cmd_lock_get() {
+  # @failure-mode: missing-lockfile
+  # @side-effect: reads-lockfile
   require_lockfile
+  # @failure-mode: missing-positional
   local file="${1:?Usage: ccanvil-sync.sh lock-get <file>}"
   jq --arg f "$file" '.files[$f] // "not found"' "$LOCKFILE"
 }
 
+# @manifest
+# purpose: Set a single field on a single lockfile entry to either null (when value is the literal "null") or a string value, then write atomically via safe_lock_mv so partial-write torn-state never reaches consumers
+# input: positional <file> <field> <value>
+# output: writes lockfile entry field
+# output: exit-codes 0 ok, 1 missing-lockfile-or-missing-positional
+# depends-on: jq
+# depends-on: require_lockfile
+# depends-on: safe_lock_mv
+# depends-on: mktemp
+# side-effect: writes-lockfile-field
+# failure-mode: missing-lockfile | exit=1 | visible=stderr-die-from-require_lockfile | mitigation=run-init-first
+# failure-mode: missing-positional | exit=1 | visible=stderr-Usage | mitigation=supply-file-field-value
+# contract: atomic-write-via-safe_lock_mv
+# contract: null-literal-stores-json-null-not-string-null
+# anchor: BTS-244 (manifest seed)
 cmd_lock_update() {
+  # @failure-mode: missing-lockfile
   require_lockfile
+  # @failure-mode: missing-positional
   local file="${1:?Usage: ccanvil-sync.sh lock-update <file> <field> <value>}"
   local field="${2:?}"
   local value="${3:?}"
@@ -1325,11 +1357,30 @@ cmd_lock_update() {
   else
     jq --arg f "$file" --arg k "$field" --arg v "$value" '.files[$f][$k] = $v' "$LOCKFILE" > "$tmp" || true
   fi
+  # @side-effect: writes-lockfile-field
   safe_lock_mv "$tmp" "$LOCKFILE" "lock-update $file $field"
 }
 
+# @manifest
+# purpose: Insert or replace a lockfile entry with a fully-formed descriptor (origin + hub_hash + local_hash + status); branches on null hub_hash vs null local_hash so callers can express hub-only or local-only entries explicitly
+# input: positional <file> <origin> <hub_hash> <local_hash> <status>
+# output: writes lockfile entry
+# output: exit-codes 0 ok, 1 missing-lockfile-or-missing-positional
+# caller: cmd_pull_apply
+# depends-on: jq
+# depends-on: require_lockfile
+# depends-on: safe_lock_mv
+# depends-on: mktemp
+# side-effect: writes-lockfile-entry
+# failure-mode: missing-lockfile | exit=1 | visible=stderr-die-from-require_lockfile | mitigation=run-init-first
+# failure-mode: missing-positional | exit=1 | visible=stderr-Usage | mitigation=supply-all-positional-args
+# contract: replaces-existing-entry-on-collision
+# contract: atomic-write-via-safe_lock_mv
+# anchor: BTS-244 (manifest seed)
 cmd_lock_add() {
+  # @failure-mode: missing-lockfile
   require_lockfile
+  # @failure-mode: missing-positional
   local file="${1:?Usage: ccanvil-sync.sh lock-add <file> <origin> <hub_hash> <local_hash> <status>}"
   local origin="${2:?}"
   local hub_hash="${3}"
@@ -1348,26 +1399,67 @@ cmd_lock_add() {
     jq --arg f "$file" --arg o "$origin" --arg sh "$hub_hash" --arg lh "$local_hash" --arg st "$status" \
       '.files[$f] = {"origin": $o, "hub_hash": $sh, "local_hash": $lh, "status": $st}' "$LOCKFILE" > "$tmp" || true
   fi
+  # @side-effect: writes-lockfile-entry
   safe_lock_mv "$tmp" "$LOCKFILE" "lock-add $file"
 }
 
+# @manifest
+# purpose: Delete a lockfile entry by file-path key so cmd_pull_apply's delete action can remove tracked entries that have been removed from the hub
+# input: positional <file>
+# output: writes lockfile (entry removed)
+# output: exit-codes 0 ok, 1 missing-lockfile-or-missing-positional
+# caller: cmd_pull_apply
+# depends-on: jq
+# depends-on: require_lockfile
+# depends-on: safe_lock_mv
+# depends-on: mktemp
+# side-effect: removes-lockfile-entry
+# failure-mode: missing-lockfile | exit=1 | visible=stderr-die-from-require_lockfile | mitigation=run-init-first
+# failure-mode: missing-positional | exit=1 | visible=stderr-Usage | mitigation=supply-file-arg
+# contract: idempotent-on-already-missing
+# contract: atomic-write-via-safe_lock_mv
+# anchor: BTS-244 (manifest seed)
 cmd_lock_remove() {
+  # @failure-mode: missing-lockfile
   require_lockfile
+  # @failure-mode: missing-positional
   local file="${1:?Usage: ccanvil-sync.sh lock-remove <file>}"
 
   local tmp
   tmp=$(mktemp)
   jq --arg f "$file" 'del(.files[$f])' "$LOCKFILE" > "$tmp" || true
+  # @side-effect: removes-lockfile-entry
   safe_lock_mv "$tmp" "$LOCKFILE" "lock-remove $file"
 }
 
+# @manifest
+# purpose: Stamp the lockfile's hub_version + synced_at with the supplied version + current timestamp so cmd_pull_finalize and cmd_push_finalize can record a coherent post-sync version pin
+# input: positional <version>
+# output: writes lockfile hub_version + synced_at
+# output: exit-codes 0 ok, 1 missing-lockfile-or-missing-positional
+# caller: cmd_pull_finalize
+# caller: cmd_push_finalize
+# caller: cmd_promote
+# depends-on: jq
+# depends-on: require_lockfile
+# depends-on: safe_lock_mv
+# depends-on: timestamp
+# depends-on: mktemp
+# side-effect: writes-lockfile-version
+# failure-mode: missing-lockfile | exit=1 | visible=stderr-die-from-require_lockfile | mitigation=run-init-first
+# failure-mode: missing-positional | exit=1 | visible=stderr-Usage | mitigation=supply-version-arg
+# contract: atomic-write-via-safe_lock_mv
+# anchor: BTS-244 (manifest seed)
 cmd_lock_set_version() {
+  # @failure-mode: missing-lockfile
   require_lockfile
+  # @failure-mode: missing-positional
   local version="${1:?Usage: ccanvil-sync.sh lock-set-version <version>}"
 
   local tmp
   tmp=$(mktemp)
   jq --arg v "$version" --arg ts "$(timestamp)" '.hub_version = $v | .synced_at = $ts' "$LOCKFILE" > "$tmp" || true
+  # @side-effect: writes-lockfile-version
   safe_lock_mv "$tmp" "$LOCKFILE" "lock-set-version"
 }
 
@@ -2607,7 +2699,22 @@ cmd_demote() {
   echo "DEMOTED: $file (future pulls will show diff instead of auto-updating)"
 }
 
+# @manifest
+# purpose: List every tracked file in the current project plus (if a lockfile is present) every tracked file in the hub source — diagnostic verb operators run when the lockfile classification is unclear or when verifying a scan_*-helper change
+# input: (none)
+# output: stdout two indented sections (Tracked files in project / Tracked files in hub) with one path per line
+# output: exit-codes 0 ok
+# depends-on: scan_tracked_files
+# depends-on: scan_hub_files
+# depends-on: get_hub_source
+# side-effect: pure-no-mutations
+# failure-mode: hub-section-omitted | exit=0 | visible=stdout-section-absent | mitigation=run-init-first-to-create-lockfile
+# contract: project-section-always-emitted
+# contract: hub-section-conditional-on-lockfile-presence
+# anchor: BTS-244 (manifest seed)
 cmd_scan() {
+  # @side-effect: pure-no-mutations
+  # @failure-mode: hub-section-omitted
   echo "Tracked files in project:"
   scan_tracked_files | while IFS= read -r f; do
     echo "  $f"
@@ -2626,7 +2733,33 @@ cmd_scan() {
 
 # migrate: Copy all hub-managed files to the current project, handle renames, re-init lockfile.
 # Usage: migrate <hub-path> [--dry-run]
+# @manifest
+# purpose: First-time-setup or major-restructuring verb that copies every hub-tracked file into the current project (section-merging delimited markdown, plain-copying everything else), removes legacy stale-named files, renames pre-ccanvil scaffold.json → ccanvil.json, and re-runs cmd_init to rebuild the lockfile in one shot
+# input: positional <hub-path>
+# input: --dry-run (optional; describe-only mode)
+# output: stdout per-file COPIED/MERGED/REMOVED/RENAMED lines plus a final MIGRATE banner
+# output: writes target files + lockfile (rebuilt by cmd_init)
+# output: exit-codes 0 ok, 1 hub-not-found-or-missing-positional
+# depends-on: cmd_init
+# depends-on: cmd_section_merge
+# depends-on: scan_hub_files
+# depends-on: grep
+# depends-on: rm
+# depends-on: mv
+# depends-on: mkdir
+# depends-on: cp
+# depends-on: die
+# side-effect: writes-target-files
+# side-effect: removes-stale-files
+# side-effect: renames-scaffold-json
+# side-effect: rebuilds-lockfile
+# failure-mode: hub-not-found | exit=1 | visible=stderr-die-Hub-not-found-at | mitigation=verify-hub-path
+# failure-mode: missing-positional | exit=1 | visible=stderr-Usage | mitigation=supply-hub-path
+# contract: dry-run-makes-no-mutations
+# contract: destructive-warning-emitted-before-execution
+# anchor: BTS-244 (manifest seed)
 cmd_migrate() {
+  # @failure-mode: missing-positional
   local hub_path="${1:?Usage: ccanvil-sync.sh migrate <hub-path> [--dry-run]}"
   hub_path="${hub_path/#\~/$HOME}"
   local dry_run=false
@@ -2640,6 +2773,7 @@ cmd_migrate() {
     echo "" >&2
   fi
 
+  # @failure-mode: hub-not-found
   [[ -d "$hub_path" ]] || die "Hub not found at: $hub_path"
 
   local dist_root
@@ -2656,6 +2790,7 @@ cmd_migrate() {
       if $dry_run; then
         echo "DRY-RUN: would remove stale file $stale"
       else
+        # @side-effect: removes-stale-files
         rm "$stale"
         echo "REMOVED: $stale (stale name)"
       fi
@@ -2667,6 +2802,7 @@ cmd_migrate() {
     if $dry_run; then
       echo "DRY-RUN: would rename .claude/scaffold.json → .claude/ccanvil.json"
     else
+      # @side-effect: renames-scaffold-json
       mv ".claude/scaffold.json" ".claude/ccanvil.json"
       echo "RENAMED: .claude/scaffold.json → .claude/ccanvil.json"
     fi
@@ -2699,6 +2835,7 @@ cmd_migrate() {
 
     # Plain copy for non-delimited files or new files
     mkdir -p "$(dirname "$file")"
+    # @side-effect: writes-target-files
     cp "$hub_file" "$file"
     echo "COPIED: $file"
     count=$((count + 1))
@@ -2714,6 +2851,7 @@ cmd_migrate() {
   echo "MIGRATE: copied $count files from hub."
 
   # Re-init lockfile
+  # @side-effect: rebuilds-lockfile
   cmd_init "$hub_path"
   echo ""
   echo "MIGRATE complete. Run 'git add -A && git commit' to finalize."
@@ -2721,7 +2859,39 @@ cmd_migrate() {
 
 # register: Add the current project to the hub's registry.
 # Run from a downstream project. Reads hub path from lockfile.
+# @manifest
+# purpose: Register the current downstream project with the hub by upserting an entry keyed by node UUID into hub's .ccanvil/registry.json (preserving last_synced fields), auto-committing the local UUID file so broadcast's dirty-tree pre-check passes, and appending a register event to the hub's events log
+# input: (none)
+# output: stdout REGISTERED status line with name + portable path + node UUID
+# output: writes hub registry.json + hub events log + commits local node UUID file
+# output: exit-codes 0 ok, 1 missing-lockfile-or-registry-write-failure
+# caller: cmd_init
+# depends-on: jq
+# depends-on: require_lockfile
+# depends-on: get_hub_source_raw
+# depends-on: get_or_create_node_uuid
+# depends-on: persist_node_uuid
+# depends-on: normalize_path
+# depends-on: timestamp
+# depends-on: commit_node_file
+# depends-on: append_event
+# depends-on: basename
+# depends-on: pwd
+# depends-on: mktemp
+# depends-on: mkdir
+# depends-on: mv
+# depends-on: rm
+# depends-on: die
+# side-effect: writes-hub-registry
+# side-effect: appends-hub-events-log
+# side-effect: commits-local-node-uuid
+# failure-mode: missing-lockfile | exit=1 | visible=stderr-die-from-require_lockfile | mitigation=run-init-first
+# failure-mode: registry-write-failure | exit=1 | visible=stderr-die-Failed-to-update-registry | mitigation=verify-hub-write-permissions
+# contract: idempotent-by-node-uuid-key
+# contract: preserves-existing-last_synced-fields
+# anchor: BTS-244 (manifest seed)
 cmd_register() {
+  # @failure-mode: missing-lockfile
   require_lockfile
   local hub_root
   hub_root=$(get_hub_source_raw)
@@ -2754,19 +2924,23 @@ cmd_register() {
     '.nodes[$u] = ((.nodes[$u] // {}) + {"name": $n, "path": $p, "registered_at": $t})' \
     "$registry" > "$tmp" || true
   if [[ -s "$tmp" ]] && jq empty "$tmp" 2>/dev/null; then
+    # @side-effect: writes-hub-registry
     mv "$tmp" "$registry"
   else
     rm -f "$tmp"
+    # @failure-mode: registry-write-failure
     die "Failed to update registry"
   fi
 
   echo "REGISTERED: $node_name ($portable_path) [$node_uuid]"
 
   # Auto-commit the node UUID file so broadcast's dirty-tree pre-check passes
+  # @side-effect: commits-local-node-uuid
   commit_node_file ".claude/ccanvil.local.json" \
     "chore(ccanvil): register node $node_name [$node_uuid]"
 
   # Record a register event in the hub's local events log
+  # @side-effect: appends-hub-events-log
   append_event "$hub_root" "$(jq -nc \
     --arg u "$node_uuid" --arg n "$node_name" --arg p "$portable_path" \
     '{event:"register",node_uuid:$u,node_name:$n,path:$p}')"
@@ -2776,9 +2950,29 @@ cmd_register() {
 # Renames ~/.claude/projects/<old-encoded> → <new-encoded> (new = $(pwd))
 # and rewrites embedded "cwd":"<old-path>" fields in every .jsonl session file.
 # Usage: ccanvil-sync.sh relocate <old-absolute-path>
+# @manifest
+# purpose: After an operator runs `mv` to relocate a project directory, re-associate Claude Code's per-project conversation history by renaming ~/.claude/projects/<old-encoded>/ → <new-encoded>/ and rewriting embedded `cwd:` fields inside every captured session jsonl so /recall and /stasis continue to find prior history
+# input: positional <old-absolute-path>
+# output: stdout RELOCATED log line; "No history dir found" line when already relocated
+# output: writes ~/.claude/projects/<new-encoded>/ directory rename + sed rewrites of cwd fields in jsonl files
+# output: exit-codes 0 ok-or-already-relocated, 1 destination-exists-or-rename-failure, 2 missing-or-non-absolute-old-path
+# depends-on: sed
+# depends-on: find
+# depends-on: pwd
+# depends-on: mv
+# side-effect: renames-history-dir
+# side-effect: rewrites-cwd-fields-in-jsonl
+# failure-mode: missing-or-non-absolute-arg | exit=2 | visible=stderr-ERROR-relocate-requires | mitigation=supply-absolute-path
+# failure-mode: destination-exists | exit=1 | visible=stderr-ERROR-destination-history-dir-already-exists | mitigation=resolve-collision-manually
+# failure-mode: rename-failed | exit=1 | visible=stderr-ERROR-rename-failed | mitigation=verify-permissions
+# failure-mode: cwd-rewrite-warning | exit=1 | visible=stderr-WARNING-cwd-rewrite-failed | mitigation=inspect-jsonl-permissions
+# contract: idempotent-on-already-relocated
+# contract: cowardly-refuses-merge
+# anchor: BTS-244 (manifest seed)
 cmd_relocate() {
   local old_path="${1:-}"
   if [[ -z "$old_path" || "$old_path" != /* ]]; then
+    # @failure-mode: missing-or-non-absolute-arg
     echo "ERROR: relocate requires an absolute <old-path>" >&2
     echo "Usage: ccanvil-sync.sh relocate <old-absolute-path>" >&2
     return 2
@@ -2801,17 +2995,22 @@ cmd_relocate() {
   fi
 
   if [[ -d "$new_dir" ]]; then
+    # @failure-mode: destination-exists
     echo "ERROR: destination history dir already exists: $new_dir" >&2
     echo "       Cowardly refusing to merge. Resolve manually." >&2
     return 1
   fi
 
+  # @side-effect: renames-history-dir
+  # @failure-mode: rename-failed
   mv "$old_dir" "$new_dir" || { echo "ERROR: rename failed" >&2; return 1; }
 
   local rc=0
   local old_field="\"cwd\":\"${old_path}\""
   local new_field="\"cwd\":\"${new_path}\""
   while IFS= read -r -d '' jsonl; do
+    # @side-effect: rewrites-cwd-fields-in-jsonl
+    # @failure-mode: cwd-rewrite-warning
     sed -i '' "s|${old_field}|${new_field}|g" "$jsonl" 2>/dev/null || \
       sed -i "s|${old_field}|${new_field}|g" "$jsonl" || \
       { echo "WARNING: cwd rewrite failed for $jsonl" >&2; rc=1; }
@@ -2834,6 +3033,23 @@ cmd_relocate() {
 #      file, now removed).
 #
 # Exit: 0 on success or no-op; 1 on ambiguous both-exist state.
+# @manifest
+# purpose: One-time idempotent migration that renames the prior-vocabulary stasis artifact to the current name and removes the prior-vocabulary recall command file (using git mv when paths are tracked so history follows); intended for downstream nodes upgrading past the BTS-22 vocabulary rollover
+# input: (none)
+# output: stdout MIGRATED + REMOVED log lines per applied action
+# output: writes file rename + file removal + single commit when either action fires
+# output: exit-codes 0 ok-or-no-op, 1 ambiguous-both-old-and-new-exist
+# depends-on: git
+# depends-on: mv
+# depends-on: rm
+# depends-on: pwd
+# side-effect: renames-stasis-artifact
+# side-effect: removes-retired-command-file
+# side-effect: writes-migration-commit
+# failure-mode: ambiguous-both-exist | exit=1 | visible=stderr-ERROR-both-files-exist | mitigation=remove-one-manually-then-rerun
+# contract: idempotent-on-already-migrated
+# contract: single-commit-captures-both-actions
+# anchor: BTS-244 (manifest seed)
 cmd_migrate_stasis_artifact() {
   local project_dir
   project_dir=$(pwd)
@@ -2846,6 +3062,7 @@ cmd_migrate_stasis_artifact() {
 
   # Step 1/2: artifact rename (or conflict detection)
   if [[ -f "$old_artifact" && -f "$new_artifact" ]]; then
+    # @failure-mode: ambiguous-both-exist
     echo "ERROR: both docs/checkpoint.md and docs/stasis.md exist." >&2
     echo "       Migration can't choose between them. Resolve manually:" >&2
     echo "       1. Decide which content to keep." >&2
@@ -2857,6 +3074,7 @@ cmd_migrate_stasis_artifact() {
   if [[ -f "$old_artifact" && ! -f "$new_artifact" ]]; then
     # Prefer git mv for history preservation; fall back to plain mv if git fails
     # (e.g., file not tracked).
+    # @side-effect: renames-stasis-artifact
     if git -C "$project_dir" ls-files --error-unmatch "docs/checkpoint.md" >/dev/null 2>&1; then
       (cd "$project_dir" && git mv "docs/checkpoint.md" "docs/stasis.md") || {
         mv "$old_artifact" "$new_artifact"
@@ -2871,6 +3089,7 @@ cmd_migrate_stasis_artifact() {
 
   # Step 3: remove legacy catchup command
   if [[ -f "$old_catchup" ]]; then
+    # @side-effect: removes-retired-command-file
     if git -C "$project_dir" ls-files --error-unmatch ".claude/commands/catchup.md" >/dev/null 2>&1; then
       (cd "$project_dir" && git rm -q ".claude/commands/catchup.md") || {
         rm -f "$old_catchup"
@@ -2884,6 +3103,7 @@ cmd_migrate_stasis_artifact() {
 
   # Single commit captures both actions if either occurred.
   if $did_work; then
+    # @side-effect: writes-migration-commit
     (cd "$project_dir" && \
       ALLOW_MAIN=1 git -c commit.gpgsign=false commit -q \
         -m "chore(stasis-migration): rename checkpoint/catchup artifacts" \
@@ -2895,13 +3115,29 @@ cmd_migrate_stasis_artifact() {
 
 # registry: List all registered downstream projects.
 # Can be run from anywhere with a lockfile.
+# @manifest
+# purpose: Read the hub-side .ccanvil/registry.json and render every registered downstream node (name, UUID, portable path, registered_at, last_synced, version) so operators can audit the live downstream-node fleet
+# input: (none)
+# output: stdout formatted human-readable listing
+# output: exit-codes 0 ok-or-no-registry, 1 missing-lockfile
+# depends-on: jq
+# depends-on: require_lockfile
+# depends-on: get_hub_source_raw
+# side-effect: reads-hub-registry
+# failure-mode: missing-lockfile | exit=1 | visible=stderr-die-from-require_lockfile | mitigation=run-init-first
+# failure-mode: no-registry-yet | exit=0 | visible=stdout-No-registry-found | mitigation=register-first-downstream-node
+# contract: read-only
+# anchor: BTS-244 (manifest seed)
 cmd_registry() {
+  # @failure-mode: missing-lockfile
+  # @side-effect: reads-hub-registry
   require_lockfile
   local hub_root
   hub_root=$(get_hub_source_raw)
   local registry="$hub_root/.ccanvil/registry.json"
 
   if [[ ! -f "$registry" ]]; then
+    # @failure-mode: no-registry-yet
     echo "No registry found. Run 'ccanvil-sync.sh register' from a downstream project."
     return 0
   fi
@@ -2916,6 +3152,22 @@ cmd_registry() {
 # The events log is machine-local audit state (gitignored) — previously,
 # these events were git commits on main; now they live in .ccanvil/events.log.
 # Usage: ccanvil-sync.sh events [--event TYPE] [--node UUID|NAME] [--since EPOCH]
+# @manifest
+# purpose: Read the hub's machine-local events log (gitignored audit trail of register/broadcast/etc. operations) and emit filtered JSONL — supports filtering by event type, node UUID/name, and minimum timestamp so operators can audit hub history without parsing the file directly
+# input: --event <type>
+# input: --node <uuid-or-name>
+# input: --since <epoch>
+# output: stdout newline-delimited JSON (one object per matching event)
+# output: exit-codes 0 ok-or-no-events-log, 2 unknown-flag
+# depends-on: jq
+# depends-on: get_hub_source_raw
+# depends-on: pwd
+# side-effect: reads-hub-events-log
+# failure-mode: unknown-flag | exit=2 | visible=stderr-Unknown-events-flag | mitigation=use-documented-flag-name
+# failure-mode: no-events-log | exit=0 | visible=empty-stdout | mitigation=register-or-broadcast-first
+# contract: read-only
+# contract: emits-empty-when-log-missing
+# anchor: BTS-244 (manifest seed)
 cmd_events() {
   local filter_event="" filter_node="" filter_since=""
   while [[ $# -gt 0 ]]; do
@@ -2923,6 +3175,7 @@ cmd_events() {
       --event) filter_event="$2"; shift 2 ;;
       --node)  filter_node="$2";  shift 2 ;;
       --since) filter_since="$2"; shift 2 ;;
+      # @failure-mode: unknown-flag
       *) echo "Unknown events flag: $1" >&2; return 2 ;;
     esac
   done
@@ -2934,6 +3187,8 @@ cmd_events() {
     hub_root=$(pwd)
   fi
   local log_file="$hub_root/.ccanvil/events.log"
+  # @failure-mode: no-events-log
+  # @side-effect: reads-hub-events-log
   [[ -f "$log_file" ]] || return 0
 
   local jq_filter='.'
@@ -2948,6 +3203,37 @@ cmd_events() {
 # Runs deterministic phases only (auto-update, section-merge, finalize).
 # Conflicts are collected and reported, not resolved.
 # Usage: broadcast [--dry-run]
+# @manifest
+# purpose: Push hub updates to every registered downstream node by iterating registry.json — for each node runs pre-check, stasis-rename migration, pull-plan classification, then deterministic auto-update + section-merge phases — collects conflicts and skip reasons for reporting and stamps registry's last_synced + last_synced_version per synced node so the operator can audit fleet-wide hub broadcast in one verb
+# input: --dry-run (optional; describe-only mode)
+# output: stdout per-node section banner + per-action log lines + final Broadcast Summary (Synced / Skipped / Unreachable + skip reasons + pending conflicts)
+# output: writes registry.json (per-node last_synced fields) + appends hub events log
+# output: exit-codes 0 ok-or-no-registered-nodes
+# depends-on: jq
+# depends-on: get_hub_source_raw
+# depends-on: migrate_registry
+# depends-on: append_event
+# depends-on: expand_path
+# depends-on: timestamp
+# depends-on: git
+# depends-on: bash
+# depends-on: pwd
+# depends-on: head
+# depends-on: sed
+# depends-on: grep
+# depends-on: mktemp
+# depends-on: mv
+# depends-on: rm
+# side-effect: writes-per-node-pull-output
+# side-effect: writes-registry-last-synced
+# side-effect: appends-hub-events-log
+# failure-mode: no-registry | exit=0 | visible=stdout-No-registered-nodes | mitigation=register-first-downstream-node
+# failure-mode: empty-registry | exit=0 | visible=stdout-No-registered-nodes | mitigation=register-first-downstream-node
+# failure-mode: per-node-pre-check-failure | exit=0 | visible=stdout-SKIP-pre-check-failed | mitigation=clean-the-failing-node-tree-and-retry
+# failure-mode: per-node-stasis-rename-ambiguous | exit=0 | visible=stdout-SKIP-stasis-migration | mitigation=resolve-the-ambiguous-stasis-state-on-the-node
+# contract: dry-run-makes-no-mutations
+# contract: registry-update-batched-after-loop-to-avoid-mid-broadcast-dirty-tree
+# anchor: BTS-244 (manifest seed)
 cmd_broadcast() {
   local dry_run=false
   if [[ "${1:-}" == "--dry-run" ]]; then
@@ -2964,6 +3250,7 @@ cmd_broadcast() {
 
   local registry="$hub_root/.ccanvil/registry.json"
   if [[ ! -f "$registry" ]]; then
+    # @failure-mode: no-registry
     echo "No registered nodes. Run 'ccanvil-sync.sh register' from a downstream project."
     return 0
   fi
@@ -2971,6 +3258,7 @@ cmd_broadcast() {
   local node_count
   node_count=$(jq '.nodes | length' "$registry")
   if [[ "$node_count" -eq 0 ]]; then
+    # @failure-mode: empty-registry
     echo "No registered nodes."
     return 0
   fi
@@ -3032,6 +3320,7 @@ cmd_broadcast() {
     # AC-2: run pre-check in node subshell
     local precheck_out
     precheck_out=$(cd "$node_path" && bash "$node_path/.ccanvil/scripts/ccanvil-sync.sh" pre-check 2>&1) || {
+      # @failure-mode: per-node-pre-check-failure
       echo "  SKIP: pre-check failed"
       echo "  $precheck_out" | head -5
       skipped=$((skipped + 1))
@@ -3078,6 +3367,7 @@ cmd_broadcast() {
     # skip the node so the user can resolve manually.
     local migration_out
     migration_out=$(cd "$node_path" && bash "$node_path/.ccanvil/scripts/ccanvil-sync.sh" migrate-stasis-artifact 2>&1) || {
+      # @failure-mode: per-node-stasis-rename-ambiguous
       echo "  SKIP: stasis-migration refused (both docs/checkpoint.md and docs/stasis.md exist)"
       echo "  $migration_out" | head -6
       skipped=$((skipped + 1))
@@ -3087,6 +3377,7 @@ cmd_broadcast() {
     if echo "$migration_out" | grep -qE "^(MIGRATED|REMOVED):"; then
       echo "$migration_out" | sed 's/^/  /'
       if ! $dry_run; then
+        # @side-effect: appends-hub-events-log
         append_event "$hub_root" "$(jq -nc \
           --arg u "$node_uuid" \
           --arg n "$node_name" \
@@ -3143,6 +3434,7 @@ cmd_broadcast() {
     auto_count=$(echo "$plan" | jq '[.[] | select(.action == "auto-update" or .action == "adopt-clean")] | length')
     if [[ "$auto_count" -gt 0 ]]; then
       echo "  Auto-updating $auto_count files..."
+      # @side-effect: writes-per-node-pull-output
       (cd "$node_path" && bash "$node_path/.ccanvil/scripts/ccanvil-sync.sh" pull-auto $dry_flag 2>&1) | sed 's/^/  /'
     fi
 
@@ -3184,6 +3476,7 @@ cmd_broadcast() {
         '.nodes[$u].last_synced = $t | .nodes[$u].last_synced_version = $v' \
         "$registry" > "$tmp" || true
       if [[ -s "$tmp" ]] && jq empty "$tmp" 2>/dev/null; then
+        # @side-effect: writes-registry-last-synced
         mv "$tmp" "$registry"
       else
         rm -f "$tmp"
@@ -3234,6 +3527,24 @@ cmd_broadcast() {
 # Per spec (BTS-116). Reuses file_hash + cmd_pull_apply; no new primitives.
 # ---------------------------------------------------------------------------
 
+# @manifest
+# purpose: Algorithmically classify divergence between local and hub copies of .claude/ccanvil.json into one of four resolution states (take-hub when content-identical, keep-local when local strictly extends hub, requires-review on value-divergence or local-removed-keys, no-conflict when both sides match or both missing) and auto-apply deterministic resolutions via cmd_pull_apply so /ccanvil-broadcast can resolve config conflicts without operator interaction
+# input: --dry-run (optional; describe-only mode)
+# output: stdout single JSON envelope {file, resolution, applied, reason, hub_hash, local_hash, +optional removed_keys/divergent_keys}
+# output: writes target ccanvil.json + lockfile entry on take-hub or keep-local
+# output: exit-codes 0 ok-or-no-conflict, 2 not-a-ccanvil-node, 3 requires-review-or-one-side-missing
+# depends-on: jq
+# depends-on: get_hub_source
+# depends-on: file_hash
+# depends-on: cmd_pull_apply
+# side-effect: writes-target-files-on-resolve
+# side-effect: writes-lockfile-entries-on-resolve
+# failure-mode: not-a-ccanvil-node | exit=2 | visible=stderr-broadcast-resolve-auto-not-a-ccanvil-node | mitigation=run-init-first
+# failure-mode: one-side-missing | exit=3 | visible=stdout-resolution-requires-review | mitigation=manually-decide-which-side-to-keep
+# failure-mode: requires-review-divergence | exit=3 | visible=stdout-resolution-requires-review | mitigation=manually-merge-divergent-or-removed-keys
+# contract: dry-run-makes-no-mutations
+# contract: emits-stable-json-envelope-shape
+# anchor: BTS-244 (manifest seed)
 cmd_broadcast_resolve_auto() {
   local dry_run=false
   if [[ "${1:-}" == "--dry-run" ]]; then
@@ -3241,6 +3552,7 @@ cmd_broadcast_resolve_auto() {
   fi
 
   if [[ ! -f "$LOCKFILE" ]]; then
+    # @failure-mode: not-a-ccanvil-node
     echo "broadcast-resolve-auto: not a ccanvil node (no .ccanvil/ccanvil.lock)" >&2
     exit 2
   fi
@@ -3274,6 +3586,8 @@ cmd_broadcast_resolve_auto() {
   if [[ "$local_hash" == "$hub_hash" ]]; then
     local applied_val=false
     if ! $dry_run; then
+      # @side-effect: writes-target-files-on-resolve
+      # @side-effect: writes-lockfile-entries-on-resolve
       if cmd_pull_apply "$file" take-hub >/dev/null 2>&1; then
         applied_val=true
       fi
@@ -3291,6 +3605,7 @@ cmd_broadcast_resolve_auto() {
 
   # Both files must exist for the structural superset / divergence checks.
   if [[ "$local_hash" == "MISSING" || "$hub_hash" == "MISSING" ]]; then
+    # @failure-mode: one-side-missing
     jq -n --arg f "$file" --arg lh "$local_hash" --arg hh "$hub_hash" '{
       file: $f,
       resolution: "requires-review",
@@ -3338,6 +3653,7 @@ cmd_broadcast_resolve_auto() {
   fi
 
   # Requires-review: prefer the most-specific reason (removed > divergent).
+  # @failure-mode: requires-review-divergence
   if [[ "$removed_count" -gt 0 ]]; then
     jq -n --arg f "$file" --arg lh "$local_hash" --arg hh "$hub_hash" --argjson removed "$removed_keys" '{
       file: $f,
@@ -3366,6 +3682,28 @@ cmd_broadcast_resolve_auto() {
 # Stack commands
 # ---------------------------------------------------------------------------
 
+# @manifest
+# purpose: Sync hub's global-commands/ccanvil-*.md files into the operator's user-level ~/.claude/commands/ directory — copies new files, skips byte-identical, surfaces conflicts (or overwrites with --force) so global slash commands stay aligned with the hub without polluting the user namespace
+# input: --force (optional; overwrite conflicts instead of reporting)
+# output: stdout per-conflict diff lines + final JSON {copied, skipped, conflicts}
+# output: writes ~/.claude/commands/ccanvil-*.md files
+# output: exit-codes 0 ok, 1 missing-lockfile-or-no-HOME
+# caller: skill:/ccanvil-pull-globals
+# depends-on: jq
+# depends-on: require_lockfile
+# depends-on: get_hub_source
+# depends-on: file_hash
+# depends-on: basename
+# depends-on: mkdir
+# depends-on: cp
+# depends-on: diff
+# depends-on: die
+# side-effect: writes-user-global-commands
+# failure-mode: missing-HOME | exit=1 | visible=stderr-die-HOME-is-not-set | mitigation=ensure-HOME-is-exported
+# failure-mode: missing-lockfile | exit=1 | visible=stderr-die-from-require_lockfile | mitigation=run-init-first
+# contract: only-touches-ccanvil-prefixed-files
+# contract: skips-byte-identical-without-warning
+# anchor: BTS-244 (manifest seed)
 cmd_pull_globals() {
   local force=false
   while [[ $# -gt 0 ]]; do
@@ -3375,8 +3713,10 @@ cmd_pull_globals() {
     esac
   done
 
+  # @failure-mode: missing-HOME
   [[ -n "${HOME:-}" ]] || die "\$HOME is not set"
 
+  # @failure-mode: missing-lockfile
   require_lockfile
   local hub_path
   hub_path=$(get_hub_source)
@@ -3397,6 +3737,7 @@ cmd_pull_globals() {
     dst="$dst_dir/$name"
 
     if [[ ! -f "$dst" ]]; then
+      # @side-effect: writes-user-global-commands
       cp "$src" "$dst"
       copied=$((copied + 1))
       continue
@@ -3427,7 +3768,22 @@ cmd_pull_globals() {
     '{copied: $c, skipped: $s, conflicts: $x}'
 }
 
+# @manifest
+# purpose: Walk every stack profile under hub/stacks/ and emit a JSON array of {id, description, files} envelopes so /ccanvil-init and operators can preview available tech-stack overlays before applying one
+# input: (none)
+# output: stdout JSON array (empty array when no stacks dir or no manifests)
+# output: exit-codes 0 ok, 1 missing-lockfile
+# depends-on: jq
+# depends-on: require_lockfile
+# depends-on: get_hub_source
+# side-effect: reads-stack-manifests
+# failure-mode: missing-lockfile | exit=1 | visible=stderr-die-from-require_lockfile | mitigation=run-init-first
+# contract: read-only
+# contract: emits-empty-array-when-no-stacks-dir
+# anchor: BTS-244 (manifest seed)
 cmd_stack_list() {
+  # @failure-mode: missing-lockfile
+  # @side-effect: reads-stack-manifests
   require_lockfile
   local hub_path
   hub_path=$(get_hub_source)
@@ -3448,14 +3804,53 @@ cmd_stack_list() {
   echo "$result"
 }
 
+# @manifest
+# purpose: Apply a tech-stack overlay to the current node — copies stack-owned files (skipping locally-customized targets per the patch-flow rule), section-merges a CLAUDE.md block bracketed by STACK:<id>-START/END markers, merges PreToolUse hooks into settings.json (deduping by command), and registers the stack in ccanvil.json's stacks[] so /ccanvil-init and re-pull workflows preserve the overlay
+# input: positional <stack-id>
+# output: stdout per-warning lines + final JSON {copied, skipped, errors}
+# output: writes target files + lockfile entries + CLAUDE.md section + settings.json hooks + ccanvil.json stacks[]
+# output: exit-codes 0 ok, 1 missing-lockfile-or-stack-not-found-or-missing-positional
+# caller: cmd_pull_apply
+# depends-on: jq
+# depends-on: require_lockfile
+# depends-on: get_hub_source
+# depends-on: file_hash
+# depends-on: bash
+# depends-on: awk
+# depends-on: grep
+# depends-on: cat
+# depends-on: cp
+# depends-on: chmod
+# depends-on: mkdir
+# depends-on: mv
+# depends-on: rm
+# depends-on: mktemp
+# depends-on: die
+# side-effect: writes-target-files
+# side-effect: writes-lockfile-entries
+# side-effect: writes-claude-md-section
+# side-effect: writes-settings-json-hooks
+# side-effect: writes-ccanvil-json-stacks
+# failure-mode: missing-lockfile | exit=1 | visible=stderr-die-from-require_lockfile | mitigation=run-init-first
+# failure-mode: missing-positional | exit=1 | visible=stderr-Usage | mitigation=supply-stack-id
+# failure-mode: stack-not-found | exit=1 | visible=stderr-die-Stack-not-found | mitigation=run-stack-list-first
+# failure-mode: missing-stack-source-per-entry | exit=0 | visible=stderr-WARNING-Missing-source | mitigation=increments-errors-counter-and-continues
+# failure-mode: invalid-settings-merge | exit=0 | visible=stderr-WARNING-settings-json-merge-produced-invalid-JSON | mitigation=increments-errors-counter
+# failure-mode: invalid-ccanvil-update | exit=0 | visible=stderr-WARNING-ccanvil-json-update-failed | mitigation=increments-errors-counter
+# contract: idempotent-on-already-applied-stack
+# contract: skips-locally-customized-files
+# anchor: BTS-244 (manifest seed)
 cmd_stack_apply() {
+  # @failure-mode: missing-positional
   local stack_id="${1:?Usage: ccanvil-sync.sh stack-apply <stack-id>}"
+  # @failure-mode: missing-lockfile
   require_lockfile
   local hub_path
   hub_path=$(get_hub_source)
   local stack_dir="$hub_path/hub/stacks/$stack_id"
   local manifest="$stack_dir/manifest.json"
 
+  # @failure-mode: stack-not-found
   [[ -f "$manifest" ]] || die "Stack not found: $stack_id (no manifest at $manifest)"
 
   local copied=0 skipped=0 errors=0
@@ -3470,6 +3865,7 @@ cmd_stack_apply() {
     action=$(jq -r ".files[$i].action" "$manifest")
 
     local source_path="$stack_dir/$source"
+    # @failure-mode: missing-stack-source-per-entry
     [[ -f "$source_path" ]] || { echo "WARNING: Missing source: $source" >&2; errors=$((errors + 1)); continue; }
 
     case "$action" in
@@ -3491,6 +3887,7 @@ cmd_stack_apply() {
           fi
         fi
         mkdir -p "$(dirname "$target")"
+        # @side-effect: writes-target-files
         cp "$source_path" "$target"
         # Preserve executable bit
         [[ -x "$source_path" ]] && chmod +x "$target"
@@ -3507,6 +3904,7 @@ cmd_stack_apply() {
     local hub_h local_h
     hub_h=$(file_hash "$source_path")
     local_h=$(file_hash "$target")
+    # @side-effect: writes-lockfile-entries
     bash "$0" lock-add "$target" "stack:$stack_id" "$hub_h" "$local_h" "clean"
   done
 
@@ -3545,6 +3943,7 @@ cmd_stack_apply() {
         mv "$tmp" "CLAUDE.md"
       else
         # Append to end
+        # @side-effect: writes-claude-md-section
         printf '\n' >> "CLAUDE.md"
         cat "$section_tmp" >> "CLAUDE.md"
       fi
@@ -3587,9 +3986,11 @@ cmd_stack_apply() {
         ' "$settings_path" > "$tmp"
       fi
       if [[ -s "$tmp" ]] && jq empty "$tmp" 2>/dev/null; then
+        # @side-effect: writes-settings-json-hooks
         mv "$tmp" "$settings_path"
       else
         rm -f "$tmp"
+        # @failure-mode: invalid-settings-merge
         echo "WARNING: settings.json merge produced invalid JSON" >&2
         errors=$((errors + 1))
       fi
@@ -3608,9 +4009,11 @@ cmd_stack_apply() {
     .stacks = ((.stacks // []) | if index($s) then . else . + [$s] end)
   ' "$ccanvil_json" > "$tmp"
   if [[ -s "$tmp" ]] && jq empty "$tmp" 2>/dev/null; then
+    # @side-effect: writes-ccanvil-json-stacks
     mv "$tmp" "$ccanvil_json"
   else
     rm -f "$tmp"
+    # @failure-mode: invalid-ccanvil-update
     echo "WARNING: ccanvil.json update failed" >&2
     errors=$((errors + 1))
   fi
@@ -3632,15 +4035,39 @@ require_jq
 # registered node's last_synced_version against the current hub HEAD.
 # ---------------------------------------------------------------------------
 
+# @manifest
+# purpose: Compute per-node drift envelopes by walking the hub's registry.json — for each registered node compares last_synced_version to current HEAD, intersects touched paths with hub's distributable file set, and emits a drift record (node UUID, name, drift_key, paths_drifted, commits_behind, summary) so /drift-watchdog can present a fleet-wide drift view without firing per-node Linear writes
+# input: env CCANVIL_REGISTRY (optional path override; defaults to .ccanvil/registry.json)
+# output: stdout JSON array of drift records (empty array when registry missing or no drift)
+# output: exit-codes 0 ok-or-no-registry-or-no-head
+# caller: skill:/drift-watchdog
+# depends-on: jq
+# depends-on: git
+# depends-on: scan_hub_files
+# depends-on: comm
+# depends-on: grep
+# depends-on: sort
+# depends-on: shasum
+# depends-on: cut
+# depends-on: pwd
+# side-effect: reads-registry-and-git-history
+# failure-mode: missing-registry | exit=0 | visible=stdout-empty-array | mitigation=register-first-downstream-node
+# failure-mode: missing-head | exit=0 | visible=stdout-empty-array | mitigation=run-from-git-repo
+# contract: filters-out-hub-private-paths-via-tracked_set-intersection
+# contract: skips-up-to-date-nodes
+# anchor: BTS-244 (manifest seed)
 cmd_drift_watchdog_list() {
+  # @side-effect: reads-registry-and-git-history
   local registry="${CCANVIL_REGISTRY:-.ccanvil/registry.json}"
   if [[ ! -f "$registry" ]]; then
+    # @failure-mode: missing-registry
     echo "[]"
     return 0
   fi
   local head_hash
   head_hash=$(git rev-parse HEAD 2>/dev/null || echo "")
   if [[ -z "$head_hash" ]]; then
+    # @failure-mode: missing-head
     echo "[]"
     return 0
   fi
@@ -3690,7 +4117,22 @@ cmd_drift_watchdog_list() {
   echo "$records"
 }
 
+# @manifest
+# purpose: Probe the runtime preconditions /drift-watchdog needs (Claude CLI in $PATH for headless invocation, and a working linear-query.sh viewer call) so the launchd-scheduled run can fail fast with a clear cause when either dependency is missing
+# input: env CCANVIL_LINEAR_QUERY (optional path override)
+# output: stdout JSON {claude_p_available, linear_query_works}
+# output: exit-codes 0 ok
+# caller: skill:/drift-watchdog
+# depends-on: jq
+# depends-on: bash
+# depends-on: command
+# side-effect: pure-no-mutations
+# failure-mode: never-fails | exit=0 | visible=stdout-bool-flags | mitigation=consumer-checks-flags
+# contract: emits-stable-shape-regardless-of-availability
+# anchor: BTS-244 (manifest seed)
 cmd_drift_watchdog_preflight() {
+  # @failure-mode: never-fails
+  # @side-effect: pure-no-mutations
   local linear_query="${CCANVIL_LINEAR_QUERY:-.ccanvil/scripts/linear-query.sh}"
   local claude_ok="false" linear_ok="false"
   if command -v claude >/dev/null 2>&1; then
@@ -3709,6 +4151,33 @@ cmd_drift_watchdog_preflight() {
     '{claude_p_available: $cp, linear_query_works: $lq}'
 }
 
+# @manifest
+# purpose: Idempotently install or reload the drift-watchdog launchd LaunchAgent — generates the plist via cmd_drift_watchdog_launchd_print, lints with plutil, optionally unloads the prior entry, copies into ~/Library/LaunchAgents/, loads with launchctl, and verifies via launchctl print so /drift-watchdog's weekly schedule survives operator reboots
+# input: --reload (optional; unload the prior entry before installing)
+# output: stdout JSON {installed, reloaded, plist_path, verified, +optional error}
+# output: writes ~/Library/LaunchAgents/com.ccanvil.drift-watchdog.plist + launchctl state
+# output: exit-codes 0 installed-and-verified, 2 plist-generation-or-lint-failed, 3 verify-failed
+# caller: skill:/drift-watchdog
+# depends-on: jq
+# depends-on: cmd_drift_watchdog_launchd_print
+# depends-on: launchctl
+# depends-on: plutil
+# depends-on: command
+# depends-on: cp
+# depends-on: rm
+# depends-on: mkdir
+# depends-on: mktemp
+# depends-on: id
+# depends-on: grep
+# side-effect: writes-launchd-plist
+# side-effect: loads-launchd-job
+# failure-mode: plist-generation-failed | exit=2 | visible=stdout-error-plist-generation-failed | mitigation=verify-print-substrate
+# failure-mode: plist-lint-failed | exit=2 | visible=stdout-error-plist-lint-failed | mitigation=inspect-printed-plist
+# failure-mode: verify-failed-launchctl-print-rc | exit=3 | visible=stdout-error-verify-failed | mitigation=inspect-launchctl-output
+# failure-mode: no-state-in-print-output | exit=3 | visible=stdout-error-no-state-in-print-output | mitigation=manual-launchctl-load
+# contract: idempotent-on-already-installed
+# contract: workspace-fence-bypass-required
+# anchor: BTS-244 (manifest seed)
 cmd_drift_watchdog_launchd_install() {
   # BTS-199: idempotent install/reload of the drift-watchdog launchd entry.
   # Wraps the four-step recipe (generate + lint + optional unload + cp + load
@@ -3744,6 +4213,7 @@ cmd_drift_watchdog_launchd_install() {
 
   if [[ ! -s "$tmp_plist" ]]; then
     rm -f "$tmp_plist"
+    # @failure-mode: plist-generation-failed
     jq -n '{installed:false, reloaded:false, error:"plist-generation-failed"}'
     return 2
   fi
@@ -3752,6 +4222,7 @@ cmd_drift_watchdog_launchd_install() {
   if command -v plutil >/dev/null 2>&1; then
     if ! plutil -lint "$tmp_plist" >/dev/null 2>&1; then
       rm -f "$tmp_plist"
+      # @failure-mode: plist-lint-failed
       jq -n '{installed:false, reloaded:false, error:"plist-lint-failed"}'
       return 2
     fi
@@ -3768,22 +4239,26 @@ cmd_drift_watchdog_launchd_install() {
 
   # 4. Copy plist into place
   mkdir -p "$(dirname "$plist_path")"
+  # @side-effect: writes-launchd-plist
   cp "$tmp_plist" "$plist_path"
   rm -f "$tmp_plist"
 
   # 5. Load (load -w; second invocation may exit non-zero but verify is authoritative)
+  # @side-effect: loads-launchd-job
   launchctl load -w "$plist_path" >/dev/null 2>&1 || true
 
   # 6. Verify via launchctl print. `set -e` is active at script-level — wrap
   # the call in `if !` so a non-zero rc does not abort before we can emit JSON.
   local print_out
   if ! print_out=$(launchctl print "gui/$(id -u)/com.ccanvil.drift-watchdog" 2>&1); then
+    # @failure-mode: verify-failed-launchctl-print-rc
     jq -n --arg p "$plist_path" --argjson r "$reloaded" \
       '{installed:true, reloaded:$r, plist_path:$p, verified:false, error:"verify-failed-launchctl-print-rc"}'
     return 3
   fi
 
   if ! echo "$print_out" | grep -q 'state'; then
+    # @failure-mode: no-state-in-print-output
     jq -n --arg p "$plist_path" --argjson r "$reloaded" \
       '{installed:true, reloaded:$r, plist_path:$p, verified:false, error:"no-state-in-print-output"}'
     return 3
@@ -3793,7 +4268,24 @@ cmd_drift_watchdog_launchd_install() {
     '{installed:true, reloaded:$r, plist_path:$p, verified:true}'
 }
 
+# @manifest
+# purpose: Render the drift-watchdog launchd LaunchAgent plist on stdout — bakes in the operator's current $PATH (so claude resolves under launchd's sparse environment), the hub's working dir, and a Mondays-9:13 schedule — so cmd_drift_watchdog_launchd_install has a deterministic plist source
+# input: env PATH (embedded into the rendered plist)
+# output: stdout XML plist content
+# output: exit-codes 0 ok
+# caller: cmd_drift_watchdog_launchd_install
+# depends-on: git
+# depends-on: pwd
+# depends-on: sed
+# depends-on: cat
+# side-effect: pure-no-mutations
+# failure-mode: never-fails | exit=0 | visible=stdout-plist | mitigation=consumer-checks-plist-not-empty
+# contract: stable-shape-across-invocations
+# contract: escapes-XML-special-chars-in-PATH
+# anchor: BTS-244 (manifest seed)
 cmd_drift_watchdog_launchd_print() {
+  # @side-effect: pure-no-mutations
+  # @failure-mode: never-fails
   local hub_dir
   hub_dir=$(git rev-parse --show-toplevel 2>/dev/null || pwd)
   # launchd's default PATH excludes Homebrew (and most user-installed bins) —

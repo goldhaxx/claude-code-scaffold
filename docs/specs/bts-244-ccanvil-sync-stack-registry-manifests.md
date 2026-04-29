@@ -4,7 +4,7 @@
 > Work: linear:BTS-244
 > Created: 1777421063
 > Subject: ccanvil-sync.sh stack + registry cluster manifests
-> Status: Draft
+> Status: Complete
 
 ## Summary
 

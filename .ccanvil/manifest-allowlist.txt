@@ -112,3 +112,31 @@
 .ccanvil/scripts/ccanvil-sync.sh:cmd_push_finalize
 .ccanvil/scripts/ccanvil-sync.sh:cmd_promote
 .ccanvil/scripts/ccanvil-sync.sh:cmd_demote
+
+# BTS-244 — Session 5: ccanvil-sync.sh stack + registry cluster.
+# Batch 1 — lockfile primitives.
+.ccanvil/scripts/ccanvil-sync.sh:cmd_lock_get
+.ccanvil/scripts/ccanvil-sync.sh:cmd_lock_update
+.ccanvil/scripts/ccanvil-sync.sh:cmd_lock_add
+.ccanvil/scripts/ccanvil-sync.sh:cmd_lock_remove
+.ccanvil/scripts/ccanvil-sync.sh:cmd_lock_set_version
+# Batch 2 — scan/migrate/register/relocate.
+.ccanvil/scripts/ccanvil-sync.sh:cmd_scan
+.ccanvil/scripts/ccanvil-sync.sh:cmd_migrate
+.ccanvil/scripts/ccanvil-sync.sh:cmd_register
+.ccanvil/scripts/ccanvil-sync.sh:cmd_relocate
+# Batch 3 — stasis-migration + registry/events.
+.ccanvil/scripts/ccanvil-sync.sh:cmd_migrate_stasis_artifact
+.ccanvil/scripts/ccanvil-sync.sh:cmd_registry
+.ccanvil/scripts/ccanvil-sync.sh:cmd_events
+# Batch 4 — broadcast + globals.
+.ccanvil/scripts/ccanvil-sync.sh:cmd_broadcast
+.ccanvil/scripts/ccanvil-sync.sh:cmd_broadcast_resolve_auto
+.ccanvil/scripts/ccanvil-sync.sh:cmd_pull_globals
+# Batch 5 — stacks + drift-watchdog.
+.ccanvil/scripts/ccanvil-sync.sh:cmd_stack_list
+.ccanvil/scripts/ccanvil-sync.sh:cmd_stack_apply
+.ccanvil/scripts/ccanvil-sync.sh:cmd_drift_watchdog_list
+.ccanvil/scripts/ccanvil-sync.sh:cmd_drift_watchdog_preflight
+.ccanvil/scripts/ccanvil-sync.sh:cmd_drift_watchdog_launchd_install
+.ccanvil/scripts/ccanvil-sync.sh:cmd_drift_watchdog_launchd_print
