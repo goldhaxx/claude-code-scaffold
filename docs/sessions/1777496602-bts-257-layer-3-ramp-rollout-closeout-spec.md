@@ -20,7 +20,7 @@ Per `docs/manifest-rollout.md` Session 11 (final session) — augment the `code-
 
 Each criterion is independently testable. Binary pass/fail.
 
-- [ ] **AC-1:** `code-reviewer` agent body has a new "Manifest-aware review" checklist section that prescribes: (1) run `bash .ccanvil/scripts/module-manifest.sh validate --json` as a pre-check; (2) for each diff that adds a new caller of any cmd_* on the allowlist, verify the manifest's `caller:` list includes the new call site; (3) for new `depends-on` introductions, same check; (4) for new exit paths, check `failure-mode:` enumerates them.
+- [ ] **AC-1:** `code-reviewer` agent body has a new "Manifest-aware review" checklist section that prescribes: (1) run `bash .ccanvil/scripts/module-manifest.sh validate --json` as a pre-check; (2) for each diff that adds a new caller of any cmd\_\* on the allowlist, verify the manifest's `caller:` list includes the new call site; (3) for new `depends-on` introductions, same check; (4) for new exit paths, check `failure-mode:` enumerates them.
 - [ ] **AC-2:** `/review` skill body has a new pre-flight step that runs `module-manifest.sh validate` BEFORE spawning the code-reviewer agent. Drift surfaces in the briefing under `## Manifest drift`.
 - [ ] **AC-3:** `docs/manifest-rollout.md` carries a closing `## Status: COMPLETE` section noting all 11 sessions shipped, final allowlist size 184/184, drift 0, and the doc becomes a historical record.
 - [ ] **AC-4:** `docs/research/dark-code-mapping.md` Layer 2 status flips from `~10%` to `100%` with a brief note on what shipped (substrate + 184 manifests across 11 sessions). Layer 3 status updated to reflect the partial ramp landed in this session.
@@ -31,7 +31,7 @@ Each criterion is independently testable. Binary pass/fail.
 ## Affected Files
 
 | File | Change |
-|------|--------|
+| -- | -- |
 | `.claude/agents/code-reviewer.md` | Modified — append manifest-aware checklist section |
 | `.claude/commands/review.md` | Modified — add pre-flight validate step |
 | `docs/manifest-rollout.md` | Modified — append `## Status: COMPLETE` close-out |
@@ -40,21 +40,21 @@ Each criterion is independently testable. Binary pass/fail.
 
 ## Dependencies
 
-- **Requires:** BTS-239, BTS-240, BTS-241, BTS-242, BTS-243, BTS-244, BTS-245, BTS-246, BTS-251, BTS-252, BTS-256 (the entire 11-session rollout)
-- **Blocked by:** none
+* **Requires:** BTS-239, BTS-240, BTS-241, BTS-242, BTS-243, BTS-244, BTS-245, BTS-246, BTS-251, BTS-252, BTS-256 (the entire 11-session rollout)
+* **Blocked by:** none
 
 ## Out of Scope
 
-- Implementing the manifest-aware checks as deterministic scripts — Phase 2 work; this session just lands the prose nudge so the agent + skill act on it via Claude reasoning. Future Phase 2 ticket can convert to a deterministic check.
-- New manifests or substrate changes — coverage stays at 184/184.
-- Refactoring `module-manifest.sh` — no behavior changes.
+* Implementing the manifest-aware checks as deterministic scripts — Phase 2 work; this session just lands the prose nudge so the agent + skill act on it via Claude reasoning. Future Phase 2 ticket can convert to a deterministic check.
+* New manifests or substrate changes — coverage stays at 184/184.
+* Refactoring `module-manifest.sh` — no behavior changes.
 
 ## Implementation Notes
 
-- **Agent prose shape:** add a numbered Step ("Manifest-aware review") with three sub-checks: pre-flight validate, new-caller-not-declared, new-dep-not-declared. Each sub-check explicitly says "flag as `manifest-drift` finding under CONCERNS or BLOCKING per severity."
-- **Skill prose shape:** add Step 0 (pre-flight) before spawning the code-reviewer agent. Surface drift count + list of drifted entries before the review proceeds. If drift > 0, the briefing surfaces it as a separate section so the operator decides whether to clear drift first or proceed with review.
-- **Close-out tone:** the rollout doc's status section should be celebratory but factual — list each session's allowlist delta, total manifests, and the substrate fixes shipped (BTS-251 file-level fallback, BTS-252 SIGPIPE-resistant body grep). Note this doc is now a one-time historical record; future Layer 2 maintenance is per-substrate (manifest co-located with code).
-- **No new manifests.** Layer 3 substrate (a deterministic manifest-aware check primitive) is deferred to a future Phase 2 ticket. This session ramps the prose layer only.
+* **Agent prose shape:** add a numbered Step ("Manifest-aware review") with three sub-checks: pre-flight validate, new-caller-not-declared, new-dep-not-declared. Each sub-check explicitly says "flag as `manifest-drift` finding under CONCERNS or BLOCKING per severity."
+* **Skill prose shape:** add Step 0 (pre-flight) before spawning the code-reviewer agent. Surface drift count + list of drifted entries before the review proceeds. If drift > 0, the briefing surfaces it as a separate section so the operator decides whether to clear drift first or proceed with review.
+* **Close-out tone:** the rollout doc's status section should be celebratory but factual — list each session's allowlist delta, total manifests, and the substrate fixes shipped (BTS-251 file-level fallback, BTS-252 SIGPIPE-resistant body grep). Note this doc is now a one-time historical record; future Layer 2 maintenance is per-substrate (manifest co-located with code).
+* **No new manifests.** Layer 3 substrate (a deterministic manifest-aware check primitive) is deferred to a future Phase 2 ticket. This session ramps the prose layer only.
 
 <!-- NODE-SPECIFIC-START -->
 <!-- Add project-specific content below this line. -->
