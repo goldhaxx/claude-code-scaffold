@@ -8,12 +8,12 @@
 
 ## Summary
 
-Per `docs/manifest-rollout.md` Session 8 — extend Layer 2 (Self-Describing Systems) coverage from function-level cmd_* primitives to **file-level** shell substrate. Adds 17 file-level manifests across 5 single-purpose scripts (`bats-lint.sh`, `bats-report.sh`, `fetch-license.sh`, `fix-cloudflare-certs.sh`, `security-audit.sh`) and 12 PreToolUse / SessionStart / SessionEnd hooks. Includes a substrate extension to `module-manifest.sh` so drift-guard's depends-on + marker checks work for files with no `${fn_id}()` declaration. Allowlist grows 134 → 151.
+Per `docs/manifest-rollout.md` Session 8 — extend Layer 2 (Self-Describing Systems) coverage from function-level cmd\_\* primitives to **file-level** shell substrate. Adds 17 file-level manifests across 5 single-purpose scripts (`bats-lint.sh`, `bats-report.sh`, `fetch-license.sh`, `fix-cloudflare-certs.sh`, `security-audit.sh`) and 12 PreToolUse / SessionStart / SessionEnd hooks. Includes a substrate extension to `module-manifest.sh` so drift-guard's depends-on + marker checks work for files with no `${fn_id}()` declaration. Allowlist grows 134 → 151.
 
 ## Job To Be Done
 
 **When** I'm reviewing a hook or single-purpose substrate script and need to know its contract (purpose, inputs, exit semantics, side-effects, callers),
-**I want to** read a `# @manifest` block at the top of the file with the same field set used for cmd_* primitives,
+**I want to** read a `# @manifest` block at the top of the file with the same field set used for cmd\_\* primitives,
 **So that** cold-start comprehension and drift-guard quality enforcement extend uniformly across the entire shell substrate, not just the mega-scripts.
 
 ## Acceptance Criteria
@@ -32,7 +32,7 @@ Each criterion is independently testable. Binary pass/fail.
 ## Affected Files
 
 | File | Change |
-|------|--------|
+| -- | -- |
 | `.ccanvil/scripts/module-manifest.sh` | Modified — file-level fallback in `_function_body_grep` |
 | `.ccanvil/scripts/bats-lint.sh` | Modified — `# @manifest` block added |
 | `.ccanvil/scripts/bats-report.sh` | Modified — `# @manifest` block added |
@@ -48,24 +48,24 @@ Each criterion is independently testable. Binary pass/fail.
 
 ## Dependencies
 
-- **Requires:** BTS-239 (manifest substrate), BTS-240 (markdown branch — _target_body_grep dispatch precedent)
-- **Blocked by:** none
+* **Requires:** BTS-239 (manifest substrate), BTS-240 (markdown branch — \_target_body_grep dispatch precedent)
+* **Blocked by:** none
 
 ## Out of Scope
 
-- Markdown manifests (skills/rules/agents/commands) — Sessions 9 and 10
-- Layer 3 / `code-reviewer` integration — Session 11
-- Manifest-aware `/review` skill — Session 11
-- Refactoring file-level scripts themselves — manifest-only ship
+* Markdown manifests (skills/rules/agents/commands) — Sessions 9 and 10
+* Layer 3 / `code-reviewer` integration — Session 11
+* Manifest-aware `/review` skill — Session 11
+* Refactoring file-level scripts themselves — manifest-only ship
 
 ## Implementation Notes
 
-- **Substrate fallback shape:** track a `fn_decl_seen` flag inside `_function_body_grep`. When the existing loop reaches EOF with `fn_decl_seen=0`, fall through to `grep -qE -- "$pattern" "$path"`. Preserves existing semantics for cmd_* targets (where the decl always exists) and only changes behavior for file-level scope.
-- **Allowlist shape:** path-only entries (no `:fn` suffix). `cmd_validate` already extracts `id` from basename in this case (line 459). Confirmed by reading the validate path.
-- **Manifest placement:** at the top of each file, after shebang and any short description comment, before `set -uo pipefail` (or whatever first non-comment line). Parser ends the block at the first non-`# key:` line per `cmd_extract` semantics.
-- **Hook-specific contract patterns:** PreToolUse hooks read JSON from stdin, exit 0 (allow) / 2 (block + stderr-as-feedback). SessionStart/SessionEnd hooks read no input, exit 0 always. Document these as `contract: stdin-json-passthrough` / `contract: never-blocks` etc.
-- **Inline-marker discipline:** every `failure-mode` and `side-effect` declared in the manifest needs a real inline marker (`# @failure-mode: <id>` or `# @side-effect: <id>`) on the line where the failure/side-effect occurs. Per `feedback_drift_guard_compounds_quality_across_sessions` — the marker is the load-bearing structural check.
-- **No refactoring:** coverage-only ship. Body changes limited to (1) the substrate fallback, (2) inline marker comments in 17 files, (3) the manifest blocks themselves. No behavior changes.
+* **Substrate fallback shape:** track a `fn_decl_seen` flag inside `_function_body_grep`. When the existing loop reaches EOF with `fn_decl_seen=0`, fall through to `grep -qE -- "$pattern" "$path"`. Preserves existing semantics for cmd\_\* targets (where the decl always exists) and only changes behavior for file-level scope.
+* **Allowlist shape:** path-only entries (no `:fn` suffix). `cmd_validate` already extracts `id` from basename in this case (line 459). Confirmed by reading the validate path.
+* **Manifest placement:** at the top of each file, after shebang and any short description comment, before `set -uo pipefail` (or whatever first non-comment line). Parser ends the block at the first non-`# key:` line per `cmd_extract` semantics.
+* **Hook-specific contract patterns:** PreToolUse hooks read JSON from stdin, exit 0 (allow) / 2 (block + stderr-as-feedback). SessionStart/SessionEnd hooks read no input, exit 0 always. Document these as `contract: stdin-json-passthrough` / `contract: never-blocks` etc.
+* **Inline-marker discipline:** every `failure-mode` and `side-effect` declared in the manifest needs a real inline marker (`# @failure-mode: <id>` or `# @side-effect: <id>`) on the line where the failure/side-effect occurs. Per `feedback_drift_guard_compounds_quality_across_sessions` — the marker is the load-bearing structural check.
+* **No refactoring:** coverage-only ship. Body changes limited to (1) the substrate fallback, (2) inline marker comments in 17 files, (3) the manifest blocks themselves. No behavior changes.
 
 <!-- NODE-SPECIFIC-START -->
 <!-- Add project-specific content below this line. -->

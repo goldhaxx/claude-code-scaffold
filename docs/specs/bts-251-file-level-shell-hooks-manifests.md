@@ -4,7 +4,7 @@
 > Work: linear:BTS-251
 > Created: 1777480188
 > Subject: File-level shell + hooks manifests
-> Status: In Progress
+> Status: Complete
 
 ## Summary
 
