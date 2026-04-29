@@ -38,10 +38,28 @@ TRACKED_DIRS=(
 #
 # Output: JSON array of {path, description} objects.
 # ---------------------------------------------------------------------------
+# @manifest
+# purpose: Extract (path, description) pairs from every markdown table row in a README — handles 3-col and 4-col tables, strips backticks/markdown formatting, and emits a JSON array so `cmd_check` can compare the README's stated inventory against disk
+# input: positional <readme>
+# output: stdout JSON array [{path, description}]
+# output: exit-codes 0 ok, 1 missing-positional-or-file-not-found
+# caller: cmd_check
+# caller: cmd_check_existence
+# depends-on: jq
+# depends-on: sed
+# depends-on: printf
+# depends-on: echo
+# side-effect: reads-readme-file
+# failure-mode: file-missing | exit=1 | visible=stderr-Error-File-does-not-exist | mitigation=verify-readme-path
+# contract: read-only-no-mutations
+# contract: emits-empty-array-when-no-tables
+# anchor: BTS-246 (manifest seed)
 cmd_parse() {
   local readme="${1:?Usage: manifest-check.sh parse <readme>}"
 
   if [[ ! -f "$readme" ]]; then
+    # @failure-mode: file-missing
+    # @side-effect: reads-readme-file
     echo "Error: File does not exist: $readme" >&2
     return 1
   fi
@@ -104,7 +122,24 @@ cmd_parse() {
 # Input: path to README
 # Output: JSON with { found: [...], missing_from_disk: [...], missing_from_manifest: [...] }
 # ---------------------------------------------------------------------------
+# @manifest
+# purpose: Compare README manifest paths against on-disk reality — for each manifest entry, check disk; for each tracked-dir file (under TRACKED_DIRS), check manifest. Emits a three-way JSON envelope so /ccanvil-audit can flag missing-from-disk + missing-from-manifest drift in one read
+# input: positional <readme>
+# output: stdout JSON {found[], missing_from_disk[], missing_from_manifest[]}
+# output: exit-codes 0 ok, 1 readme-missing
+# depends-on: jq
+# depends-on: cmd_parse
+# depends-on: find
+# depends-on: sort
+# side-effect: reads-readme-file
+# side-effect: walks-tracked-dirs
+# failure-mode: file-missing | exit=1 | visible=stderr-from-cmd_parse | mitigation=verify-readme-path
+# contract: read-only-classification
+# anchor: BTS-246 (manifest seed)
 cmd_check_existence() {
+  # @failure-mode: file-missing
+  # @side-effect: reads-readme-file
+  # @side-effect: walks-tracked-dirs
   local readme="${1:?Usage: manifest-check.sh check-existence <readme>}"
 
   # Parse manifest entries
@@ -173,7 +208,24 @@ file_hash() {
 # Input: path to README
 # Output: writes LOCKFILE
 # ---------------------------------------------------------------------------
+# @manifest
+# purpose: Create or replace .claude/manifest.lock by snapshotting the current README manifest paths plus their sha256 hashes plus the active git commit — provides a baseline /ccanvil-audit can compare against to detect post-baseline file mutations
+# input: positional <readme>
+# output: writes .claude/manifest.lock (JSON: commit, generated_at, entries{path: {hash, last_verified_commit, last_verified_epoch}})
+# output: exit-codes 0 ok, 1 readme-missing
+# depends-on: jq
+# depends-on: cmd_parse
+# depends-on: file_hash
+# depends-on: git
+# depends-on: date
+# side-effect: writes-lockfile
+# side-effect: reads-readme-and-files
+# failure-mode: readme-missing | exit=1 | visible=stderr-from-cmd_parse | mitigation=verify-readme-path
+# contract: snapshot-baseline
+# anchor: BTS-246 (manifest seed)
 cmd_init() {
+  # @failure-mode: readme-missing
+  # @side-effect: reads-readme-and-files
   local readme="${1:?Usage: manifest-check.sh init <readme>}"
 
   local entries
@@ -202,6 +254,7 @@ cmd_init() {
 
   mkdir -p "$(dirname "$LOCKFILE")"
 
+  # @side-effect: writes-lockfile
   jq -n \
     --argjson date "$now" \
     --arg commit "$commit" \
@@ -217,8 +270,24 @@ cmd_init() {
 #
 # Output: JSON { verified: [...], stale: [...] }
 # ---------------------------------------------------------------------------
+# @manifest
+# purpose: Compare every lockfile-tracked path's current sha256 against the stored hash and emit verified-vs-stale envelope including a git-diff for each stale entry — surfaces post-baseline file mutations to /ccanvil-audit
+# input: (none)
+# output: stdout JSON {verified[], stale[{path, diff}]}
+# output: exit-codes 0 ok, 1 missing-lockfile
+# depends-on: jq
+# depends-on: file_hash
+# depends-on: git
+# side-effect: reads-lockfile-and-files
+# side-effect: reads-git-history
+# failure-mode: missing-lockfile | exit=1 | visible=stderr-Error-LOCKFILE-not-found | mitigation=run-init-first
+# contract: read-only
+# anchor: BTS-246 (manifest seed)
 cmd_hash_check() {
+  # @side-effect: reads-lockfile-and-files
+  # @side-effect: reads-git-history
   if [[ ! -f "$LOCKFILE" ]]; then
+    # @failure-mode: missing-lockfile
     echo "Error: $LOCKFILE not found. Run 'manifest-check.sh init <readme>' first." >&2
     return 1
   fi
@@ -278,10 +347,26 @@ cmd_hash_check() {
 #
 # Output: JSON { path, type, identity, size_bytes }
 # ---------------------------------------------------------------------------
+# @manifest
+# purpose: Extract identity metadata from a file by type — shell scripts get their leading comment block, markdown gets YAML frontmatter + first heading, other gets first 3 lines — emits JSON {path, type, identity, size_bytes} so /ccanvil-audit can quickly classify what each file is without reading the whole file
+# input: positional <file>
+# output: stdout JSON {path, type, identity, size_bytes}
+# output: exit-codes 0 ok, 1 file-missing
+# depends-on: jq
+# depends-on: wc
+# depends-on: tr
+# depends-on: head
+# depends-on: printf
+# side-effect: reads-target-file
+# failure-mode: file-missing | exit=1 | visible=stderr-Error-File-does-not-exist | mitigation=verify-path
+# contract: read-only-classification
+# anchor: BTS-246 (manifest seed)
 cmd_extract_identity() {
+  # @side-effect: reads-target-file
   local filepath="${1:?Usage: manifest-check.sh extract-identity <file>}"
 
   if [[ ! -f "$filepath" ]]; then
+    # @failure-mode: file-missing
     echo "Error: File does not exist: $filepath" >&2
     return 1
   fi
@@ -364,7 +449,30 @@ cmd_extract_identity() {
 # Input: path to README
 # Output: JSON report
 # ---------------------------------------------------------------------------
+# @manifest
+# purpose: Run the full manifest audit — combines parse + existence-check + hash-check + extract-identity into one pass and emits a four-bucket envelope (verified, stale, missing_from_disk, missing_from_manifest) plus summary counts so /ccanvil-audit reports a single comprehensive view
+# input: positional <readme>
+# output: stdout JSON {verified[], stale[], missing_from_disk[], missing_from_manifest[], summary{total, verified, stale, missing_from_disk, missing_from_manifest}}
+# output: exit-codes 0 ok, 1 readme-missing
+# caller: skill:/ccanvil-audit
+# depends-on: jq
+# depends-on: cmd_parse
+# depends-on: cmd_extract_identity
+# depends-on: file_hash
+# depends-on: git
+# depends-on: find
+# depends-on: sort
+# depends-on: printf
+# side-effect: reads-readme-and-files
+# side-effect: reads-git-history
+# failure-mode: readme-missing | exit=1 | visible=stderr-from-cmd_parse | mitigation=verify-readme-path
+# contract: read-only-no-mutations
+# contract: lockfile-optional
+# anchor: BTS-246 (manifest seed)
 cmd_check() {
+  # @failure-mode: readme-missing
+  # @side-effect: reads-readme-and-files
+  # @side-effect: reads-git-history
   local readme="${1:?Usage: manifest-check.sh check <readme>}"
 
   local entries
@@ -498,13 +606,30 @@ cmd_check() {
 # Input: one or more file paths
 # Output: updates LOCKFILE
 # ---------------------------------------------------------------------------
+# @manifest
+# purpose: Update one or more lockfile entries to mark them re-verified at the current commit + epoch + sha256 — used after operator review confirms a stale-flagged file is actually canonical, so subsequent /ccanvil-audit runs treat it as baseline-aligned
+# input: positional <path> [<path>...]
+# output: writes lockfile (per-path verified entry + meta last_verified)
+# output: exit-codes 0 ok, 1 missing-positional-or-missing-lockfile
+# depends-on: jq
+# depends-on: file_hash
+# depends-on: git
+# depends-on: date
+# side-effect: writes-lockfile
+# failure-mode: missing-positional | exit=1 | visible=stderr-Usage | mitigation=supply-paths
+# failure-mode: missing-lockfile | exit=1 | visible=stderr-Error-LOCKFILE-not-found | mitigation=run-init-first
+# failure-mode: per-path-missing-warning | exit=0 | visible=stderr-Warning-does-not-exist | mitigation=skip-and-continue
+# contract: per-path-skip-when-missing
+# anchor: BTS-246 (manifest seed)
 cmd_verify() {
   if [[ $# -eq 0 ]]; then
+    # @failure-mode: missing-positional
     echo "Usage: manifest-check.sh verify <path> [<path>...]" >&2
     return 1
   fi
 
   if [[ ! -f "$LOCKFILE" ]]; then
+    # @failure-mode: missing-lockfile
     echo "Error: $LOCKFILE not found. Run 'manifest-check.sh init <readme>' first." >&2
     return 1
   fi
@@ -516,6 +641,7 @@ cmd_verify() {
 
   for path in "$@"; do
     if [[ ! -f "$path" ]]; then
+      # @failure-mode: per-path-missing-warning
       echo "Warning: $path does not exist, skipping." >&2
       continue
     fi
@@ -532,6 +658,7 @@ cmd_verify() {
       --argjson d "$now" \
       '.entries[$p] = {file_hash: $h, verified_at_commit: $c, verified: $d} | .meta.last_verified = $d | .meta.commit = $c' \
       "$LOCKFILE")"
+    # @side-effect: writes-lockfile
     echo "$tmp" > "$LOCKFILE"
 
     echo "Verified: $path"

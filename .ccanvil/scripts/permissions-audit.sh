@@ -209,12 +209,34 @@ check_danger() {
 # Commands
 # ---------------------------------------------------------------------------
 
+# @manifest
+# purpose: Read .claude/settings.json + .claude/settings.local.json, deduplicate Bash permission entries, and classify each as DANGER / UNREVIEWED / REVIEWED based on regex pattern matching and the operator-maintained permissions decision log so /permissions-review can present a triage queue
+# input: --settings-dir <path>
+# input: --log <file>
+# input: --json (machine-readable output)
+# output: stdout JSON envelope or human-readable table (per --json flag) with classification + counts (danger, unreviewed, reviewed)
+# output: exit-codes 0 all-reviewed, 1 unreviewed-present, 2 danger-present-or-parse-error
+# caller: skill:/permissions-review
+# caller: skill:/stasis
+# caller: skill:/recall
+# depends-on: jq
+# depends-on: parse_settings_file
+# depends-on: emit_error_envelope
+# side-effect: reads-settings-files
+# side-effect: reads-permissions-log
+# failure-mode: settings-file-missing | exit=2 | visible=stderr-error-envelope | mitigation=ensure-settings-json-exists
+# failure-mode: log-file-invalid-json | exit=2 | visible=stderr-error-envelope | mitigation=fix-or-rerun-init
+# contract: read-only-classification
+# anchor: BTS-246 (manifest seed)
 cmd_check() {
+  # @side-effect: reads-settings-files
+  # @side-effect: reads-permissions-log
   local settings_file="$SETTINGS_DIR/settings.json"
   local settings_local_file="$SETTINGS_DIR/settings.local.json"
 
   # settings.json must exist
   if [[ ! -f "$settings_file" ]]; then
+    # @failure-mode: settings-file-missing
     emit_error_envelope "$settings_file not found" 2
   fi
 
@@ -238,6 +260,7 @@ cmd_check() {
     log_missing=true
     echo "NOTE: $LOG_FILE not found — run permissions-audit.sh init" >&2
   elif ! jq empty "$LOG_FILE" 2>/dev/null; then
+    # @failure-mode: log-file-invalid-json
     emit_error_envelope "$LOG_FILE is not valid JSON" 2
   else
     log_data=$(jq '.entries // {}' "$LOG_FILE")
@@ -419,12 +442,31 @@ print_text_report() {
 # Init command
 # ---------------------------------------------------------------------------
 
+# @manifest
+# purpose: Initialize or refresh .ccanvil/permissions-log.json by reading every Bash permission entry from settings.json + settings.local.json and seeding stub entries (rationale TODO, reviewer empty) for newly-encountered permissions while preserving every previously-reviewed entry verbatim so /permissions-review's interactive triage flow has a complete inventory to walk
+# input: --settings-dir <path>
+# input: --log <file>
+# output: stdout single status line (Initialized $LOG_FILE: N entries (M new stubs, rest preserved))
+# output: writes .ccanvil/permissions-log.json
+# output: exit-codes 0 ok, 2 settings-missing-or-log-invalid-json
+# caller: skill:/permissions-review
+# depends-on: jq
+# depends-on: parse_settings_file
+# side-effect: writes-permissions-log
+# side-effect: reads-settings-files
+# failure-mode: settings-file-missing | exit=2 | visible=stderr-ERROR-not-found | mitigation=ensure-settings-json-exists
+# failure-mode: log-file-invalid-json | exit=2 | visible=stderr-ERROR-not-valid-JSON | mitigation=delete-or-fix-log-file
+# contract: preserves-existing-reviewed-entries
+# contract: idempotent-on-rerun
+# anchor: BTS-246 (manifest seed)
 cmd_init() {
+  # @side-effect: reads-settings-files
   local settings_file="$SETTINGS_DIR/settings.json"
   local settings_local_file="$SETTINGS_DIR/settings.local.json"
 
   # settings.json must exist
   if [[ ! -f "$settings_file" ]]; then
+    # @failure-mode: settings-file-missing
     echo "ERROR: $settings_file not found" >&2
     exit 2
   fi
@@ -443,6 +485,7 @@ cmd_init() {
   local existing="{}"
   if [[ -f "$LOG_FILE" ]]; then
     if ! jq empty "$LOG_FILE" 2>/dev/null; then
+      # @failure-mode: log-file-invalid-json
       echo "ERROR: $LOG_FILE is not valid JSON" >&2
       exit 2
     fi
@@ -460,6 +503,7 @@ cmd_init() {
   ')
 
   # Write the log file
+  # @side-effect: writes-permissions-log
   jq -n --argjson entries "$merged" '{entries: $entries}' > "$LOG_FILE"
 
   local total
@@ -486,7 +530,25 @@ cmd_init() {
 # Exit: always 0 (read-only review tooling).
 # ---------------------------------------------------------------------------
 
+# @manifest
+# purpose: List every permission entry that exists only in settings.local.json (not in settings.json) and classify each as DELETE (redundant via wildcard cover, dead-path, or env-prefix one-shot whose verb is now broadly allowed) or TRIAGE (needs human judgment) — surfaces the cleanup queue /permissions-review walks at the start of each session
+# input: --settings-dir <path>
+# input: --json (machine-readable output)
+# output: stdout JSON {candidates[], counts{delete, promote, triage, total}} or human-readable table
+# output: exit-codes 0 always (read-only)
+# caller: skill:/permissions-review
+# caller: skill:/stasis
+# caller: skill:/recall
+# depends-on: jq
+# depends-on: parse_settings_file
+# side-effect: reads-settings-files
+# failure-mode: never-fails | exit=0 | visible=empty-or-empty-counts-envelope | mitigation=consumer-checks-counts-total
+# contract: read-only-never-mutates-files
+# contract: empty-output-when-local-file-missing
+# anchor: BTS-246 (manifest seed)
 cmd_promote_review() {
+  # @failure-mode: never-fails
+  # @side-effect: reads-settings-files
   local main_file="$SETTINGS_DIR/settings.json"
   local local_file="$SETTINGS_DIR/settings.local.json"
 
@@ -616,11 +678,38 @@ apply_restore_and_exit() {
   exit 3
 }
 
+# @manifest
+# purpose: Apply a JSONL decisions file to settings.json + settings.local.json + permissions-log.json — pre-validates every line before any mutation, then mutates atomically with .bak rollback via ERR trap (AC-4 atomicity) so /permissions-review's interactive flow can ship a triage batch without partial-write risk
+# input: --decisions <jsonl-file>
+# input: --settings-dir <path>
+# input: --log <file>
+# output: stdout JSON summary {applied, skipped, errors}
+# output: writes settings.json + settings.local.json + permissions-log.json
+# output: exit-codes 0 ok, 2 validation-error-pre-mutation, 3 mid-mutation-failure-rolled-back-via-ERR-trap
+# caller: skill:/permissions-review
+# depends-on: jq
+# depends-on: emit_error_envelope
+# depends-on: apply_restore_and_exit
+# depends-on: mv
+# depends-on: cp
+# side-effect: writes-settings-files
+# side-effect: writes-permissions-log
+# failure-mode: missing-decisions-flag | exit=2 | visible=stderr-error-envelope | mitigation=supply-decisions-flag
+# failure-mode: decisions-file-missing | exit=2 | visible=stderr-error-envelope | mitigation=verify-path
+# failure-mode: malformed-json-line | exit=2 | visible=stderr-error-envelope | mitigation=fix-line
+# failure-mode: missing-permission-field | exit=2 | visible=stderr-error-envelope | mitigation=add-permission-key
+# failure-mode: accept-danger-incomplete | exit=2 | visible=stderr-error-envelope-required-non-empty | mitigation=fill-risk-rationale-efficiency_justification-reviewer
+# failure-mode: mid-mutation-rollback | exit=3 | visible=ERR-trap-restores-from-bak | mitigation=re-run-after-fix
+# contract: pre-validates-every-line-before-any-mutation
+# contract: atomic-rollback-via-bak-files-on-mid-stream-failure
+# anchor: BTS-246 (manifest seed)
 cmd_apply() {
   if [[ -z "$DECISIONS_FILE" ]]; then
+    # @failure-mode: missing-decisions-flag
     emit_error_envelope "apply requires --decisions <file>" 2
   fi
   if [[ ! -f "$DECISIONS_FILE" ]]; then
+    # @failure-mode: decisions-file-missing
     emit_error_envelope "decisions file not found: $DECISIONS_FILE" 2
   fi
 
@@ -634,6 +723,7 @@ cmd_apply() {
     [[ -z "$line" ]] && continue
 
     if ! echo "$line" | jq -e . >/dev/null 2>&1; then
+      # @failure-mode: malformed-json-line
       emit_error_envelope "decisions:$line_no: malformed JSON" 2
     fi
 
@@ -642,6 +732,7 @@ cmd_apply() {
     dec=$(echo "$line" | jq -r '.decision // ""')
 
     if [[ -z "$perm" ]]; then
+      # @failure-mode: missing-permission-field
       emit_error_envelope "decisions:$line_no: missing 'permission' field" 2
     fi
 
@@ -654,6 +745,7 @@ cmd_apply() {
           local _v
           _v=$(echo "$line" | jq -r --arg k "$_f" '.[$k] // ""')
           if [[ -z "$_v" || "$_v" == "TODO" ]]; then
+            # @failure-mode: accept-danger-incomplete
             emit_error_envelope "decisions:$line_no: accept-danger requires non-empty '$_f' (got empty or 'TODO')" 2
           fi
         done
@@ -694,6 +786,7 @@ cmd_apply() {
   # second cp fails after first succeeds) is restored, not orphaned.
   _APPLY_LOCAL_FILE="$local_file"
   _APPLY_MAIN_FILE="$main_file"
+  # @failure-mode: mid-mutation-rollback
   trap apply_restore_and_exit ERR
   if [[ "$needs_local_bak" -eq 1 && -f "$local_file" ]]; then
     cp "$local_file" "$local_file.bak"
@@ -727,6 +820,7 @@ cmd_apply() {
         local tmp
         tmp=$(mktemp)
         jq --arg p "$perm" '.permissions.allow |= map(select(. != $p))' "$local_file" > "$tmp"
+        # @side-effect: writes-settings-files
         mv "$tmp" "$local_file"
         applied=$((applied+1))
         ;;
@@ -771,6 +865,7 @@ cmd_apply() {
            --arg eff "$_eff" --arg rev "$_rev" \
            '.entries[$p] = {risk: $risk, rationale: $rat, efficiency_justification: $eff, reviewer: $rev, accept_danger: true}' \
            "$LOG_FILE" > "$tmp_log"
+        # @side-effect: writes-permissions-log
         mv "$tmp_log" "$LOG_FILE"
         applied=$((applied+1))
         ;;
@@ -801,14 +896,38 @@ cmd_apply() {
 # Constructs the JSON line via jq (never hand-assembled), appends with
 # POSIX O_APPEND for line-atomicity under PIPE_BUF.
 # ---------------------------------------------------------------------------
+# @manifest
+# purpose: Validate one decision (delete | promote | keep-local | accept-danger) against the same vocabulary cmd_apply uses, then atomically append a single JSONL-formed decision to the buffer file via O_APPEND so /permissions-review can build up the decisions batch one row at a time without race-prone Write+cat+rm dances
+# input: --buffer <file>
+# input: --permission <perm>
+# input: --decision <delete|promote|keep-local|accept-danger>
+# input: --risk / --rationale / --efficiency / --reviewer (required when decision=accept-danger)
+# output: writes one JSON line appended to buffer file
+# output: exit-codes 0 ok, 2 missing-flag-or-bad-decision-or-incomplete-accept-danger
+# caller: skill:/permissions-review
+# depends-on: jq
+# depends-on: emit_error_envelope
+# depends-on: tr
+# side-effect: appends-to-buffer-file
+# failure-mode: missing-buffer-flag | exit=2 | visible=stderr-error-envelope | mitigation=supply-buffer-flag
+# failure-mode: missing-permission-flag | exit=2 | visible=stderr-error-envelope | mitigation=supply-permission-flag
+# failure-mode: missing-decision-flag | exit=2 | visible=stderr-error-envelope | mitigation=supply-decision-flag
+# failure-mode: bad-decision-value | exit=2 | visible=stderr-unknown-decision | mitigation=use-vocabulary
+# failure-mode: accept-danger-incomplete-flags | exit=2 | visible=stderr-non-empty-required | mitigation=supply-all-four
+# contract: line-atomic-append-under-PIPE_BUF
+# contract: same-vocabulary-as-cmd_apply
+# anchor: BTS-246 (manifest seed)
 cmd_decision_append() {
   if [[ -z "$BUFFER_FILE" ]]; then
+    # @failure-mode: missing-buffer-flag
     emit_error_envelope "decision-append requires --buffer <file>" 2
   fi
   if [[ -z "$PERMISSION" ]]; then
+    # @failure-mode: missing-permission-flag
     emit_error_envelope "decision-append requires --permission <perm>" 2
   fi
   if [[ -z "$DECISION" ]]; then
+    # @failure-mode: missing-decision-flag
     emit_error_envelope "decision-append requires --decision <delete|promote|keep-local|accept-danger>" 2
   fi
 
@@ -823,11 +942,13 @@ cmd_decision_append() {
           local lower="$(echo "$_f" | tr '[:upper:]' '[:lower:]')"
           # Field name in the emitted JSON for efficiency is efficiency_justification;
           # error message uses the friendly flag name for operator clarity.
+          # @failure-mode: accept-danger-incomplete-flags
           emit_error_envelope "accept-danger requires non-empty --${lower} (got empty or 'TODO')" 2
         fi
       done
       ;;
     *)
+      # @failure-mode: bad-decision-value
       emit_error_envelope "unknown decision '$DECISION' (expected delete|promote|keep-local|accept-danger)" 2
       ;;
   esac
@@ -850,6 +971,7 @@ cmd_decision_append() {
       '{permission:$p, decision:$d}')
   fi
 
+  # @side-effect: appends-to-buffer-file
   echo "$json_line" >> "$BUFFER_FILE"
 }
 
@@ -916,8 +1038,28 @@ scan_hooks_for_verb() {
   echo "$accum"
 }
 
+# @manifest
+# purpose: Compute deterministic per-row context for one permission entry — emits {permission, source_files, matched_pattern, matched_hooks, introduced_in} so /permissions-review can show, for each row, where the entry lives, what DANGER pattern matched, what hooks gate the leading verb, and which commit introduced the string
+# input: positional <permission>
+# input: --settings-dir <path>
+# output: stdout JSON envelope {permission, source_files, matched_pattern, matched_hooks, introduced_in}
+# output: exit-codes 0 ok, 2 missing-positional
+# caller: skill:/permissions-review
+# depends-on: jq
+# depends-on: strip_bash_wrapper
+# depends-on: check_danger
+# depends-on: extract_leading_verb
+# depends-on: scan_hooks_for_verb
+# depends-on: git
+# depends-on: head
+# side-effect: reads-settings-files
+# side-effect: reads-git-history
+# failure-mode: missing-positional | exit=2 | visible=stderr-ERROR-entry-context-requires | mitigation=supply-permission-arg
+# contract: read-only-deterministic
+# anchor: BTS-246 (manifest seed)
 cmd_entry_context() {
   if [[ -z "$ENTRY_CONTEXT_PERM" ]]; then
+    # @failure-mode: missing-positional
     echo "ERROR: entry-context requires a permission argument" >&2
     exit 2
   fi
@@ -925,6 +1067,7 @@ cmd_entry_context() {
   local perm="$ENTRY_CONTEXT_PERM"
 
   # source_files: which settings file(s) contain the permission, sorted.
+  # @side-effect: reads-settings-files
   local source_files='[]'
   local main_file="$SETTINGS_DIR/settings.json"
   local local_file="$SETTINGS_DIR/settings.local.json"
@@ -965,6 +1108,7 @@ cmd_entry_context() {
     local log_line
     # Review CONCERN 2: scope git log to $SETTINGS_DIR rather than hardcoding
     # .claude/. Otherwise non-default --settings-dir silently returns null.
+    # @side-effect: reads-git-history
     log_line=$(git log -S "$perm" --reverse --pretty=format:'%h%x09%s' \
       -- "$SETTINGS_DIR/settings.json" "$SETTINGS_DIR/settings.local.json" 2>/dev/null | head -1 || true)
     if [[ -n "$log_line" ]]; then

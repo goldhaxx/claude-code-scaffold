@@ -163,3 +163,24 @@
 .ccanvil/scripts/linear-query.sh:cmd_save_document
 .ccanvil/scripts/linear-query.sh:cmd_trash_document
 .ccanvil/scripts/linear-query.sh:cmd_document_history
+
+# BTS-246 — Session 7: small mega-scripts batch.
+# Batch 1 — permissions-audit.sh.
+.ccanvil/scripts/permissions-audit.sh:cmd_check
+.ccanvil/scripts/permissions-audit.sh:cmd_init
+.ccanvil/scripts/permissions-audit.sh:cmd_promote_review
+.ccanvil/scripts/permissions-audit.sh:cmd_apply
+.ccanvil/scripts/permissions-audit.sh:cmd_decision_append
+.ccanvil/scripts/permissions-audit.sh:cmd_entry_context
+# Batch 2 — manifest-check.sh.
+.ccanvil/scripts/manifest-check.sh:cmd_parse
+.ccanvil/scripts/manifest-check.sh:cmd_check_existence
+.ccanvil/scripts/manifest-check.sh:cmd_init
+.ccanvil/scripts/manifest-check.sh:cmd_hash_check
+.ccanvil/scripts/manifest-check.sh:cmd_extract_identity
+.ccanvil/scripts/manifest-check.sh:cmd_check
+.ccanvil/scripts/manifest-check.sh:cmd_verify
+# Batch 3 — operations.sh + context-budget.sh.
+.ccanvil/scripts/operations.sh:cmd_resolve
+.ccanvil/scripts/operations.sh:cmd_exec
+.ccanvil/scripts/context-budget.sh:cmd_check

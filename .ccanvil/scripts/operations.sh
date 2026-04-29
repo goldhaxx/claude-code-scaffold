@@ -830,11 +830,37 @@ external_adapter() {
 # Subcommands
 # ---------------------------------------------------------------------------
 
+# @manifest
+# purpose: Resolve a logical operation name (idea.add, ticket.transition, work.resolve, etc.) to a provider-specific invocation envelope by reading routing config — branches on local-vs-external provider, dispatches to local_adapter or external_adapter, and emits the {provider, mechanism, invocation} JSON callers eval to actually run the operation
+# input: positional <op>
+# input: env OP_ARGS
+# output: stdout JSON envelope {provider, mechanism, invocation, contract}
+# output: exit-codes 0 ok, 1 unknown-operation-or-missing-provider-config
+# caller: skill:/idea
+# caller: skill:/spec
+# caller: skill:/recall
+# caller: skill:/stasis
+# caller: skill:/activate
+# caller: skill:/land
+# depends-on: jq
+# depends-on: is_valid_operation
+# depends-on: read_config
+# depends-on: operation_group
+# depends-on: local_adapter
+# depends-on: external_adapter
+# side-effect: reads-config-files
+# failure-mode: unknown-operation | exit=1 | visible=stderr-ERROR-unknown-operation | mitigation=use-documented-op-name
+# failure-mode: missing-provider-config | exit=1 | visible=stderr-ERROR-no-entry-in-integrations-providers | mitigation=add-provider-config
+# contract: explicit-prefix-overrides-routing
+# contract: work-ticket-backlog-groups-inherit-idea-routing
+# anchor: BTS-246 (manifest seed)
 cmd_resolve() {
+  # @side-effect: reads-config-files
   local op="$1"
 
   # Validate operation name
   if ! is_valid_operation "$op"; then
+    # @failure-mode: unknown-operation
     echo "ERROR: unknown operation \"$op\"" >&2
     exit 1
   fi
@@ -898,6 +924,7 @@ cmd_resolve() {
   if [[ "$op" != "work.resolve" && "$provider_config" == "{}" ]]; then
     local group
     group=$(operation_group "$op")
+    # @failure-mode: missing-provider-config
     echo "ERROR: provider \"$routed_provider\" is configured for $group but has no entry in integrations.providers" >&2
     exit 1
   fi
@@ -908,11 +935,26 @@ cmd_resolve() {
   external_adapter "$op" "$routed_provider" "$mechanism" "$provider_config" "$OP_ARGS"
 }
 
+# @manifest
+# purpose: Resolve an operation via cmd_resolve and execute it directly when the mechanism is bash or http (eval the .invocation.command) — for mcp-mechanism resolutions, emit the envelope verbatim so the caller dispatches externally. Provides a one-shot "do the thing" verb when the caller doesn't need the resolution envelope back
+# input: positional <op>
+# input: env OP_ARGS (forwarded to cmd_resolve)
+# output: stdout output of the resolved command (for bash/http) or the resolution envelope (for mcp)
+# output: exit-codes inherits from resolved command (0 ok, non-zero on dispatch failure), 1 unknown-operation
+# depends-on: jq
+# depends-on: cmd_resolve
+# side-effect: dispatches-resolved-command
+# failure-mode: unknown-operation-from-resolve | exit=1 | visible=stderr-from-cmd_resolve | mitigation=use-documented-op-name
+# contract: bash-and-http-both-eval-via-invocation-command
+# contract: mcp-mechanism-emits-envelope-for-external-dispatch
+# anchor: BTS-246 (manifest seed)
 cmd_exec() {
   local op="$1"
 
   # Resolve the operation to get routing info
   local resolution
+  # @failure-mode: unknown-operation-from-resolve
+  # @side-effect: dispatches-resolved-command
   resolution=$(cmd_resolve "$op")
 
   local mechanism
