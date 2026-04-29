@@ -155,3 +155,7 @@
 # Batch 3 — issue mutations.
 .ccanvil/scripts/linear-query.sh:cmd_create_relation
 .ccanvil/scripts/linear-query.sh:cmd_save_issue
+# Batch 4 — document core.
+.ccanvil/scripts/linear-query.sh:cmd_resolve_document_id
+.ccanvil/scripts/linear-query.sh:cmd_get_document
+.ccanvil/scripts/linear-query.sh:cmd_document_updated_at

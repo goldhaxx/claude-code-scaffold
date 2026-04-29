@@ -947,21 +947,47 @@ main() {
 # -----------------------------------------------------------------------------
 BTS_NS="5b8e4a8e-4f3c-4d2a-9c1e-bf204550b91d"
 
+# @manifest
+# purpose: Deterministically derive a Linear-Document UUID from (BTS_NS, kind, ticket) by SHA-256-hashing the composite input and substituting RFC 4122 v4 version + variant nibbles — provides stable, no-network UUIDs for the SSOT-Linear flow's spec/plan/stasis Documents so artifact-write upserts hit the same target across sessions
+# input: --kind <spec|plan|feature-stasis|session-stasis>
+# input: --ticket <ticket-id>
+# input: env BTS_NS (namespace prefix)
+# output: stdout one v4-shaped UUID
+# output: exit-codes 0 ok, 2 missing-or-bad-flag
+# caller: cmd_artifact_read
+# caller: cmd_artifact_write
+# depends-on: shasum
+# depends-on: awk
+# depends-on: printf
+# depends-on: _die
+# side-effect: pure-no-mutations
+# failure-mode: unknown-flag | exit=2 | visible=stderr-resolve-document-id-unknown-flag | mitigation=use-documented-flag-name
+# failure-mode: missing-kind | exit=2 | visible=stderr-resolve-document-id-kind-is-required | mitigation=supply-kind-flag
+# failure-mode: missing-ticket | exit=2 | visible=stderr-resolve-document-id-ticket-is-required | mitigation=supply-ticket-flag
+# failure-mode: bad-kind | exit=2 | visible=stderr-resolve-document-id-unknown-kind | mitigation=use-spec-plan-feature-stasis-or-session-stasis
+# contract: deterministic-no-network
+# contract: emits-rfc-4122-v4-shaped-uuid-not-rng-actual-v4
+# anchor: BTS-245 (manifest seed)
 cmd_resolve_document_id() {
+  # @side-effect: pure-no-mutations
   local kind="" ticket=""
   while [[ $# -gt 0 ]]; do
     case "$1" in
       --kind)   kind="${2:-}";   shift 2 ;;
       --ticket) ticket="${2:-}"; shift 2 ;;
+      # @failure-mode: unknown-flag
       *) _die 2 "resolve-document-id: unknown flag: $1" ;;
     esac
   done
 
+  # @failure-mode: missing-kind
   [[ -z "$kind" ]]   && _die 2 "resolve-document-id: --kind is required"
+  # @failure-mode: missing-ticket
   [[ -z "$ticket" ]] && _die 2 "resolve-document-id: --ticket is required"
 
   case "$kind" in
     spec|plan|feature-stasis|session-stasis) ;;
+    # @failure-mode: bad-kind
     *) _die 2 "resolve-document-id: unknown kind '$kind' (must be one of: spec, plan, feature-stasis, session-stasis)" ;;
   esac
 
@@ -988,9 +1014,30 @@ cmd_resolve_document_id() {
     "${hash:0:8}" "${hash:8:4}" "$time_hi" "$clock_seq_hi" "${hash:20:12}"
 }
 
+# @manifest
+# purpose: Wrap the Linear GraphQL `document` query — fetches a single document by UUID or slug including title, markdown content, parent linkage (project/issue), and authorship metadata so the SSOT-Linear flow's artifact-read primitive can hydrate spec/plan/stasis bodies into local-shape envelopes
+# input: positional <id-or-slug>
+# input: env LINEAR_API_KEY
+# output: stdout JSON {id, title, content, slugId, url, updatedAt, createdAt, updatedBy, creator, project, issue}
+# output: exit-codes 0 ok, 2 missing-api-key-or-missing-positional, 3 graphql-or-http-error
+# caller: cmd_artifact_read
+# depends-on: jq
+# depends-on: _require_api_key
+# depends-on: _post_graphql
+# depends-on: _die
+# side-effect: reads-env-LINEAR_API_KEY
+# side-effect: makes-graphql-http-call
+# failure-mode: missing-api-key | exit=2 | visible=stderr-LINEAR_API_KEY-not-set | mitigation=set-LINEAR_API_KEY
+# failure-mode: missing-positional | exit=2 | visible=stderr-get-document-requires-an-id-or-slug | mitigation=supply-id-or-slug
+# failure-mode: graphql-or-http-error | exit=3 | visible=stderr-linear-query-GraphQL-error | mitigation=verify-id-and-key
+# contract: read-only-no-mutations
+# anchor: BTS-245 (manifest seed)
 cmd_get_document() {
+  # @failure-mode: missing-api-key
+  # @side-effect: reads-env-LINEAR_API_KEY
   _require_api_key
   if [[ $# -lt 1 ]]; then
+    # @failure-mode: missing-positional
     _die 2 "get-document requires an id or slug (e.g., 5b8e4a8e-... or spec-bts-204)"
   fi
   local id="$1"
@@ -1008,6 +1055,8 @@ cmd_get_document() {
     }
   }'
 
+  # @failure-mode: graphql-or-http-error
+  # @side-effect: makes-graphql-http-call
   _post_graphql "$query" "$variables" | jq '.document | {
     id: .id,
     title: .title,
@@ -1140,9 +1189,31 @@ cmd_save_document() {
   fi
 }
 
+# @manifest
+# purpose: Wrap the Linear GraphQL `document` query projecting only id + updatedAt + updatedBy — used by BTS-237's concurrent-edit guard to detect mid-flight document mutation by comparing remote updatedAt against the timestamp captured before the local write composed
+# input: positional <id-or-slug>
+# input: env LINEAR_API_KEY
+# output: stdout JSON {id, updatedAt, updatedBy}
+# output: exit-codes 0 ok, 2 missing-api-key-or-missing-positional, 3 graphql-or-http-error
+# caller: cmd_artifact_write
+# depends-on: jq
+# depends-on: _require_api_key
+# depends-on: _post_graphql
+# depends-on: _die
+# side-effect: reads-env-LINEAR_API_KEY
+# side-effect: makes-graphql-http-call
+# failure-mode: missing-api-key | exit=2 | visible=stderr-LINEAR_API_KEY-not-set | mitigation=set-LINEAR_API_KEY
+# failure-mode: missing-positional | exit=2 | visible=stderr-document-updated-at-requires-an-id | mitigation=supply-id-or-slug
+# failure-mode: graphql-or-http-error | exit=3 | visible=stderr-linear-query-GraphQL-error | mitigation=verify-id-and-key
+# contract: read-only-no-mutations
+# contract: minimal-projection-for-fast-conflict-check
+# anchor: BTS-245 (manifest seed)
 cmd_document_updated_at() {
+  # @failure-mode: missing-api-key
+  # @side-effect: reads-env-LINEAR_API_KEY
   _require_api_key
   if [[ $# -lt 1 ]]; then
+    # @failure-mode: missing-positional
     _die 2 "document-updated-at requires an id or slug"
   fi
   local id="$1"
@@ -1157,6 +1228,8 @@ cmd_document_updated_at() {
     }
   }'
 
+  # @failure-mode: graphql-or-http-error
+  # @side-effect: makes-graphql-http-call
   _post_graphql "$query" "$variables" | jq '.document | {
     id: .id,
     updatedAt: .updatedAt,
