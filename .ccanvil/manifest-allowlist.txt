@@ -152,3 +152,6 @@
 .ccanvil/scripts/linear-query.sh:cmd_get_issue
 .ccanvil/scripts/linear-query.sh:cmd_list_projects
 .ccanvil/scripts/linear-query.sh:cmd_list_documents
+# Batch 3 — issue mutations.
+.ccanvil/scripts/linear-query.sh:cmd_create_relation
+.ccanvil/scripts/linear-query.sh:cmd_save_issue

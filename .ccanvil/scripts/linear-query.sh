@@ -573,7 +573,33 @@ cmd_list_projects() {
 # IssueRelation entities created via issueRelationCreate. This subcommand
 # wraps that mutation as a clean primitive; cmd_save_issue's --duplicate-of
 # convenience flag dispatches through this path internally.
+# @manifest
+# purpose: Wrap the Linear GraphQL `issueRelationCreate` mutation — creates one of three relation types (duplicate, blocks, related) between two issues so the duplicate-of dispatch path in /idea triage and cmd_save_issue's BTS-228 follow-up can record the link as a proper IssueRelation entity (not as an IssueUpdateInput field, which Linear rejects)
+# input: --type <duplicate|blocks|related>
+# input: --issue <uuid>
+# input: --related <uuid>
+# input: env LINEAR_API_KEY
+# output: stdout JSON {id, type}
+# output: exit-codes 0 ok, 2 missing-api-key-or-unknown-flag-or-missing-required-flag-or-bad-type, 3 graphql-or-http-error
+# caller: cmd_save_issue
+# depends-on: jq
+# depends-on: _require_api_key
+# depends-on: _post_graphql
+# depends-on: _die
+# side-effect: reads-env-LINEAR_API_KEY
+# side-effect: creates-issue-relation-on-linear
+# failure-mode: missing-api-key | exit=2 | visible=stderr-LINEAR_API_KEY-not-set | mitigation=set-LINEAR_API_KEY
+# failure-mode: unknown-flag | exit=2 | visible=stderr-create-relation-unknown-flag | mitigation=use-documented-flag-name
+# failure-mode: missing-type | exit=2 | visible=stderr-create-relation-type-required | mitigation=supply-type-flag
+# failure-mode: bad-type | exit=2 | visible=stderr-create-relation-unknown-type | mitigation=use-duplicate-blocks-or-related
+# failure-mode: missing-issue | exit=2 | visible=stderr-create-relation-issue-required | mitigation=supply-issue-uuid
+# failure-mode: missing-related | exit=2 | visible=stderr-create-relation-related-required | mitigation=supply-related-uuid
+# failure-mode: graphql-or-http-error | exit=3 | visible=stderr-linear-query-GraphQL-error | mitigation=verify-uuids-and-key
+# contract: requires-uuid-not-identifier-shaped-args
+# anchor: BTS-245 (manifest seed)
 cmd_create_relation() {
+  # @failure-mode: missing-api-key
+  # @side-effect: reads-env-LINEAR_API_KEY
   _require_api_key
   local rel_type="" issue_id="" related_id=""
   while [[ $# -gt 0 ]]; do
@@ -581,15 +607,20 @@ cmd_create_relation() {
       --type)    rel_type="$2";    shift 2 ;;
       --issue)   issue_id="$2";    shift 2 ;;
       --related) related_id="$2";  shift 2 ;;
+      # @failure-mode: unknown-flag
       *) _die 2 "create-relation: unknown flag: $1" ;;
     esac
   done
   case "$rel_type" in
     duplicate|blocks|related) ;;
+    # @failure-mode: missing-type
     "")  _die 2 "create-relation: --type required (duplicate|blocks|related)" ;;
+    # @failure-mode: bad-type
     *)   _die 2 "create-relation: unknown --type '$rel_type' (valid: duplicate|blocks|related)" ;;
   esac
+  # @failure-mode: missing-issue
   [[ -z "$issue_id" ]]   && _die 2 "create-relation: --issue required (issue UUID)"
+  # @failure-mode: missing-related
   [[ -z "$related_id" ]] && _die 2 "create-relation: --related required (related issue UUID)"
 
   local query='mutation IssueRelationCreate($input: IssueRelationCreateInput!) {
@@ -605,10 +636,56 @@ cmd_create_relation() {
     --arg relatedIssueId "$related_id" \
     '{input:{type:$type, issueId:$issueId, relatedIssueId:$relatedIssueId}}')
 
+  # @failure-mode: graphql-or-http-error
+  # @side-effect: creates-issue-relation-on-linear
   _post_graphql "$query" "$variables" | jq '.issueRelationCreate.issueRelation | {id, type}'
 }
 
+# @manifest
+# purpose: Wrap the Linear GraphQL `issueCreate` and `issueUpdate` mutations under a single command — branches on --id presence (update vs create), supports name-based resolution of team/project/label via list-teams/list-projects/list-labels round-trips, layers stdin-JSON over CLI flags so callers can pre-compose IssueCreateInput shape, and dispatches duplicate-of as a follow-up issueRelationCreate (BTS-228 — Linear rejects duplicate-of inside IssueUpdateInput)
+# input: --id <issue-id-for-update>
+# input: --title / --description / --state / --team-id / --project-id / --parent-id / --duplicate-of / --priority / --label-ids / --team / --project / --labels / --input-json -
+# input: env LINEAR_API_KEY
+# input: stdin JSON object when --input-json - is supplied
+# output: stdout JSON {id, title}
+# output: exit-codes 0 ok, 2 missing-api-key-or-unknown-flag-or-missing-required-on-create-or-unresolved-name-or-bad-stdin-json, 3 graphql-or-http-error
+# caller: skill:/idea
+# caller: skill:/spec
+# caller: skill:/activate
+# caller: skill:/land
+# depends-on: jq
+# depends-on: _require_api_key
+# depends-on: _post_graphql
+# depends-on: _die
+# depends-on: cmd_list_teams
+# depends-on: cmd_list_projects
+# depends-on: cmd_list_labels
+# depends-on: cmd_create_relation
+# depends-on: cat
+# depends-on: head
+# depends-on: printf
+# side-effect: reads-env-LINEAR_API_KEY
+# side-effect: reads-stdin-when-input-json
+# side-effect: creates-or-updates-issue-on-linear
+# side-effect: creates-issue-relation-when-duplicate-of-supplied
+# failure-mode: missing-api-key | exit=2 | visible=stderr-LINEAR_API_KEY-not-set | mitigation=set-LINEAR_API_KEY
+# failure-mode: unknown-flag | exit=2 | visible=stderr-save-issue-unknown-flag | mitigation=use-documented-flag-name
+# failure-mode: unresolved-team-name | exit=2 | visible=stderr-save-issue-team-did-not-resolve | mitigation=verify-team-name-or-use-team-id
+# failure-mode: unresolved-project-name | exit=2 | visible=stderr-save-issue-project-did-not-resolve | mitigation=verify-project-name-or-use-project-id
+# failure-mode: unresolved-label-name | exit=2 | visible=stderr-save-issue-labels-did-not-resolve | mitigation=verify-label-name-and-team-scoping
+# failure-mode: bad-input-json-shape | exit=2 | visible=stderr-save-issue-input-json-not-valid-object | mitigation=supply-valid-json-object-on-stdin
+# failure-mode: input-json-non-stdin | exit=2 | visible=stderr-save-issue-input-json-only-supports-stdin | mitigation=use-input-json-dash
+# failure-mode: missing-create-title | exit=2 | visible=stderr-save-issue-create-requires-title | mitigation=supply-title-or-include-in-stdin-json
+# failure-mode: missing-create-team-id | exit=2 | visible=stderr-save-issue-create-requires-team-id | mitigation=supply-team-id-or-team-name
+# failure-mode: graphql-or-http-error | exit=3 | visible=stderr-linear-query-GraphQL-error | mitigation=verify-input-shape-and-key
+# failure-mode: relation-create-warning | exit=0 | visible=stderr-WARN-save-issue-relation-create-failed | mitigation=run-printed-create-relation-retry-recipe
+# contract: cli-flags-override-stdin-json-on-key-collision
+# contract: id-flags-take-precedence-over-name-resolution-flags
+# contract: duplicate-of-dispatched-as-separate-relation-mutation-after-update
+# anchor: BTS-245 (manifest seed)
 cmd_save_issue() {
+  # @failure-mode: missing-api-key
+  # @side-effect: reads-env-LINEAR_API_KEY
   _require_api_key
 
   # Mode selector: presence of --id triggers update; absence triggers create.
@@ -636,6 +713,7 @@ cmd_save_issue() {
       --team)          team_name="$2";    shift 2 ;;
       --project)       project_name="$2"; shift 2 ;;
       --labels)        labels_csv="$2";   shift 2 ;;
+      # @failure-mode: unknown-flag
       *) _die 2 "save-issue: unknown flag: $1" ;;
     esac
   done
@@ -651,12 +729,14 @@ cmd_save_issue() {
   if [[ -z "$team_id" && -n "$team_name" ]]; then
     team_id=$(cmd_list_teams --name "$team_name" | jq -r '.[0].id // ""')
     if [[ -z "$team_id" ]]; then
+      # @failure-mode: unresolved-team-name
       _die 2 "save-issue: --team '$team_name' did not resolve to a team id"
     fi
   fi
   if [[ -z "$project_id" && -n "$project_name" ]]; then
     project_id=$(cmd_list_projects --name "$project_name" | jq -r '.[0].id // ""')
     if [[ -z "$project_id" ]]; then
+      # @failure-mode: unresolved-project-name
       _die 2 "save-issue: --project '$project_name' did not resolve to a project id"
     fi
   fi
@@ -686,6 +766,7 @@ cmd_save_issue() {
         lid=$(cmd_list_labels --workspace-scoped | jq -r --arg n "$label_name" '.[] | select(.name == $n) | .id' | head -1)
       fi
       if [[ -z "$lid" ]]; then
+        # @failure-mode: unresolved-label-name
         _die 2 "save-issue: --labels '$label_name' did not resolve to a label id"
       fi
       resolved_ids="${resolved_ids:+${resolved_ids},}${lid}"
@@ -700,12 +781,15 @@ cmd_save_issue() {
   local stdin_input='{}'
   if [[ -n "$input_json" ]]; then
     if [[ "$input_json" == "-" ]]; then
+      # @side-effect: reads-stdin-when-input-json
       stdin_input=$(cat)
     else
+      # @failure-mode: input-json-non-stdin
       _die 2 "save-issue: --input-json currently supports only '-' (stdin)"
     fi
     # Validate it's a JSON object before merging.
     if ! printf '%s' "$stdin_input" | jq -e 'type == "object"' >/dev/null 2>&1; then
+      # @failure-mode: bad-input-json-shape
       _die 2 "save-issue: --input-json - did not receive a valid JSON object on stdin"
     fi
   fi
@@ -753,9 +837,11 @@ cmd_save_issue() {
     # gap before the API call. Check the merged input, not just the flag vars,
     # so stdin-JSON-only callers (BTS-166) aren't flagged spuriously.
     if [[ -z "$(echo "$input" | jq -r '.title // ""')" ]]; then
+      # @failure-mode: missing-create-title
       _die 2 "save-issue create requires --title"
     fi
     if [[ -z "$(echo "$input" | jq -r '.teamId // ""')" ]]; then
+      # @failure-mode: missing-create-team-id
       _die 2 "save-issue create requires --team-id (use list-teams to discover)"
     fi
 
@@ -764,6 +850,8 @@ cmd_save_issue() {
     }'
     local variables
     variables=$(jq -n --argjson i "$input" '{input:$i}')
+    # @failure-mode: graphql-or-http-error
+    # @side-effect: creates-or-updates-issue-on-linear
     _post_graphql "$query" "$variables" | jq '.issueCreate.issue | {
       id: .identifier,
       title: .title
@@ -790,7 +878,9 @@ cmd_save_issue() {
       local issue_uuid
       issue_uuid=$(printf '%s' "$update_response" | jq -r '.issueUpdate.issue.id // empty')
       if [[ -n "$issue_uuid" ]]; then
+        # @side-effect: creates-issue-relation-when-duplicate-of-supplied
         if ! cmd_create_relation --type duplicate --issue "$issue_uuid" --related "$duplicate_of" >/dev/null 2>&1; then
+          # @failure-mode: relation-create-warning
           echo "WARN: save-issue: relation-create-failed — type=duplicate from=$id to=$duplicate_of" >&2
           echo "Retry: bash linear-query.sh create-relation --type duplicate --issue $issue_uuid --related $duplicate_of" >&2
         fi
