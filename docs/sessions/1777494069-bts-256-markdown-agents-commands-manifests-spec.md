@@ -13,7 +13,7 @@ Per `docs/manifest-rollout.md` Session 10 — extend Layer 2 (Self-Describing Sy
 ## Job To Be Done
 
 **When** I'm cold-reading an agent or command and need to know its purpose, callers, dependencies, side-effects, and failure modes,
-**I want to** read the YAML frontmatter `manifest:` block at the top of the file using the same field set as cmd_* primitives,
+**I want to** read the YAML frontmatter `manifest:` block at the top of the file using the same field set as cmd\_\* primitives,
 **So that** every agent + command surface in `.claude/agents/` and `.claude/commands/` is self-describing and drift-guard catches regressions across the full operator-callable preset.
 
 ## Acceptance Criteria
@@ -32,7 +32,7 @@ Each criterion is independently testable. Binary pass/fail.
 ## Affected Files
 
 | File | Change |
-|------|--------|
+| -- | -- |
 | `.claude/agents/ccanvil-differ.md` | Modified — frontmatter manifest block added |
 | `.claude/agents/drift-analyst.md` | Modified — frontmatter manifest block added |
 | `.claude/agents/spec-writer.md` | Modified — frontmatter manifest block added |
@@ -57,24 +57,24 @@ Each criterion is independently testable. Binary pass/fail.
 
 ## Dependencies
 
-- **Requires:** BTS-239 (manifest substrate), BTS-240 (markdown frontmatter parser), BTS-252 (SIGPIPE fix in `_target_body_grep`)
-- **Blocked by:** none
+* **Requires:** BTS-239 (manifest substrate), BTS-240 (markdown frontmatter parser), BTS-252 (SIGPIPE fix in `_target_body_grep`)
+* **Blocked by:** none
 
 ## Out of Scope
 
-- Layer 3 / `code-reviewer` integration — Session 11
-- Manifest-aware `/review` skill — Session 11
-- Modifying agent/command bodies — frontmatter-only ship
-- Closing `docs/manifest-rollout.md` — Session 11 closes the doc
+* Layer 3 / `code-reviewer` integration — Session 11
+* Manifest-aware `/review` skill — Session 11
+* Modifying agent/command bodies — frontmatter-only ship
+* Closing `docs/manifest-rollout.md` — Session 11 closes the doc
 
 ## Implementation Notes
 
-- **Frontmatter shape:** existing seeded agent (`code-reviewer`) and command (`pr`) carry the canonical shape. Read them for the field structure. Existing top-level `name:` / `description:` keys must be preserved; the `manifest:` key is added as a sibling.
-- **id field:** for both agents and commands, use the file's basename without `.md` (e.g., `ccanvil-differ`, `activate`, `plan`, `review`). The `id` MUST match what the validator's basename fallback would compute. Allowlist entries are path-only (no `:fn` suffix needed since basename match is exact).
-- **Caller resolution:** for commands, common callers are `skill:/<name>` from skills that route through them (e.g., `skill:/pr` references `commit.md` patterns). For agents, common callers are commands or skills that spawn them via the Agent tool.
-- **Depends-on:** body-scoped grep via the BTS-240 markdown branch (frontmatter is stripped before grep). Declare deps that the body actually mentions by name (script names, helper functions referenced in command examples).
-- **Anchor:** at least one origin BTS, plus BTS-256 (manifest seed) for traceability.
-- **No body changes:** every agent and command body is unchanged. Only the frontmatter is touched.
+* **Frontmatter shape:** existing seeded agent (`code-reviewer`) and command (`pr`) carry the canonical shape. Read them for the field structure. Existing top-level `name:` / `description:` keys must be preserved; the `manifest:` key is added as a sibling.
+* **id field:** for both agents and commands, use the file's basename without `.md` (e.g., `ccanvil-differ`, `activate`, `plan`, `review`). The `id` MUST match what the validator's basename fallback would compute. Allowlist entries are path-only (no `:fn` suffix needed since basename match is exact).
+* **Caller resolution:** for commands, common callers are `skill:/<name>` from skills that route through them (e.g., `skill:/pr` references `commit.md` patterns). For agents, common callers are commands or skills that spawn them via the Agent tool.
+* **Depends-on:** body-scoped grep via the BTS-240 markdown branch (frontmatter is stripped before grep). Declare deps that the body actually mentions by name (script names, helper functions referenced in command examples).
+* **Anchor:** at least one origin BTS, plus BTS-256 (manifest seed) for traceability.
+* **No body changes:** every agent and command body is unchanged. Only the frontmatter is touched.
 
 <!-- NODE-SPECIFIC-START -->
 <!-- Add project-specific content below this line. -->

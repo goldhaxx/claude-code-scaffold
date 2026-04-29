@@ -4,7 +4,7 @@
 > Work: linear:BTS-256
 > Created: 1777491760
 > Subject: Markdown agents + commands manifests
-> Status: In Progress
+> Status: Complete
 
 ## Summary
 
