@@ -7,6 +7,27 @@
 # never-snuff). Per-step explicit guards + durable failure log via
 # _hook_record_failure helper.
 
+# @manifest
+# purpose: PreCompact hook that stamps `$CLAUDE_PROJECT_DIR/.ccanvil/state/last-compact-ts` with the current epoch right before /compact runs. Read by docs-check.sh's recommend logic to distinguish "session-about-to-end" (suggest /compact) from "session-just-resumed" (suggest forward action). Telemetry-hook pattern (BTS-209): loud on failure, never blocks, never snuffs.
+# input: env CLAUDE_PROJECT_DIR (falls back to PWD)
+# output: file `.ccanvil/state/last-compact-ts` (epoch integer)
+# output: exit-code 0 always (telemetry hook never blocks /compact)
+# output: stderr on failure: WARN with reason
+# output: durable failure log: `.ccanvil/state/hook-failures.log` (via _hook_record_failure)
+# caller: .claude/settings.json
+# depends-on: date
+# depends-on: mkdir
+# side-effect: writes-marker-file
+# side-effect: writes-stderr-warn-on-failure
+# failure-mode: never-fails | exit=0 | visible=stderr-WARN-and-failure-log-on-mkdir-or-write-failure | mitigation=verify-state-dir-writable
+# contract: never-blocks
+# contract: idempotent-on-rerun
+# contract: helper-fallback-when-_lib/record-failure.sh-missing
+# anchor: BTS-113 (origin)
+# anchor: BTS-208 (timing instrumentation)
+# anchor: BTS-209 (durable failure logging)
+# anchor: BTS-251 (manifest seed)
+
 set +e
 
 ROOT="${CLAUDE_PROJECT_DIR:-$(pwd)}"
@@ -32,11 +53,14 @@ _t_start=$(_timer_start)
 
 mkdir -p "$STATE_DIR" 2>/dev/null
 if [[ ! -d "$STATE_DIR" ]]; then
+  # @failure-mode: never-fails
+  # @side-effect: writes-stderr-warn-on-failure
   echo "WARN: post-compact-marker: cannot create $STATE_DIR" >&2
   _hook_record_failure "post-compact-marker" "mkdir" "cannot create $STATE_DIR"
   exit 0
 fi
 
+# @side-effect: writes-marker-file
 if ! date +%s > "$MARKER_PATH" 2>/dev/null; then
   echo "WARN: post-compact-marker: cannot write $MARKER_PATH" >&2
   _hook_record_failure "post-compact-marker" "write-marker" "cannot write $MARKER_PATH"

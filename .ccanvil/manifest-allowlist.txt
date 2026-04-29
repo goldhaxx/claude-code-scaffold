@@ -184,3 +184,24 @@
 .ccanvil/scripts/operations.sh:cmd_resolve
 .ccanvil/scripts/operations.sh:cmd_exec
 .ccanvil/scripts/context-budget.sh:cmd_check
+
+# BTS-251 — Session 8: file-level shell + hooks.
+# Batch 1 — single-purpose scripts (5).
+.ccanvil/scripts/bats-lint.sh
+.ccanvil/scripts/bats-report.sh
+.ccanvil/scripts/fetch-license.sh
+.ccanvil/scripts/fix-cloudflare-certs.sh
+.ccanvil/scripts/security-audit.sh
+# Batch 2 — hooks (12).
+.claude/hooks/branch-name-lint.sh
+.claude/hooks/commit-msg-lint.sh
+.claude/hooks/format-on-write.sh
+.claude/hooks/guard-destructive.sh
+.claude/hooks/guard-force-push.sh
+.claude/hooks/guard-workspace.sh
+.claude/hooks/lint-on-write.sh
+.claude/hooks/permission-request-suppress-redundant.sh
+.claude/hooks/post-compact-marker.sh
+.claude/hooks/protect-files.sh
+.claude/hooks/protect-main.sh
+.claude/hooks/session-boundary.sh

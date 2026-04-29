@@ -4,6 +4,31 @@
 # AND read verbs with exfiltration risk (cat) when any absolute or
 # tilde-prefixed path argument falls outside the workspace
 # ($HOME/projects/) or whitelisted system temp dirs.
+
+# @manifest
+# purpose: PreToolUse Bash workspace fence — block file-mutation verbs (rm, cp, mv, chmod, chown, bash, find, sort) and the exfiltration-risk read verb (cat) when any absolute or tilde-prefixed path argument falls outside the workspace ($HOME/projects/) or the whitelisted system temp dirs (/tmp/, /private/tmp/, /var/folders/, /private/var/folders/, /dev/{null,stdin,stdout,stderr}). Path-token shape gate: tokenize the command, scan for /-prefixed or ~/-prefixed arguments, block on any out-of-workspace path. Tolerates apostrophe-quoted paths (BTS-234), slash-command lexical fragments (BTS-173/210/234), and pure-slash jq operators (BTS-169). git commit carve-out (BTS-151) prevents narrative false-positives. ALLOW_OUTSIDE_WORKSPACE=1 bypass.
+# input: stdin JSON envelope `{tool_input:{command}}` from Claude Code's PreToolUse contract
+# input: env HOME (drives $WORKSPACE = $HOME/projects)
+# input: env CLAUDE_PROJECT_DIR (used to lazy-build slash-command name allowlist from `.claude/commands/*.md` and `.claude/skills/<name>/`)
+# output: exit-codes 0 allow / 2 block
+# output: stderr on block: BLOCKED with offending path + bypass hint
+# caller: .claude/settings.json
+# depends-on: jq
+# side-effect: writes-stderr-on-block
+# failure-mode: out-of-workspace-path-blocked | exit=2 | visible=stderr-BLOCKED-with-offending-path-and-bypass-hint | mitigation=move-target-into-workspace-or-ALLOW_OUTSIDE_WORKSPACE=1-prefix
+# contract: never-blocks-non-gated-verbs
+# contract: env-prefix-bypass-via-ALLOW_OUTSIDE_WORKSPACE=1
+# contract: git-commit-carve-out-prevents-narrative-false-positives
+# contract: slash-command-name-allowlist-prevents-/idea-/recall-etc-false-positives
+# contract: tolerates-apostrophe-quoting-on-path-tokens
+# anchor: BTS-151 (git commit carve-out)
+# anchor: BTS-153 (cat read-side gate)
+# anchor: BTS-157 (sort -o gate via path-token iteration)
+# anchor: BTS-169 (pure-slash jq operator passthrough)
+# anchor: BTS-173 (slash-command lexical-fragment allowlist)
+# anchor: BTS-210 (trailing-prose-punct tolerance on slash-command)
+# anchor: BTS-234 (apostrophe-quoted path strip + 's possessive)
+# anchor: BTS-251 (manifest seed)
 #
 # `sort` is gated because of `-o FILE` (writer flag) and shell-redirect
 # targets (BTS-157). Path-token iteration handles both incidentally;
@@ -196,6 +221,8 @@ for token in $NORMALIZED; do
 done
 
 if [[ -n "$violation" ]]; then
+  # @failure-mode: out-of-workspace-path-blocked
+  # @side-effect: writes-stderr-on-block
   echo "BLOCKED: path '$violation' is outside the workspace ($WORKSPACE/)." >&2
   echo "  To bypass: ALLOW_OUTSIDE_WORKSPACE=1 <command>" >&2
   exit 2

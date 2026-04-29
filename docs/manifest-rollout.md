@@ -19,16 +19,16 @@ This document sequences the program so each session has a tight, completable obj
 
 | Container | Units | Done | Remaining |
 |---|---:|---:|---:|
-| Shell function-level (`cmd_*` in mega-scripts) | 130 | 55 | 75 |
-| Shell file-level (single-purpose scripts) | 5 | 0 | 5 |
-| Hooks (file-level) | 12 | 0 | 12 |
+| Shell function-level (`cmd_*` in mega-scripts) | 130 | 130 | 0 |
+| Shell file-level (single-purpose scripts) | 5 | 5 | 0 |
+| Hooks (file-level) | 12 | 12 | 0 |
 | Markdown — skills | 9 | 1 | 8 |
 | Markdown — rules | 7 | 1 | 6 |
 | Markdown — agents | 5 | 1 | 4 |
 | Markdown — commands | 16 | 1 | 15 |
-| **Total** | **184** | **59** | **125** |
+| **Total** | **184** | **151** | **33** |
 
-**Last updated:** 2026-04-28 — BTS-242 Session 3 shipped (24 capture+audit primitives in `docs-check.sh`). `docs-check.sh` is now 100% manifest-covered (51/51 cmd_*).
+**Last updated:** 2026-04-29 — BTS-251 Session 8 shipped (17 file-level manifests: 5 single-purpose scripts + 12 hooks). All shell substrate now 100% manifest-covered (151/151). Remaining 33 units are markdown frontmatter manifests (Sessions 9 + 10 + 11).
 
 Per-mega-script breakdown (function-level):
 | Script | cmd_* | Done |

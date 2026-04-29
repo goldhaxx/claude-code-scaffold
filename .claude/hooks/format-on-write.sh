@@ -6,6 +6,22 @@
 #
 # Exit 0 always — formatting failures should never block writes.
 
+# @manifest
+# purpose: PostToolUse Write/Edit/MultiEdit hook that reads `.claude/lint.json`'s `formatters` map (glob → `{format, name}`) and runs the matching formatter (Prettier / Ruff / gofmt / rustfmt / shfmt / etc.) on the just-written file. Provider-neutral; ships zero built-in formatters — every project chooses. Never blocks: a formatter failure is silent (formatters mutate-on-pass; if the formatter fails, leave the file alone).
+# input: stdin JSON envelope `{tool_input:{file_path}}` from Claude Code's PostToolUse contract
+# input: file `.claude/lint.json` (config — `{formatters:{<glob>:{format, name}}}`)
+# output: exit-code 0 always
+# output: side-effect — file rewritten in place by the matched formatter
+# caller: .claude/settings.json
+# depends-on: jq
+# depends-on: awk
+# side-effect: rewrites-file-via-formatter
+# failure-mode: never-fails | exit=0 | visible=silent | mitigation=formatter-errors-suppressed-deliberately
+# contract: never-blocks
+# contract: silent-when-no-config-or-no-matching-glob
+# contract: silent-when-formatter-binary-missing
+# anchor: BTS-251 (manifest seed)
+
 set -uo pipefail
 
 INPUT=$(cat)
@@ -48,6 +64,7 @@ if [[ -f "$LINT_CONFIG" ]] && command -v jq >/dev/null 2>&1; then
       if [[ -n "$format_cmd" && "$format_cmd" != "null" ]]; then
         base_cmd=$(echo "$format_cmd" | awk '{print $1}')
         if command -v "$base_cmd" >/dev/null 2>&1; then
+          # @side-effect: rewrites-file-via-formatter
           $format_cmd "$FILE_PATH" 2>/dev/null || true
         fi
       fi
@@ -55,4 +72,5 @@ if [[ -f "$LINT_CONFIG" ]] && command -v jq >/dev/null 2>&1; then
   done < <(jq -r '.formatters | keys[]' "$LINT_CONFIG" 2>/dev/null)
 fi
 
+# @failure-mode: never-fails
 exit 0

@@ -4,6 +4,31 @@
 # Exit 2 = hard block (stderr becomes Claude's feedback)
 # Exit 0 = allow
 
+# @manifest
+# purpose: PreToolUse Bash gate that blocks the canonical irreversible-or-catastrophic shell footguns — `git reset --hard`, `git branch -D`, `git push --delete`, `git clean -f`, `chmod 777|666|000`, `rm` with combined recursive+force flags (cluster `-rf` or both long forms `--recursive --force`), and `find` with `-delete`/`-exec`/`-execdir`/`-okdir`. Path-agnostic shape gates: the destructive verb shape is the catastrophic footgun regardless of target. ALLOW_DESTRUCTIVE=1 prefix bypass for deliberate use; BTS-151 carve-out for `git commit` so destructive-shape strings in commit messages don't trip the gate.
+# input: stdin JSON envelope `{tool_input:{command}}` from Claude Code's PreToolUse contract
+# output: exit-codes 0 allow / 2 block (per matched gate)
+# output: stderr on block: BLOCKED reason + bypass hint
+# caller: .claude/settings.json
+# depends-on: jq
+# side-effect: writes-stderr-on-block
+# failure-mode: hard-reset-blocked | exit=2 | visible=stderr-BLOCKED-with-bypass-hint | mitigation=ALLOW_DESTRUCTIVE=1-prefix
+# failure-mode: force-branch-delete-blocked | exit=2 | visible=stderr-BLOCKED-with-bypass-hint | mitigation=branch--d-for-merged-or-bypass
+# failure-mode: remote-delete-blocked | exit=2 | visible=stderr-BLOCKED-with-bypass-hint | mitigation=ALLOW_DESTRUCTIVE=1-prefix
+# failure-mode: clean-force-blocked | exit=2 | visible=stderr-BLOCKED-with-bypass-hint | mitigation=ALLOW_DESTRUCTIVE=1-prefix
+# failure-mode: chmod-broad-mode-blocked | exit=2 | visible=stderr-BLOCKED-with-mode-and-bypass | mitigation=use-symbolic-mode-or-bypass
+# failure-mode: rm-recursive-force-blocked | exit=2 | visible=stderr-BLOCKED-with-bypass-hint | mitigation=split-flags-or-bypass
+# failure-mode: find-traverse-mutate-blocked | exit=2 | visible=stderr-BLOCKED-with-bypass-hint | mitigation=ALLOW_DESTRUCTIVE=1-prefix
+# contract: never-blocks-non-matching-commands
+# contract: env-prefix-bypass-via-ALLOW_DESTRUCTIVE=1
+# contract: git-commit-carve-out-prevents-narrative-false-positives
+# anchor: BTS-151 (git-commit carve-out)
+# anchor: BTS-155 (find traverse-and-mutate gate)
+# anchor: BTS-156 (rm recursive-force shape gate)
+# anchor: BTS-157 (sort -o gate — handled in guard-workspace)
+# anchor: BTS-202 (rm cluster-vs-cross-line refinement)
+# anchor: BTS-251 (manifest seed)
+
 set -uo pipefail
 
 INPUT=$(cat)
@@ -32,6 +57,8 @@ fi
 
 # Block git reset --hard
 if [[ "$COMMAND" =~ git[[:space:]]+reset[[:space:]]+--hard ]]; then
+  # @failure-mode: hard-reset-blocked
+  # @side-effect: writes-stderr-on-block
   echo "BLOCKED: git reset --hard discards commits and changes." >&2
   echo "  To bypass: ALLOW_DESTRUCTIVE=1 git reset --hard ..." >&2
   exit 2
@@ -39,6 +66,7 @@ fi
 
 # Block git branch -D (force delete, uppercase D only)
 if [[ "$COMMAND" =~ git[[:space:]]+branch[[:space:]]+-D[[:space:]] || "$COMMAND" =~ git[[:space:]]+branch[[:space:]]+-D$ ]]; then
+  # @failure-mode: force-branch-delete-blocked
   echo "BLOCKED: git branch -D force-deletes unmerged branches." >&2
   echo "  Use git branch -d for merged branches, or bypass: ALLOW_DESTRUCTIVE=1 git branch -D ..." >&2
   exit 2
@@ -46,6 +74,7 @@ fi
 
 # Block git push origin --delete
 if [[ "$COMMAND" =~ git[[:space:]]+push[[:space:]]+[^[:space:]]+[[:space:]]+--delete ]]; then
+  # @failure-mode: remote-delete-blocked
   echo "BLOCKED: git push --delete removes remote branches." >&2
   echo "  To bypass: ALLOW_DESTRUCTIVE=1 git push origin --delete ..." >&2
   exit 2
@@ -53,6 +82,7 @@ fi
 
 # Block git clean -f (any variant with -f flag)
 if [[ "$COMMAND" =~ git[[:space:]]+clean[[:space:]]+-[a-zA-Z]*f ]]; then
+  # @failure-mode: clean-force-blocked
   echo "BLOCKED: git clean -f permanently deletes untracked files." >&2
   echo "  To bypass: ALLOW_DESTRUCTIVE=1 git clean -f ..." >&2
   exit 2
@@ -63,6 +93,7 @@ fi
 # focuses on the catastrophic numeric-mode footguns.
 if [[ "$COMMAND" =~ chmod[[:space:]]+(-R[[:space:]]+)?(777|666|000)([[:space:]]|$) ]]; then
   mode="${BASH_REMATCH[2]}"
+  # @failure-mode: chmod-broad-mode-blocked
   echo "BLOCKED: chmod $mode grants or denies world-permissions broadly." >&2
   echo "  To bypass: ALLOW_DESTRUCTIVE=1 chmod $mode ..." >&2
   exit 2
@@ -100,6 +131,7 @@ if [[ "$COMMAND" =~ (^|[[:space:]])rm[[:space:]] ]]; then
     trip=1
   fi
   if (( trip == 1 )); then
+    # @failure-mode: rm-recursive-force-blocked
     echo "BLOCKED: rm with recursive AND force flags deletes without prompt." >&2
     echo "  To bypass: ALLOW_DESTRUCTIVE=1 rm ..." >&2
     exit 2
@@ -119,6 +151,7 @@ fi
 # quote, not by quote chars in the boundary class.
 if [[ "$COMMAND" =~ (^|[[:space:]\;\|\&])find[[:space:]] ]] \
    && [[ "$COMMAND" =~ (^|[[:space:]])(-delete|-exec|-execdir|-okdir)([[:space:]]|$) ]]; then
+  # @failure-mode: find-traverse-mutate-blocked
   echo "BLOCKED: find with -delete or -exec/-execdir/-okdir traverses then mutates." >&2
   echo "  To bypass: ALLOW_DESTRUCTIVE=1 find ..." >&2
   exit 2

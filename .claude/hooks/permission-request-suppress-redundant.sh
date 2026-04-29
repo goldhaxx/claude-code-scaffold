@@ -6,6 +6,25 @@
 # .claude/settings.local.json. Closes the upstream source of the drift
 # that BTS-144's promote-review classifier and BTS-149's /permissions-review
 # clean up periodically.
+
+# @manifest
+# purpose: PermissionRequest hook (BTS-150) that intercepts redundant Bash exact-form permission prompts. When the requested command matches a broader allow pattern already in `.claude/settings.json` (token-prefix `Bash(<prefix>:*)`, path-prefix `Bash(<dir>/:*)`, or exact `Bash(<exact>)`), emits a `hookSpecificOutput` JSON with `decision.behavior=allow` + `destination=session` so the redundant rule never persists to `.claude/settings.local.json`. Closes the upstream of the drift that `/permissions-review` (BTS-149) cleans up periodically.
+# input: stdin JSON envelope from Claude Code's PermissionRequest contract `{tool_name, tool_input:{command}, ...}`
+# input: env CLAUDE_PROJECT_DIR (falls back to PWD for tests)
+# input: file `.claude/settings.json` (`.permissions.allow[]` Bash patterns)
+# output: stdout: `hookSpecificOutput` JSON envelope on intercept (allow + session-scoped rule)
+# output: stdout: empty on passthrough (Claude Code's default prompt flow)
+# output: exit-code 0 always (the decision rides in stdout JSON, not exit code)
+# caller: .claude/settings.json
+# depends-on: jq
+# side-effect: writes-stdout-hook-decision
+# failure-mode: never-fails | exit=0 | visible=passthrough-on-non-Bash-or-no-command-or-no-settings-or-no-match | mitigation=passthrough-is-the-default
+# contract: never-blocks
+# contract: passthrough-on-non-Bash-tool
+# contract: passthrough-when-no-pattern-matches
+# contract: session-scoped-rule-evaporates-at-session-end
+# anchor: BTS-150 (origin)
+# anchor: BTS-251 (manifest seed)
 #
 # Hook contract: receives a JSON envelope on stdin (tool_name, tool_input,
 # permission_suggestions, etc.); emits a hookSpecificOutput JSON on stdout
@@ -80,6 +99,8 @@ $matched || exit 0
 # command form so any subsequent identical call in this session is matched
 # by the in-memory rule and skips the prompt. session-scope means the rule
 # evaporates at session end; nothing reaches settings.local.json.
+# @side-effect: writes-stdout-hook-decision
+# @failure-mode: never-fails
 jq -n --arg cmd "$cmd" '{
   hookSpecificOutput: {
     hookEventName: "PermissionRequest",

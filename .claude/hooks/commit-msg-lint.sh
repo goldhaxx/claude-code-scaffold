@@ -4,6 +4,19 @@
 # Format: type(scope): description  OR  type: description
 # Exit 0 always (warn, never block).
 
+# @manifest
+# purpose: PostToolUse Bash advisory that scans `git commit -m "<msg>"` invocations and warns to stderr when the message doesn't match conventional-commit shape `type(scope)?: description` (types: feat / fix / refactor / test / docs / chore / perf). Skips heredoc and interactive commits (no -m flag visible). Never blocks — same nudge philosophy as branch-name-lint.
+# input: stdin JSON envelope `{tool_input:{command}}` from Claude Code's PostToolUse contract
+# output: exit-code 0 always
+# output: stderr on convention violation: WARNING with the offending message + expected shape
+# caller: .claude/settings.json
+# depends-on: jq
+# side-effect: writes-stderr-on-violation
+# failure-mode: never-fails | exit=0 | visible=stderr-WARNING-when-convention-broken | mitigation=use-type(scope):-prefix
+# contract: never-blocks
+# contract: silent-on-non-commit-or-heredoc-or-interactive-commits
+# anchor: BTS-251 (manifest seed)
+
 set -uo pipefail
 
 INPUT=$(cat)
@@ -32,10 +45,12 @@ fi
 # Validate conventional commit format
 VALID_TYPES="feat|fix|refactor|test|docs|chore|perf"
 if [[ ! "$COMMIT_MSG" =~ ^($VALID_TYPES)(\(.+\))?:[[:space:]].+ ]]; then
+  # @side-effect: writes-stderr-on-violation
   echo "WARNING: Commit message does not follow conventional format" >&2
   echo "  Got: $COMMIT_MSG" >&2
   echo "  Expected: type(scope): description" >&2
   echo "  Valid types: feat, fix, refactor, test, docs, chore, perf" >&2
 fi
 
+# @failure-mode: never-fails
 exit 0

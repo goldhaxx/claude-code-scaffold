@@ -7,6 +7,27 @@
 # Exit 2 blocks the write (syntax error must be fixed).
 # Exit 0 allows the write to proceed.
 
+# @manifest
+# purpose: PostToolUse Write/Edit/MultiEdit hook that runs syntax validators on the just-written file. Hub-shipped universal linters (`bash -n` for *.sh, `jq empty` for *.json, `python3 yaml.safe_load` for *.yaml). Project-specific linters layered via `.claude/lint.json` (`{linters:{<glob>:{check, name}}}`). Blocks the write on any syntax error so broken code never lands. Also enforces a context-budget gate: always-loaded files (CLAUDE.md, .ccanvil/guide/index.md, .claude/rules/*.md) blocked at 40k chars; general files warned at 80k.
+# input: stdin JSON envelope `{tool_input:{file_path}}` from Claude Code's PostToolUse contract
+# input: file `.claude/lint.json` (config — `{linters:{<glob>:{check, name}}}`)
+# output: exit-codes 0 allow / 2 block (syntax error or always-loaded-too-large)
+# output: stderr on block: BLOCKED reason + linter error output
+# output: stderr on warn: WARNING for general-file-size > 80k
+# caller: .claude/settings.json
+# depends-on: jq
+# depends-on: bash
+# depends-on: mktemp
+# side-effect: writes-stderr-on-block-or-warn
+# side-effect: writes-temp-file-for-linter-stderr
+# failure-mode: syntax-error-blocked | exit=2 | visible=stderr-BLOCKED-with-linter-error | mitigation=fix-syntax-then-retry-write
+# failure-mode: always-loaded-too-large | exit=2 | visible=stderr-BLOCKED-with-char-count | mitigation=split-file-or-move-out-of-always-loaded-set
+# contract: never-blocks-on-missing-file
+# contract: project-linters-loaded-only-when-config-and-jq-present
+# contract: linter-skipped-when-binary-missing
+# anchor: BTS-26 (always-loaded size limits)
+# anchor: BTS-251 (manifest seed)
+
 set -uo pipefail
 
 INPUT=$(cat)
@@ -15,6 +36,7 @@ FILE_PATH=$(echo "$INPUT" | jq -r '.tool_input.file_path // empty')
 [[ -z "$FILE_PATH" ]] && exit 0
 [[ ! -f "$FILE_PATH" ]] && exit 0
 
+# @side-effect: writes-temp-file-for-linter-stderr
 LINT_ERROR=$(mktemp)
 trap 'rm -f "$LINT_ERROR"' EXIT
 
@@ -25,6 +47,8 @@ trap 'rm -f "$LINT_ERROR"' EXIT
 run_linter() {
   local desc="$1"; shift
   if ! "$@" 2>"$LINT_ERROR"; then
+    # @failure-mode: syntax-error-blocked
+    # @side-effect: writes-stderr-on-block-or-warn
     echo "BLOCKED: $desc — $FILE_PATH" >&2
     cat "$LINT_ERROR" >&2
     exit 2
@@ -84,6 +108,7 @@ if [[ -n "$char_count" ]]; then
   done
 
   if [[ "$is_always_loaded" == "true" && "$char_count" -gt "$MAX_ALWAYS_LOADED" ]]; then
+    # @failure-mode: always-loaded-too-large
     echo "BLOCKED: File too large for always-loaded context — $FILE_PATH (${char_count} chars > ${MAX_ALWAYS_LOADED} limit). See BTS-26." >&2
     exit 2
   elif [[ "$char_count" -gt "$MAX_GENERAL" ]]; then

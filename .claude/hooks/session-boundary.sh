@@ -11,6 +11,32 @@
 # BTS-209: durable failure recording via _hook_record_failure helper —
 # every WARN path also appends to .ccanvil/state/hook-failures.log.
 
+# @manifest
+# purpose: SessionStart hook that bumps a persistent session counter and stamps an ISO-8601 local boundary so /stasis (write side) and /recall (read side) can surface session number + human-readable local time. State files in `.ccanvil/state/` (gitignored, per-node). Telemetry-hook pattern: loud on failure, never blocks, never snuffs. Atomic write via mktemp+mv. tz resolved from $TZ → /etc/localtime symlink → timedatectl → date %Z fallback.
+# input: env CLAUDE_PROJECT_DIR (falls back to PWD)
+# input: env TZ (preferred timezone source if set)
+# output: file `.ccanvil/state/session-counter` (integer, monotonically incrementing)
+# output: file `.ccanvil/state/session-boundary` (JSON `{epoch, iso, tz}`)
+# output: exit-code 0 always
+# output: stderr on failure: WARN with reason
+# output: durable failure log: `.ccanvil/state/hook-failures.log`
+# caller: .claude/settings.json
+# depends-on: jq
+# depends-on: date
+# depends-on: mktemp
+# side-effect: writes-counter-file
+# side-effect: writes-boundary-file
+# side-effect: writes-stderr-warn-on-failure
+# failure-mode: never-fails | exit=0 | visible=stderr-WARN-on-state-dir-or-mktemp-or-write-failure | mitigation=verify-state-dir-writable
+# contract: never-blocks-session-start
+# contract: counter-increments-on-each-invocation
+# contract: counter-resets-to-1-on-non-integer-corruption
+# contract: atomic-write-via-mktemp-mv
+# anchor: BTS-206 (origin)
+# anchor: BTS-208 (timing instrumentation)
+# anchor: BTS-209 (durable failure logging)
+# anchor: BTS-251 (manifest seed)
+
 set +e
 
 ROOT="${CLAUDE_PROJECT_DIR:-$(pwd)}"
@@ -36,6 +62,8 @@ fi
 _t_start=$(_timer_start)
 
 mkdir -p "$STATE_DIR" 2>/dev/null || {
+  # @failure-mode: never-fails
+  # @side-effect: writes-stderr-warn-on-failure
   echo "WARN: session-boundary: cannot create $STATE_DIR" >&2
   _hook_record_failure "session-boundary" "mkdir-state-dir" "cannot create $STATE_DIR"
   exit 0
@@ -60,6 +88,7 @@ tmp_counter=$(mktemp "$STATE_DIR/.session-counter.XXXXXX" 2>/dev/null) || {
   _hook_record_failure "session-boundary" "mktemp-counter" "cannot create temp counter file"
   exit 0
 }
+# @side-effect: writes-counter-file
 echo "$counter" > "$tmp_counter" 2>/dev/null && \
   mv "$tmp_counter" "$COUNTER_PATH" 2>/dev/null || {
     rm -f "$tmp_counter" 2>/dev/null
@@ -97,6 +126,7 @@ tmp_boundary=$(mktemp "$STATE_DIR/.session-boundary.XXXXXX" 2>/dev/null) || {
   _hook_record_failure "session-boundary" "mktemp-boundary" "cannot create temp boundary file"
   exit 0
 }
+# @side-effect: writes-boundary-file
 jq -n --argjson epoch "$epoch" --arg iso "$iso" --arg tz "$tz" \
   '{epoch:$epoch, iso:$iso, tz:$tz}' > "$tmp_boundary" 2>/dev/null && \
   mv "$tmp_boundary" "$BOUNDARY_PATH" 2>/dev/null || {
