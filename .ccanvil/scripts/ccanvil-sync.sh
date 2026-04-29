@@ -2699,7 +2699,22 @@ cmd_demote() {
   echo "DEMOTED: $file (future pulls will show diff instead of auto-updating)"
 }
 
+# @manifest
+# purpose: List every tracked file in the current project plus (if a lockfile is present) every tracked file in the hub source — diagnostic verb operators run when the lockfile classification is unclear or when verifying a scan_*-helper change
+# input: (none)
+# output: stdout two indented sections (Tracked files in project / Tracked files in hub) with one path per line
+# output: exit-codes 0 ok
+# depends-on: scan_tracked_files
+# depends-on: scan_hub_files
+# depends-on: get_hub_source
+# side-effect: pure-no-mutations
+# failure-mode: hub-section-omitted | exit=0 | visible=stdout-section-absent | mitigation=run-init-first-to-create-lockfile
+# contract: project-section-always-emitted
+# contract: hub-section-conditional-on-lockfile-presence
+# anchor: BTS-244 (manifest seed)
 cmd_scan() {
+  # @side-effect: pure-no-mutations
+  # @failure-mode: hub-section-omitted
   echo "Tracked files in project:"
   scan_tracked_files | while IFS= read -r f; do
     echo "  $f"
@@ -2718,7 +2733,33 @@ cmd_scan() {
 
 # migrate: Copy all hub-managed files to the current project, handle renames, re-init lockfile.
 # Usage: migrate <hub-path> [--dry-run]
+# @manifest
+# purpose: First-time-setup or major-restructuring verb that copies every hub-tracked file into the current project (section-merging delimited markdown, plain-copying everything else), removes legacy stale-named files, renames pre-ccanvil scaffold.json → ccanvil.json, and re-runs cmd_init to rebuild the lockfile in one shot
+# input: positional <hub-path>
+# input: --dry-run (optional; describe-only mode)
+# output: stdout per-file COPIED/MERGED/REMOVED/RENAMED lines plus a final MIGRATE banner
+# output: writes target files + lockfile (rebuilt by cmd_init)
+# output: exit-codes 0 ok, 1 hub-not-found-or-missing-positional
+# depends-on: cmd_init
+# depends-on: cmd_section_merge
+# depends-on: scan_hub_files
+# depends-on: grep
+# depends-on: rm
+# depends-on: mv
+# depends-on: mkdir
+# depends-on: cp
+# depends-on: die
+# side-effect: writes-target-files
+# side-effect: removes-stale-files
+# side-effect: renames-scaffold-json
+# side-effect: rebuilds-lockfile
+# failure-mode: hub-not-found | exit=1 | visible=stderr-die-Hub-not-found-at | mitigation=verify-hub-path
+# failure-mode: missing-positional | exit=1 | visible=stderr-Usage | mitigation=supply-hub-path
+# contract: dry-run-makes-no-mutations
+# contract: destructive-warning-emitted-before-execution
+# anchor: BTS-244 (manifest seed)
 cmd_migrate() {
+  # @failure-mode: missing-positional
   local hub_path="${1:?Usage: ccanvil-sync.sh migrate <hub-path> [--dry-run]}"
   hub_path="${hub_path/#\~/$HOME}"
   local dry_run=false
@@ -2732,6 +2773,7 @@ cmd_migrate() {
     echo "" >&2
   fi
 
+  # @failure-mode: hub-not-found
   [[ -d "$hub_path" ]] || die "Hub not found at: $hub_path"
 
   local dist_root
@@ -2748,6 +2790,7 @@ cmd_migrate() {
       if $dry_run; then
         echo "DRY-RUN: would remove stale file $stale"
       else
+        # @side-effect: removes-stale-files
         rm "$stale"
         echo "REMOVED: $stale (stale name)"
       fi
@@ -2759,6 +2802,7 @@ cmd_migrate() {
     if $dry_run; then
       echo "DRY-RUN: would rename .claude/scaffold.json → .claude/ccanvil.json"
     else
+      # @side-effect: renames-scaffold-json
       mv ".claude/scaffold.json" ".claude/ccanvil.json"
       echo "RENAMED: .claude/scaffold.json → .claude/ccanvil.json"
     fi
@@ -2791,6 +2835,7 @@ cmd_migrate() {
 
     # Plain copy for non-delimited files or new files
     mkdir -p "$(dirname "$file")"
+    # @side-effect: writes-target-files
     cp "$hub_file" "$file"
     echo "COPIED: $file"
     count=$((count + 1))
@@ -2806,6 +2851,7 @@ cmd_migrate() {
   echo "MIGRATE: copied $count files from hub."
 
   # Re-init lockfile
+  # @side-effect: rebuilds-lockfile
   cmd_init "$hub_path"
   echo ""
   echo "MIGRATE complete. Run 'git add -A && git commit' to finalize."
@@ -2813,7 +2859,39 @@ cmd_migrate() {
 
 # register: Add the current project to the hub's registry.
 # Run from a downstream project. Reads hub path from lockfile.
+# @manifest
+# purpose: Register the current downstream project with the hub by upserting an entry keyed by node UUID into hub's .ccanvil/registry.json (preserving last_synced fields), auto-committing the local UUID file so broadcast's dirty-tree pre-check passes, and appending a register event to the hub's events log
+# input: (none)
+# output: stdout REGISTERED status line with name + portable path + node UUID
+# output: writes hub registry.json + hub events log + commits local node UUID file
+# output: exit-codes 0 ok, 1 missing-lockfile-or-registry-write-failure
+# caller: cmd_init
+# depends-on: jq
+# depends-on: require_lockfile
+# depends-on: get_hub_source_raw
+# depends-on: get_or_create_node_uuid
+# depends-on: persist_node_uuid
+# depends-on: normalize_path
+# depends-on: timestamp
+# depends-on: commit_node_file
+# depends-on: append_event
+# depends-on: basename
+# depends-on: pwd
+# depends-on: mktemp
+# depends-on: mkdir
+# depends-on: mv
+# depends-on: rm
+# depends-on: die
+# side-effect: writes-hub-registry
+# side-effect: appends-hub-events-log
+# side-effect: commits-local-node-uuid
+# failure-mode: missing-lockfile | exit=1 | visible=stderr-die-from-require_lockfile | mitigation=run-init-first
+# failure-mode: registry-write-failure | exit=1 | visible=stderr-die-Failed-to-update-registry | mitigation=verify-hub-write-permissions
+# contract: idempotent-by-node-uuid-key
+# contract: preserves-existing-last_synced-fields
+# anchor: BTS-244 (manifest seed)
 cmd_register() {
+  # @failure-mode: missing-lockfile
   require_lockfile
   local hub_root
   hub_root=$(get_hub_source_raw)
@@ -2846,19 +2924,23 @@ cmd_register() {
     '.nodes[$u] = ((.nodes[$u] // {}) + {"name": $n, "path": $p, "registered_at": $t})' \
     "$registry" > "$tmp" || true
   if [[ -s "$tmp" ]] && jq empty "$tmp" 2>/dev/null; then
+    # @side-effect: writes-hub-registry
     mv "$tmp" "$registry"
   else
     rm -f "$tmp"
+    # @failure-mode: registry-write-failure
     die "Failed to update registry"
   fi
 
   echo "REGISTERED: $node_name ($portable_path) [$node_uuid]"
 
   # Auto-commit the node UUID file so broadcast's dirty-tree pre-check passes
+  # @side-effect: commits-local-node-uuid
   commit_node_file ".claude/ccanvil.local.json" \
     "chore(ccanvil): register node $node_name [$node_uuid]"
 
   # Record a register event in the hub's local events log
+  # @side-effect: appends-hub-events-log
   append_event "$hub_root" "$(jq -nc \
     --arg u "$node_uuid" --arg n "$node_name" --arg p "$portable_path" \
     '{event:"register",node_uuid:$u,node_name:$n,path:$p}')"
@@ -2868,9 +2950,29 @@ cmd_register() {
 # Renames ~/.claude/projects/<old-encoded> → <new-encoded> (new = $(pwd))
 # and rewrites embedded "cwd":"<old-path>" fields in every .jsonl session file.
 # Usage: ccanvil-sync.sh relocate <old-absolute-path>
+# @manifest
+# purpose: After an operator runs `mv` to relocate a project directory, re-associate Claude Code's per-project conversation history by renaming ~/.claude/projects/<old-encoded>/ → <new-encoded>/ and rewriting embedded `cwd:` fields inside every captured session jsonl so /recall and /stasis continue to find prior history
+# input: positional <old-absolute-path>
+# output: stdout RELOCATED log line; "No history dir found" line when already relocated
+# output: writes ~/.claude/projects/<new-encoded>/ directory rename + sed rewrites of cwd fields in jsonl files
+# output: exit-codes 0 ok-or-already-relocated, 1 destination-exists-or-rename-failure, 2 missing-or-non-absolute-old-path
+# depends-on: sed
+# depends-on: find
+# depends-on: pwd
+# depends-on: mv
+# side-effect: renames-history-dir
+# side-effect: rewrites-cwd-fields-in-jsonl
+# failure-mode: missing-or-non-absolute-arg | exit=2 | visible=stderr-ERROR-relocate-requires | mitigation=supply-absolute-path
+# failure-mode: destination-exists | exit=1 | visible=stderr-ERROR-destination-history-dir-already-exists | mitigation=resolve-collision-manually
+# failure-mode: rename-failed | exit=1 | visible=stderr-ERROR-rename-failed | mitigation=verify-permissions
+# failure-mode: cwd-rewrite-warning | exit=1 | visible=stderr-WARNING-cwd-rewrite-failed | mitigation=inspect-jsonl-permissions
+# contract: idempotent-on-already-relocated
+# contract: cowardly-refuses-merge
+# anchor: BTS-244 (manifest seed)
 cmd_relocate() {
   local old_path="${1:-}"
   if [[ -z "$old_path" || "$old_path" != /* ]]; then
+    # @failure-mode: missing-or-non-absolute-arg
     echo "ERROR: relocate requires an absolute <old-path>" >&2
     echo "Usage: ccanvil-sync.sh relocate <old-absolute-path>" >&2
     return 2
@@ -2893,17 +2995,22 @@ cmd_relocate() {
   fi
 
   if [[ -d "$new_dir" ]]; then
+    # @failure-mode: destination-exists
     echo "ERROR: destination history dir already exists: $new_dir" >&2
     echo "       Cowardly refusing to merge. Resolve manually." >&2
     return 1
   fi
 
+  # @side-effect: renames-history-dir
+  # @failure-mode: rename-failed
   mv "$old_dir" "$new_dir" || { echo "ERROR: rename failed" >&2; return 1; }
 
   local rc=0
   local old_field="\"cwd\":\"${old_path}\""
   local new_field="\"cwd\":\"${new_path}\""
   while IFS= read -r -d '' jsonl; do
+    # @side-effect: rewrites-cwd-fields-in-jsonl
+    # @failure-mode: cwd-rewrite-warning
     sed -i '' "s|${old_field}|${new_field}|g" "$jsonl" 2>/dev/null || \
       sed -i "s|${old_field}|${new_field}|g" "$jsonl" || \
       { echo "WARNING: cwd rewrite failed for $jsonl" >&2; rc=1; }

@@ -120,3 +120,8 @@
 .ccanvil/scripts/ccanvil-sync.sh:cmd_lock_add
 .ccanvil/scripts/ccanvil-sync.sh:cmd_lock_remove
 .ccanvil/scripts/ccanvil-sync.sh:cmd_lock_set_version
+# Batch 2 — scan/migrate/register/relocate.
+.ccanvil/scripts/ccanvil-sync.sh:cmd_scan
+.ccanvil/scripts/ccanvil-sync.sh:cmd_migrate
+.ccanvil/scripts/ccanvil-sync.sh:cmd_register
+.ccanvil/scripts/ccanvil-sync.sh:cmd_relocate
