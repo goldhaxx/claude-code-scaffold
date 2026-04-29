@@ -22,13 +22,13 @@ This document sequences the program so each session has a tight, completable obj
 | Shell function-level (`cmd_*` in mega-scripts) | 130 | 130 | 0 |
 | Shell file-level (single-purpose scripts) | 5 | 5 | 0 |
 | Hooks (file-level) | 12 | 12 | 0 |
-| Markdown — skills | 9 | 1 | 8 |
-| Markdown — rules | 7 | 1 | 6 |
+| Markdown — skills | 9 | 9 | 0 |
+| Markdown — rules | 7 | 7 | 0 |
 | Markdown — agents | 5 | 1 | 4 |
 | Markdown — commands | 16 | 1 | 15 |
-| **Total** | **184** | **151** | **33** |
+| **Total** | **184** | **165** | **19** |
 
-**Last updated:** 2026-04-29 — BTS-251 Session 8 shipped (17 file-level manifests: 5 single-purpose scripts + 12 hooks). All shell substrate now 100% manifest-covered (151/151). Remaining 33 units are markdown frontmatter manifests (Sessions 9 + 10 + 11).
+**Last updated:** 2026-04-29 — BTS-252 Session 9 shipped (14 markdown frontmatter manifests: 8 skills + 6 rules). All ccanvil skills + rules are now 100% manifest-covered. Substrate fix landed alongside: SIGPIPE-resistant `_target_body_grep` (capture awk output before grep — under `set -o pipefail` the original pipe trips on early-match SIGPIPE for large bodies). Remaining 19 units: 4 agents + 15 commands (Session 10) + Layer 3 ramp (Session 11).
 
 Per-mega-script breakdown (function-level):
 | Script | cmd_* | Done |

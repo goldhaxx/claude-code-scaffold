@@ -205,3 +205,21 @@
 .claude/hooks/protect-files.sh
 .claude/hooks/protect-main.sh
 .claude/hooks/session-boundary.sh
+
+# BTS-252 — Session 9: markdown skills + rules.
+# Batch 1 — skills (8).
+.claude/skills/ccanvil-pull-globals/SKILL.md:ccanvil-pull-globals
+.claude/skills/drift-watchdog/SKILL.md:drift-watchdog
+.claude/skills/idea/SKILL.md:idea
+.claude/skills/radar/SKILL.md:radar
+.claude/skills/recall/SKILL.md:recall
+.claude/skills/ship/SKILL.md:ship
+.claude/skills/stasis/SKILL.md:stasis
+.claude/skills/tdd/SKILL.md:tdd-workflow
+# Batch 2 — rules (6).
+.claude/rules/code-quality.md
+.claude/rules/deterministic-first.md
+.claude/rules/evidence-required-for-captures.md
+.claude/rules/provider-integration.md
+.claude/rules/self-review.md
+.claude/rules/workflow.md

@@ -1,3 +1,30 @@
+---
+manifest:
+  id: provider-integration
+  purpose: Codify the BTS-183 substrate-provider rule — anything reachable from operations.sh that integrates with an external provider exposing both MCP and shell-to-API surfaces (REST/GraphQL/CLI) MUST use the shell-to-API surface, never MCP. MCP is reserved for ad-hoc operator queries from interactive Claude sessions via claude.ai connectors. Captures the 7-row tradeoff matrix that justifies the choice and the OVERRIDE-pattern stubbing convention for tests.
+  input:
+    - "read-only: rule consumed when adding new operations.sh resolvers or extending wrappers"
+  output:
+    - "behavior-shape: forces new substrate verbs to land as shell-to-API subcommands first; rejects mechanism: mcp branches in operations.sh"
+  side-effect:
+    - "shapes-substrate-design (no file mutation; behavioral influence)"
+  failure-mode:
+    - "rule-ignored | exit=n/a | visible=mixed-mode-substrate-drift-then-200-LOC-dead-code-sweep | mitigation=/review-flag-or-stasis-determinism-review"
+  contract:
+    - http-for-substrate
+    - mcp-for-operator-tools-only
+    - new-verbs-land-as-wrapper-subcommands-first
+    - never-add-mechanism-mcp-resolution-for-new-verbs
+    - OVERRIDE-pattern-stubbing-for-tests
+  anchor:
+    - BTS-164 (Linear daily-driver migration MCP→http)
+    - BTS-166 (substrate dispatch via http)
+    - BTS-167 (.env auto-source)
+    - BTS-183 (rule + dead-code sweep)
+    - BTS-203 (LINEAR_QUERY_OVERRIDE stubbing pattern)
+    - BTS-252 (manifest seed)
+---
+
 # Provider Integration: http for substrate, MCP for operator tools
 
 ## The Rule

@@ -1,6 +1,31 @@
 ---
 name: radar
 description: Comprehensive project briefing — connects tactical work to strategic roadmap across all time horizons.
+manifest:
+  id: radar
+  purpose: Comprehensive strategic project briefing — synthesize git activity, active spec, completed specs, untriaged ideas, backlog state, roadmap themes, and current substrate posture into a structured macro-view (Shipped / In Flight / Up Next / Horizon). Connects tactical session work to strategic direction across all time horizons.
+  routes-by: /radar
+  input:
+    - "no positional args (synthesizes from gathered state)"
+    - "reads: docs-check.sh radar-gather, operations.sh exec backlog.list, docs/roadmap.md"
+  output:
+    - "stdout: structured briefing with Shipped / In Flight / Up Next / Horizon sections"
+  caller:
+    - .claude/rules/workflow.md
+  depends-on:
+    - docs-check.sh
+    - operations.sh
+  side-effect:
+    - reads-only-no-mutations
+  failure-mode:
+    - "missing-roadmap | exit=0 | visible=Horizon-section-omitted | mitigation=create-docs/roadmap.md-when-strategic-direction-firms-up"
+  contract:
+    - read-only
+    - never-implements
+    - backlog-list-not-idea-list-as-shipping-proxy
+  anchor:
+    - BTS-175 (backlog.list as canonical shipping proxy)
+    - BTS-252 (manifest seed)
 ---
 
 Scan the project's current state across all time horizons and produce a strategic briefing.

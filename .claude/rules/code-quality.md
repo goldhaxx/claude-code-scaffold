@@ -1,3 +1,26 @@
+---
+manifest:
+  id: code-quality
+  purpose: Codify the project's code-quality discipline — pattern-first over ad-hoc descriptions, explicit error paths over silent swallowing, justified dependencies, one-concept-per-file organization, intent-revealing names, and the protected-files invariant (foundations.md as research source material).
+  input:
+    - "read-only: rule consumed during /plan and implementation"
+  output:
+    - "behavior-shape: shapes implementation choices toward established patterns; halts dependency-creep and silent-error-handling"
+  side-effect:
+    - "shapes-implementation-decisions (no file mutation; behavioral influence)"
+  failure-mode:
+    - "rule-ignored | exit=n/a | visible=convention-drift-and-review-rework | mitigation=/review-flag-or-stasis-evidence-gap-section"
+  contract:
+    - patterns-over-descriptions
+    - explicit-error-paths
+    - justified-dependencies
+    - one-concept-per-file
+    - intent-revealing-names
+    - foundations-md-is-protected
+  anchor:
+    - BTS-252 (manifest seed)
+---
+
 # Code Quality Rules
 
 ## Patterns Over Descriptions

@@ -1,3 +1,37 @@
+---
+name: drift-watchdog
+description: Run the drift watchdog — detect drift between the hub and registered downstream nodes, then open an idempotent Linear issue per drifted node via the http substrate. Designed for autonomous launchd invocation.
+manifest:
+  id: drift-watchdog
+  purpose: Autonomous drift detection — walks the downstream registry, snapshots each node's hub-tracked file hashes, compares against the hub's current versions, and dispatches an idempotent Linear issue per drifted node. Designed to run from a launchd LaunchAgent (Mondays 9:13) without operator interaction.
+  routes-by: /drift-watchdog
+  input:
+    - "no positional args (env-driven; reads downstream-registry.json)"
+    - "env LINEAR_API_KEY (required for Linear http dispatch)"
+  output:
+    - "stdout: per-node summary lines (clean / drifted / skipped) + final tally"
+    - "side-effect: one Linear issue per drifted node (idempotent — updates existing issue if title matches)"
+    - "side-effect: appends to .ccanvil/drift-watchdog.log"
+  depends-on:
+    - ccanvil-sync.sh
+    - linear-query.sh
+    - operations.sh
+  side-effect:
+    - dispatches-linear-issues
+    - appends-watchdog-log
+  failure-mode:
+    - "missing-linear-api-key | exit=2 | visible=stderr-error | mitigation=set-LINEAR_API_KEY-or-export-from-.env"
+    - "registry-missing | exit=1 | visible=stderr-error | mitigation=run-/init-on-missing-downstream-or-confirm-registry-path"
+    - "drift-detected | exit=0 | visible=Linear-issues-opened | mitigation=run-/ccanvil-pull-on-drifted-nodes"
+  contract:
+    - autonomous-no-operator-interaction
+    - idempotent-issue-dispatch
+    - never-mutates-downstream-files
+  anchor:
+    - BTS-199 (launchd install wrapper)
+    - BTS-252 (manifest seed)
+---
+
 Run the drift watchdog: detect drift between the hub and registered downstream nodes, then open a thoughtful, idempotent Linear issue per drifted node via the http substrate.
 
 This skill is designed to be invoked autonomously via `claude -p "/drift-watchdog"` from a launchd entry. It runs end-to-end without operator interaction.

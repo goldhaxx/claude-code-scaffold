@@ -1,6 +1,28 @@
 ---
 name: tdd-workflow
 description: "Enforces test-driven development workflow. Use when implementing new features, fixing bugs, or when the user says 'tdd', 'test first', or 'red green refactor'. Guides through the full red-green-refactor cycle with verification at each step."
+manifest:
+  id: tdd-workflow
+  purpose: Enforce strict TDD discipline (specification → red → green → refactor → verify) when implementing features, fixing bugs, or any change with logic. Each acceptance criterion becomes exactly one test; tests are written and confirmed-failing before implementation; refactor only happens with all tests green.
+  routes-by: /tdd
+  input:
+    - "context: feature spec or bug repro from current conversation"
+    - "no positional args"
+  output:
+    - "behavior-shape: forces operator/agent through Specification → Red → Green → Refactor → Verify phases"
+    - "side-effect: shapes the implementation flow during the session — no file mutations"
+  side-effect:
+    - "shapes-implementation-flow (no file mutation; behavioral influence on the agent)"
+  failure-mode:
+    - "phase-skipped | exit=n/a | visible=test-debt-or-broken-build | mitigation=halt-and-restart-from-Specification-phase"
+  contract:
+    - one-test-per-acceptance-criterion
+    - red-before-green
+    - never-refactor-and-add-features-simultaneously
+    - all-tests-green-before-refactor
+  anchor:
+    - BTS-127 (strict-mode bats)
+    - BTS-252 (manifest seed)
 ---
 
 # TDD Workflow Skill

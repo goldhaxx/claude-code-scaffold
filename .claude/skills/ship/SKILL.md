@@ -1,6 +1,41 @@
 ---
 name: ship
 description: Finalize a draft PR — title-fix + mark ready + squash-merge + branch delete + ticket auto-close, all in one command. Run AFTER /pr.
+manifest:
+  id: ship
+  purpose: Collapse the post-/pr ship sequence — title force-update, mark ready, squash-merge with branch-delete, fast-forward main, recover landed branch, auto-close linked Linear ticket — into one verb. Idempotent on already-merged PRs. Saves ~4 manual commands per ship.
+  routes-by: /ship
+  input:
+    - "positional: <PR-NUMBER>"
+  output:
+    - "stdout: JSON envelope `{pr, pr_merged, branch_deleted, title_result, ticket_closed, errors}`"
+    - "stdout: human-readable summary line"
+    - "side-effect: PR squash-merged, branch deleted (remote + local), main fast-forwarded, ticket transitioned to done"
+    - "exit-code 0 success / non-zero pre-merge failure"
+  depends-on:
+    - docs-check.sh
+    - operations.sh
+  side-effect:
+    - merges-pr-on-github
+    - deletes-feature-branch
+    - transitions-linear-ticket-to-done
+    - queues-pending-on-ticket-close-failure
+  failure-mode:
+    - "missing-pr-number | exit=1 | visible=stderr-usage | mitigation=pass-PR-as-positional-arg"
+    - "pre-merge-step-failed | exit=non-zero | visible=stdout-FAILED-step-and-error | mitigation=fix-substrate-error-and-retry"
+    - "ticket-close-failure | exit=0 | visible=ticket_closed=queued-in-JSON | mitigation=run-/idea-sync-after-MCP-recovers"
+  contract:
+    - never-force-pushes
+    - never-bypasses-hooks
+    - never-skips-signing
+    - idempotent-on-already-merged
+    - ticket-close-failure-never-fails-ship
+  anchor:
+    - BTS-119 (auto-close pending-log fallback)
+    - BTS-138 (squash-subject branch recovery)
+    - BTS-178 (assert-pr-title)
+    - BTS-235 (ship-finalize substrate)
+    - BTS-252 (manifest seed)
 ---
 
 Collapse the post-`/pr` ship sequence into one verb. `/pr` ends with the PR marked ready. `/ship <PR>` does everything else: title force-update, merge, branch delete, switch to main, close the linked Linear ticket. Idempotent — re-running on a merged PR is a no-op.

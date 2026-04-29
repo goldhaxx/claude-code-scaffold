@@ -1,3 +1,29 @@
+---
+manifest:
+  id: evidence-required-for-captures
+  purpose: Codify the BTS-201 evidence gate — bug-shape captures (via /idea mid-session and /stasis at session boundaries) MUST be backed by reproducible evidence (Command / Output / Exit / Reproduce anchors) before being logged as fix-shaped tickets. Hypothesis-backed captures use `DIAGNOSE:` titling and the first ship is the diagnostic capture, not the fix. Closes the BTS-198 failure mode where a "Likely root cause" capture nearly shipped a regex carve-out for a phantom rule.
+  input:
+    - "read-only: rule consumed at /idea capture-time, /stasis evidence-scan, /recall briefing"
+  output:
+    - "behavior-shape: refuses fix-shape captures missing the four anchors; offers DIAGNOSE retitle as forward path"
+  caller:
+    - skill:/idea
+    - skill:/stasis
+    - skill:/recall
+  side-effect:
+    - "shapes-capture-flow (no file mutation; behavioral influence at capture-time)"
+  failure-mode:
+    - "rule-bypassed | exit=n/a | visible=phantom-fix-tickets-in-backlog | mitigation=stasis-Evidence-Gaps-section-surfaces-violations-each-session"
+  contract:
+    - four-anchors-required-for-fix-shape
+    - diagnose-titling-bypasses-anchor-requirement
+    - empty-state-literal-No-evidence-gaps-this-session
+  anchor:
+    - BTS-198 (origin incident)
+    - BTS-201 (rule + evidence-scan substrate)
+    - BTS-252 (manifest seed)
+---
+
 # Evidence Required for Bug Captures
 
 ## The Rule

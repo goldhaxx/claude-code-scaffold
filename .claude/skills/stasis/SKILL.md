@@ -1,6 +1,53 @@
 ---
 name: stasis
 description: End-of-session strategic review — freeze a snapshot of session/project state before /compact so cross-session context survives compaction.
+manifest:
+  id: stasis
+  purpose: Freeze a snapshot of session/project state to docs/stasis.md (or Linear stasis Document on routed nodes) immediately before /compact — captures determinism review, security review, evidence gaps, manifest coverage, cross-session patterns, and memory candidates that compaction would otherwise lose. Counterpart to /recall (stasis writes, recall reads).
+  routes-by: /stasis
+  input:
+    - "no positional args (synthesizes from deterministic state queries)"
+    - "reads: lifecycle-state, session-info, status, radar-gather, idea-count, audit-session, legacy-refs-scan, permissions-audit, context-budget, evidence-scan-session, module-manifest validate, prior stasis archive"
+  output:
+    - "feature-kind: docs/stasis.md (or Linear feature stasis Document) with metadata Feature/Work/Kind/Plan-hash"
+    - "session-kind: docs/stasis.md (or Linear session Document) with metadata Feature/Kind/Last-updated/Session/Boundary"
+    - "archive: docs/sessions/<epoch>-<feature-id>.md committed on main with ALLOW_MAIN=1"
+    - "dual-capture: each Determinism Review candidate dispatched as a Linear idea via idea.add resolver (BTS-115)"
+  caller:
+    - .claude/rules/workflow.md
+  depends-on:
+    - docs-check.sh
+    - operations.sh
+    - permissions-audit.sh
+    - context-budget.sh
+    - bats-report.sh
+    - module-manifest.sh
+  side-effect:
+    - writes-stasis-artifact
+    - commits-archive-on-main
+    - dispatches-determinism-candidates-to-linear
+  failure-mode:
+    - "lifecycle-blocked | exit=1 | visible=blockers-list-printed | mitigation=fix-blockers-before-running-/stasis"
+    - "uninitialized-tree | exit=1 | visible=halt-message | mitigation=run-/init-or-cd-into-ccanvil-tree"
+    - "dual-capture-failure | exit=0 | visible=PENDING-line-and-pending-log-grows | mitigation=run-/idea-sync"
+  contract:
+    - one-snapshot-per-session-boundary
+    - never-runs-/compact-itself
+    - feature-kind-vs-session-kind-mutually-exclusive
+    - archive-is-forward-only-history
+    - idempotent-archive-on-byte-identical-content
+  anchor:
+    - BTS-20 (lifecycle-state pre-flight)
+    - BTS-22 (sessions archive substrate)
+    - BTS-115 (dual-capture pattern)
+    - BTS-130 (Kind:session vs feature)
+    - BTS-149 (permissions-review surfacing)
+    - BTS-201 (evidence gaps)
+    - BTS-204 (provider-aware artifact-write)
+    - BTS-206 (session counter + boundary)
+    - BTS-232 (carry-forward determinism)
+    - BTS-239 (manifest coverage section)
+    - BTS-252 (manifest seed)
 ---
 
 Run at the end of a session, immediately before `/compact`. Writes `docs/stasis.md` — the strategic microscope/macroscope that captures determinism review, security review, cross-session patterns, and memory candidates that compaction would otherwise lose.

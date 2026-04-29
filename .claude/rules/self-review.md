@@ -1,3 +1,30 @@
+---
+manifest:
+  id: self-review
+  purpose: Codify the mandatory `## Determinism Review` section in every stasis (per the .ccanvil/templates/stasis.md template) and the judgment criteria for what counts as a flaggable candidate. Defines the BTS-115 dual-capture flow (each candidate auto-promoted to a Linear idea on Linear-routed projects) and its dedup-by-title rule. Provides the audit-session safety net for warm-context misses.
+  input:
+    - "read-only: rule consumed during /stasis Determinism Review composition and /ccanvil-audit"
+  output:
+    - "behavior-shape: forces every stasis to enumerate operations_reviewed/candidates_found and dual-capture each candidate as Determinism: <slug> idea on Linear-routed projects"
+  caller:
+    - skill:/stasis
+  depends-on:
+    - audit-session
+  side-effect:
+    - "shapes-stasis-composition (no file mutation; behavioral influence)"
+    - "dispatches-determinism-candidates-to-linear-via-/stasis"
+  failure-mode:
+    - "section-omitted-from-stasis | exit=n/a | visible=validate-flags-missing-determinism-review | mitigation=add-section-with-counts-or-No-candidates-this-session"
+  contract:
+    - mandatory-in-every-stasis
+    - dual-capture-via-/stasis-on-Linear-routed
+    - dedup-by-exact-title-match
+    - audit-session-as-warm-context-safety-net
+  anchor:
+    - BTS-115 (dual-capture)
+    - BTS-252 (manifest seed)
+---
+
 # Self-Review: Continuous Determinism Improvement
 
 ## The Rule
