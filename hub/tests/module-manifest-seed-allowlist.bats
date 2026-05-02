@@ -127,6 +127,52 @@ EOMD
   echo "$entries" | grep -qE '^\.claude/hooks/lint-bar\.sh$'
 }
 
+# AC-9: filter hub-managed files via .ccanvil/ccanvil.lock (BTS-267 dogfood-surfaced).
+@test "seed-allowlist: hub-managed files (in ccanvil.lock) are filtered out" {
+  set -e
+  node="$BATS_TEST_TMPDIR/lockfile-node"
+  mkdir -p "$node/.ccanvil/scripts" "$node/.ccanvil"
+  cat > "$node/.ccanvil/scripts/hub-managed.sh" <<'EOSH'
+#!/usr/bin/env bash
+cmd_alpha() { echo a; }
+EOSH
+  cat > "$node/.ccanvil/scripts/node-owned.sh" <<'EOSH'
+#!/usr/bin/env bash
+cmd_beta() { echo b; }
+EOSH
+  cat > "$node/.ccanvil/ccanvil.lock" <<'EOJSON'
+{
+  "hub_source": "test",
+  "files": {
+    ".ccanvil/scripts/hub-managed.sh": {"hash": "abc"}
+  }
+}
+EOJSON
+  run bash "$SCRIPT" seed-allowlist --dir "$node"
+  [ "$status" -eq 0 ]
+  entries=$(echo "$output" | grep -vE '^\s*(#|$)')
+  # hub-managed.sh:cmd_alpha is in the lockfile — must NOT appear.
+  [ "$(echo "$entries" | grep -cF '.ccanvil/scripts/hub-managed.sh')" -eq 0 ]
+  # node-owned.sh:cmd_beta is NOT in the lockfile — must appear.
+  echo "$entries" | grep -qF '.ccanvil/scripts/node-owned.sh:cmd_beta'
+}
+
+# AC-9: lockfile absence falls back to no filtering (preserves AC-1 behavior).
+@test "seed-allowlist: missing ccanvil.lock falls back to unfiltered seed" {
+  set -e
+  node="$BATS_TEST_TMPDIR/no-lockfile-node"
+  mkdir -p "$node/.ccanvil/scripts"
+  cat > "$node/.ccanvil/scripts/foo.sh" <<'EOSH'
+#!/usr/bin/env bash
+cmd_x() { echo x; }
+EOSH
+  # No ccanvil.lock — should still propose foo.sh:cmd_x.
+  run bash "$SCRIPT" seed-allowlist --dir "$node"
+  [ "$status" -eq 0 ]
+  entries=$(echo "$output" | grep -vE '^\s*(#|$)')
+  echo "$entries" | grep -qF '.ccanvil/scripts/foo.sh:cmd_x'
+}
+
 # AC-2: dedup against existing allowlist — emit only NEW candidates.
 @test "seed-allowlist: dedup against existing .ccanvil/manifest-allowlist.txt" {
   set -e

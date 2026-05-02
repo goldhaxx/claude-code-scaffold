@@ -24,7 +24,12 @@ git add .ccanvil/manifest-allowlist.txt
 git commit -m "feat(layer-2): seed initial manifest allowlist"
 ```
 
-`seed-allowlist` walks your substrate (`.ccanvil/scripts/*.sh` for `cmd_*` mega-scripts and bare scripts; `.claude/skills/*/SKILL.md`; `.claude/rules/*.md`; `.claude/agents/*.md`; `.claude/commands/*.md`; `.claude/hooks/*.sh`) and proposes one entry per primitive. Re-running after partial adoption emits only NEW candidates (deduped against your existing allowlist).
+`seed-allowlist` walks your substrate (`.ccanvil/scripts/*.sh` for `cmd_*` mega-scripts and bare scripts; `.claude/skills/*/SKILL.md`; `.claude/rules/*.md`; `.claude/agents/*.md`; `.claude/commands/*.md`; `.claude/hooks/*.sh`) and proposes one entry per primitive. Two filters are applied:
+
+1. **Hub-managed files are excluded.** When `.ccanvil/ccanvil.lock` is present (any node that ever ran `ccanvil-sync` will have one), seed reads the `.files` map and skips every path it lists. Hub already manifests its own substrate — your node consumes those manifests via the next pull, you don't re-author them.
+2. **Existing entries are deduped.** Re-running after partial adoption emits only NEW candidates (deduped against your existing `.ccanvil/manifest-allowlist.txt`).
+
+Together: a freshly-adopted node with NO project-specific code yet sees empty seed output — the correct "you have nothing of your own to manifest" signal. Add custom scripts/skills/rules over time, then re-run seed; only the additions surface.
 
 Review the output before committing. Comment out entries you don't want manifested yet — the rollout works batch-by-batch, not all-at-once.
 

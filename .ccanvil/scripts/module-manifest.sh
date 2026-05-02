@@ -826,8 +826,21 @@ cmd_seed_allowlist() {
     if [[ -f "$allow" ]]; then
       existing=$(grep -vE '^\s*(#|$)' "$allow" | sort -u)
     fi
+    # Read hub-managed paths from .ccanvil/ccanvil.lock so the seed only
+    # proposes node-owned candidates. A fresh node that just pulled has all
+    # hub-distributed files in the lockfile — filtering them yields a true
+    # "what's mine to manifest?" answer instead of 100+ phantom candidates.
+    local hub_paths="" lock=".ccanvil/ccanvil.lock"
+    if [[ -f "$lock" ]]; then
+      hub_paths=$(jq -r '.files | keys[]' "$lock" 2>/dev/null || true)
+    fi
     _seed_emit() {
       local entry="$1"
+      # Strip optional :fn suffix to get the bare path for lockfile lookup.
+      local path="${entry%%:*}"
+      if [[ -n "$hub_paths" ]] && grep -qxF "$path" <<< "$hub_paths"; then
+        return 0
+      fi
       if [[ -n "$existing" ]] && grep -qxF "$entry" <<< "$existing"; then
         return 0
       fi
