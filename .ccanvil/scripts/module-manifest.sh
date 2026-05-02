@@ -1232,6 +1232,162 @@ cmd_diff_vs_manifest() {
   [[ "$status_val" == "drift" ]] && return 2 || return 0
 }
 
+# BTS-269: derive a node's cluster from its path. Path-prefix-based for v1.
+_graph_node_cluster() {
+  local path="$1"
+  case "$path" in
+    .ccanvil/scripts/*.sh)            echo "script" ;;
+    .claude/hooks/*.sh)               echo "hook" ;;
+    .claude/skills/*/SKILL.md)        echo "skill" ;;
+    .claude/rules/*.md)               echo "rule" ;;
+    .claude/agents/*.md)              echo "agent" ;;
+    .claude/commands/*.md)            echo "command" ;;
+    *)                                echo "other" ;;
+  esac
+}
+
+# @manifest
+# purpose: Emit the dependency graph (caller + depends-on edges) across all manifested entries with cluster annotations and a derived cross_cluster_edges array; default JSON envelope, optional Graphviz DOT format. Surfaces architecture-shaped change beyond what file-shaped diff review can catch.
+# input: flag --format <json|dot> (default json)
+# input: flag --allowlist <path> (default .ccanvil/manifest-allowlist.txt)
+# output: stdout JSON envelope or DOT source
+# output: exit-codes 0 ok, 2 unknown-format
+# depends-on: jq
+# depends-on: cmd_index
+# side-effect: reads-allowlist-and-manifest-files
+# failure-mode: unknown-format | exit=2 | visible=stderr-error
+# contract: empty-allowlist-emits-empty-envelope-status-ok
+# contract: cross_cluster_edges-only-include-edges-where-both-ends-resolve-to-nodes
+# anchor: BTS-269 (origin)
+# (note: removed `awk` from depends-on — not invoked in this body; jq handles all transformations.)
+cmd_graph() {
+  local format="json"
+  local allow=".ccanvil/manifest-allowlist.txt"
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --format)    format="$2"; shift 2 ;;
+      --allowlist) allow="$2"; shift 2 ;;
+      *) echo "Usage: module-manifest.sh graph [--format json|dot] [--allowlist <path>]" >&2; return 2 ;;
+    esac
+  done
+  # @failure-mode: unknown-format
+  if [[ "$format" != "json" && "$format" != "dot" ]]; then
+    echo "ERROR: unknown --format value: $format; supported: json, dot" >&2
+    return 2
+  fi
+
+  # @side-effect: reads-allowlist-and-manifest-files
+  # Refresh the manifest index — one-shot extract across all source files.
+  # Far fewer subshell forks than per-entry cmd_extract loops; the old shape
+  # could SIGBUS macOS bash 3.2 at full-allowlist scale (hundreds of forks).
+  cmd_index >/dev/null 2>&1 || true
+  local index_path=".ccanvil/state/manifests.json"
+  local index_input="$index_path"
+  [[ -f "$index_path" ]] || index_input=/dev/null
+
+  # Build allowlist as JSON for jq consumption.
+  local allow_json="[]"
+  if [[ -f "$allow" ]]; then
+    allow_json=$(grep -vE '^\s*(#|$)' "$allow" | jq -R -s 'split("\n") | map(select(length > 0))')
+  fi
+
+  # Compute nodes + edges + cross_cluster_edges in ONE jq invocation. Path-prefix
+  # cluster mapping is encoded inside jq for portability.
+  local envelope
+  envelope=$(jq -nc \
+    --argjson allow "$allow_json" \
+    --slurpfile index_arr "$index_input" \
+    '
+    def cluster_of_path:
+      if   test("^\\.ccanvil/scripts/.+\\.sh$") then "script"
+      elif test("^\\.claude/hooks/.+\\.sh$")    then "hook"
+      elif test("^\\.claude/skills/[^/]+/SKILL\\.md$") then "skill"
+      elif test("^\\.claude/rules/.+\\.md$")    then "rule"
+      elif test("^\\.claude/agents/.+\\.md$")   then "agent"
+      elif test("^\\.claude/commands/.+\\.md$") then "command"
+      else "other"
+      end ;
+
+    (($index_arr[0] // {})) as $index
+    | ($allow | map(
+        if test(":") then
+          (split(":")[0]) as $p
+          | {id: ., path: $p, cluster: ($p | cluster_of_path)}
+        else
+          {id: ., path: ., cluster: (. | cluster_of_path)}
+        end
+      )) as $nodes
+    | ($nodes | map({(.id): .cluster}) | add // {}) as $cluster_of
+    | ($nodes | map(.id)) as $node_ids
+    | def resolve_caller(c):
+        if c | test("^skill:/") then
+          (c | sub("^skill:/"; "")) as $n
+          | (".claude/skills/" + $n + "/SKILL.md:" + $n) as $sid
+          | (".claude/commands/" + $n + ".md") as $cid
+          | if ($node_ids | any(. == $sid)) then $sid
+            elif ($node_ids | any(. == $cid)) then $cid
+            else c end
+        else c end ;
+      # For each node, look up its manifest. For function-level entries, the
+      # node id matches the index key directly (`<path>:<fn>`). For file-level
+      # entries (bare `<path>`), the index key is `<path>:<id>` where id was
+      # derived from the file — find any index entry whose key starts with
+      # `<path>:` (one match per file-level entry by construction).
+      [
+        $nodes[]
+        | . as $node
+        | (
+            $index[$node.id]
+            // ($index | to_entries | map(select(.key | startswith($node.path + ":"))) | .[0].value)
+            // null
+          ) as $manifest
+        | if $manifest == null then empty else
+            (($manifest.caller // [])
+              | .[] | {from: resolve_caller(.), to: $node.id, kind: "calls"}),
+            (($manifest["depends-on"] // [])
+              | .[] | {from: $node.id, to: ., kind: "depends-on"})
+          end
+      ] as $edges
+    | [
+        $edges[]
+        | select(($cluster_of[.from] // null) != null and ($cluster_of[.to] // null) != null)
+        | select($cluster_of[.from] != $cluster_of[.to])
+        | . + {from_cluster: $cluster_of[.from], to_cluster: $cluster_of[.to]}
+      ] as $cross
+    | {
+        nodes: $nodes,
+        edges: $edges,
+        cross_cluster_edges: $cross,
+        status: "ok"
+      }
+    ')
+
+  if [[ "$format" == "json" ]]; then
+    echo "$envelope"
+  else
+    # DOT format: subgraphs per cluster, red cross-cluster edges. Single jq
+    # invocation walks $envelope to emit DOT lines.
+    echo "$envelope" | jq -r '
+      . as $g
+      | "digraph G {",
+        "  rankdir=LR;",
+        ([$g.nodes[].cluster] | unique[] as $c |
+          "  subgraph cluster_\($c) {",
+          "    label=\"\($c)\";",
+          ($g.nodes[] | select(.cluster == $c) | "    \"\(.id)\";"),
+          "  }"
+        ),
+        (
+          ($g.cross_cluster_edges | map({(.from + "|" + .to): true}) | add // {}) as $cross_set |
+          $g.edges[] | "  \"\(.from)\" -> \"\(.to)\"" +
+            (if $cross_set[.from + "|" + .to] then " [color=red]" else "" end) +
+            ";"
+        ),
+        "}"
+    '
+  fi
+}
+
 cmd="${1:-}"
 shift || true
 case "$cmd" in
@@ -1241,6 +1397,7 @@ case "$cmd" in
   index)            cmd_index "$@" ;;
   seed-allowlist)   cmd_seed_allowlist "$@" ;;
   diff-vs-manifest) cmd_diff_vs_manifest "$@" ;;
-  "")               echo "Usage: module-manifest.sh {extract|validate|query|index|seed-allowlist|diff-vs-manifest} [args]" >&2; exit 2 ;;
-  *)                echo "Usage: module-manifest.sh {extract|validate|query|index|seed-allowlist|diff-vs-manifest} [args]" >&2; exit 2 ;;
+  graph)            cmd_graph "$@" ;;
+  "")               echo "Usage: module-manifest.sh {extract|validate|query|index|seed-allowlist|diff-vs-manifest|graph} [args]" >&2; exit 2 ;;
+  *)                echo "Usage: module-manifest.sh {extract|validate|query|index|seed-allowlist|diff-vs-manifest|graph} [args]" >&2; exit 2 ;;
 esac

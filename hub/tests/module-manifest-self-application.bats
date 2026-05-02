@@ -2,24 +2,25 @@
 # BTS-239 Step 9: self-application — manifests for module-manifest.sh's verbs.
 # BTS-267: cmd_seed_allowlist added — 4 → 5 verbs.
 # BTS-268: cmd_diff_vs_manifest added — 5 → 6 verbs.
+# BTS-269: cmd_graph added — 6 → 7 verbs.
 
 setup() {
   REPO_ROOT="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
   SCRIPT="$REPO_ROOT/.ccanvil/scripts/module-manifest.sh"
 }
 
-@test "self-app: extract emits manifests for all 6 verbs (cmd_extract, cmd_validate, cmd_query, cmd_index, cmd_seed_allowlist, cmd_diff_vs_manifest)" {
+@test "self-app: extract emits manifests for all 7 verbs (cmd_extract, cmd_validate, cmd_query, cmd_index, cmd_seed_allowlist, cmd_diff_vs_manifest, cmd_graph)" {
   set -e
   run bash "$SCRIPT" extract "$SCRIPT"
   [ "$status" -eq 0 ]
-  echo "$output" | jq -e 'length == 6'
-  echo "$output" | jq -e '[.[].id] | sort == ["cmd_diff_vs_manifest", "cmd_extract", "cmd_index", "cmd_query", "cmd_seed_allowlist", "cmd_validate"]'
+  echo "$output" | jq -e 'length == 7'
+  echo "$output" | jq -e '[.[].id] | sort == ["cmd_diff_vs_manifest", "cmd_extract", "cmd_graph", "cmd_index", "cmd_query", "cmd_seed_allowlist", "cmd_validate"]'
 }
 
 @test "self-app: each verb manifest has all required keys" {
   set -e
   run bash "$SCRIPT" extract "$SCRIPT"
-  for vid in cmd_extract cmd_validate cmd_query cmd_index cmd_seed_allowlist cmd_diff_vs_manifest; do
+  for vid in cmd_extract cmd_validate cmd_query cmd_index cmd_seed_allowlist cmd_diff_vs_manifest cmd_graph; do
     manifest=$(echo "$output" | jq -c --arg id "$vid" '.[] | select(.id == $id)')
     [ -n "$manifest" ]
     echo "$manifest" | jq -e '.purpose | type == "string" and length > 0'
