@@ -4,7 +4,7 @@
 > Work: linear:BTS-267
 > Created: 1777686649
 > Subject: Downstream-node Layer 2 onboarding ramp
-> Status: In Progress
+> Status: Complete
 
 ## Summary
 
