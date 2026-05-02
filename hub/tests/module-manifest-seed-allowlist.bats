@@ -22,3 +22,23 @@ setup() {
   # No proposed entries — stdout may be empty or comment-only.
   [[ -z "$(echo "$output" | grep -vE '^\s*(#|$)')" ]]
 }
+
+# AC-1/AC-6: mega-script with cmd_* functions emits one path:fn entry per function.
+@test "seed-allowlist: mega-script emits path:fn entries (one per cmd_*)" {
+  set -e
+  node="$BATS_TEST_TMPDIR/megascript-node"
+  mkdir -p "$node/.ccanvil/scripts"
+  cat > "$node/.ccanvil/scripts/foo.sh" <<'EOSH'
+#!/usr/bin/env bash
+cmd_alpha() { echo a; }
+cmd_beta() { echo b; }
+EOSH
+  run bash "$SCRIPT" seed-allowlist --dir "$node"
+  [ "$status" -eq 0 ]
+  # Filter out comments + blank lines for assertions.
+  entries=$(echo "$output" | grep -vE '^\s*(#|$)')
+  echo "$entries" | grep -qF '.ccanvil/scripts/foo.sh:cmd_alpha'
+  echo "$entries" | grep -qF '.ccanvil/scripts/foo.sh:cmd_beta'
+  # Two entries total for the mega-script.
+  [ "$(echo "$entries" | wc -l | tr -d ' ')" -eq 2 ]
+}

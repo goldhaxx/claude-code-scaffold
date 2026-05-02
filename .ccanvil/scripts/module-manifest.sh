@@ -800,6 +800,18 @@ cmd_seed_allowlist() {
     echo "ERROR: directory not found: $dir" >&2
     return 2
   fi
+
+  (
+    cd "$dir" || exit 2
+    [[ -d .ccanvil/scripts ]] || exit 0
+    local f fn
+    for f in .ccanvil/scripts/*.sh; do
+      [[ -f "$f" ]] || continue
+      while IFS= read -r fn; do
+        echo "${f}:${fn}"
+      done < <(grep -oE '^cmd_[a-z_]+' "$f" | sort -u)
+    done
+  )
 }
 
 cmd="${1:-}"
