@@ -804,12 +804,17 @@ cmd_seed_allowlist() {
   (
     cd "$dir" || exit 2
     [[ -d .ccanvil/scripts ]] || exit 0
-    local f fn
+    local f fn fns
     for f in .ccanvil/scripts/*.sh; do
       [[ -f "$f" ]] || continue
-      while IFS= read -r fn; do
-        echo "${f}:${fn}"
-      done < <(grep -oE '^cmd_[a-z_]+' "$f" | sort -u)
+      fns=$(grep -oE '^cmd_[a-z_]+' "$f" | sort -u)
+      if [[ -n "$fns" ]]; then
+        while IFS= read -r fn; do
+          echo "${f}:${fn}"
+        done <<< "$fns"
+      else
+        echo "$f"
+      fi
     done
   )
 }

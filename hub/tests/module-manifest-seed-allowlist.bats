@@ -42,3 +42,39 @@ EOSH
   # Two entries total for the mega-script.
   [ "$(echo "$entries" | wc -l | tr -d ' ')" -eq 2 ]
 }
+
+# AC-1/AC-6: single-purpose script (no cmd_*) emits bare path entry.
+@test "seed-allowlist: single-purpose script emits bare path (no :fn)" {
+  set -e
+  node="$BATS_TEST_TMPDIR/single-node"
+  mkdir -p "$node/.ccanvil/scripts"
+  cat > "$node/.ccanvil/scripts/bar.sh" <<'EOSH'
+#!/usr/bin/env bash
+echo "imperative single-purpose script"
+EOSH
+  run bash "$SCRIPT" seed-allowlist --dir "$node"
+  [ "$status" -eq 0 ]
+  entries=$(echo "$output" | grep -vE '^\s*(#|$)')
+  echo "$entries" | grep -qE '^\.ccanvil/scripts/bar\.sh$'
+  [ "$(echo "$entries" | wc -l | tr -d ' ')" -eq 1 ]
+}
+
+# AC-6: mixed mega-script and single-purpose in same node — both forms emitted.
+@test "seed-allowlist: mixed mega-script + single-purpose emits both forms" {
+  set -e
+  node="$BATS_TEST_TMPDIR/mixed-node"
+  mkdir -p "$node/.ccanvil/scripts"
+  cat > "$node/.ccanvil/scripts/mega.sh" <<'EOSH'
+#!/usr/bin/env bash
+cmd_one() { echo 1; }
+EOSH
+  cat > "$node/.ccanvil/scripts/single.sh" <<'EOSH'
+#!/usr/bin/env bash
+echo single
+EOSH
+  run bash "$SCRIPT" seed-allowlist --dir "$node"
+  [ "$status" -eq 0 ]
+  entries=$(echo "$output" | grep -vE '^\s*(#|$)')
+  echo "$entries" | grep -qF '.ccanvil/scripts/mega.sh:cmd_one'
+  echo "$entries" | grep -qE '^\.ccanvil/scripts/single\.sh$'
+}
