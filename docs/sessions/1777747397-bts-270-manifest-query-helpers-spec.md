@@ -32,34 +32,34 @@ Today `module-manifest.sh query <key>:<value>` does substring filter across all 
 ## Affected Files
 
 | File | Change |
-|------|--------|
+| -- | -- |
 | `.ccanvil/scripts/module-manifest.sh` | Modified — extend `cmd_query` flag parsing + dispatch |
 | `hub/tests/module-manifest-query-helpers.bats` | New — bats coverage for AC-1..7 |
 
 ## Dependencies
 
-- **Requires:** existing `cmd_query` substrate (BTS-239); the manifest index store at `.ccanvil/state/manifests.json` (`_maybe_regenerate_index` already auto-refreshes when stale).
-- **Blocked by:** none.
+* **Requires:** existing `cmd_query` substrate (BTS-239); the manifest index store at `.ccanvil/state/manifests.json` (`_maybe_regenerate_index` already auto-refreshes when stale).
+* **Blocked by:** none.
 
 ## Out of Scope
 
-- Composable AND/OR query expressions (`--by-side-effect writes-disk AND --depends-on jq`). Single-key filter v1 only; composition can ride post-soak if friction surfaces.
-- UI / interactive browsing of manifest results. CLI suffices — `/recall` / `/radar` consume JSON.
-- CI integration (e.g., "fail PR if a primitive grows a new side-effect not declared elsewhere"). Out of band — that's BTS-268's deterministic-Layer-3 territory.
-- `--callers-of` transitive resolution (i.e., "who calls callers of X"). One-hop only — matches BTS-239's existing one-hop caller validation.
-- New primitive (`cmd_query_helpers` or similar). Stay inside `cmd_query` for surface area parsimony.
+* Composable AND/OR query expressions (`--by-side-effect writes-disk AND --depends-on jq`). Single-key filter v1 only; composition can ride post-soak if friction surfaces.
+* UI / interactive browsing of manifest results. CLI suffices — `/recall` / `/radar` consume JSON.
+* CI integration (e.g., "fail PR if a primitive grows a new side-effect not declared elsewhere"). Out of band — that's BTS-268's deterministic-Layer-3 territory.
+* `--callers-of` transitive resolution (i.e., "who calls callers of X"). One-hop only — matches BTS-239's existing one-hop caller validation.
+* New primitive (`cmd_query_helpers` or similar). Stay inside `cmd_query` for surface area parsimony.
 
 ## Implementation Notes
 
-- Pattern: extend the front of `cmd_query` with flag parsing. When any of the four flags is passed, dispatch to a specialized jq filter. When only positional `<key>:<value>` is passed, fall through to existing behavior unchanged.
-- Each flag maps to a small jq pipeline:
-  - `--by-side-effect`: `[ to_entries[] | .value as $m | $m | select(.["side-effect"] // [] | any(contains($v))) | {id, path: .key-derived-or-stored, "side-effect": [.["side-effect"][] | select(contains($v))]} ]`. (The path field comes from to_entries' key.)
-  - `--callers-of`: same shape, filter on `.caller // [] | any(. == $id or . == "skill:/" + ...)`.
-  - `--depends-on`: filter on `."depends-on" // [] | any(. == $id)`.
-  - `--by-failure-mode`: filter on `."failure-mode" // [] | any(contains($v))`.
-- Reuse `_maybe_regenerate_index` to ensure `.ccanvil/state/manifests.json` is fresh.
-- Output shape consistent across all four flags: `{id, path, <field>: [...matched-values]}` so consumers read with same jq idioms.
-- Live-API contract risk: NONE — pure local file walk + JSON emission.
+* Pattern: extend the front of `cmd_query` with flag parsing. When any of the four flags is passed, dispatch to a specialized jq filter. When only positional `<key>:<value>` is passed, fall through to existing behavior unchanged.
+* Each flag maps to a small jq pipeline:
+  * `--by-side-effect`: `[ to_entries[] | .value as $m | $m | select(.["side-effect"] // [] | any(contains($v))) | {id, path: .key-derived-or-stored, "side-effect": [.["side-effect"][] | select(contains($v))]} ]`. (The path field comes from to_entries' key.)
+  * `--callers-of`: same shape, filter on `.caller // [] | any(. == $id or . == "skill:/" + ...)`.
+  * `--depends-on`: filter on `."depends-on" // [] | any(. == $id)`.
+  * `--by-failure-mode`: filter on `."failure-mode" // [] | any(contains($v))`.
+* Reuse `_maybe_regenerate_index` to ensure `.ccanvil/state/manifests.json` is fresh.
+* Output shape consistent across all four flags: `{id, path, <field>: [...matched-values]}` so consumers read with same jq idioms.
+* Live-API contract risk: NONE — pure local file walk + JSON emission.
 
 <!-- NODE-SPECIFIC-START -->
 <!-- Add project-specific content below this line. -->

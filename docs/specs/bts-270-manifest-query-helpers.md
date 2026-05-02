@@ -4,7 +4,7 @@
 > Work: linear:BTS-270
 > Created: 1777746662
 > Subject: Manifest query helpers
-> Status: In Progress
+> Status: Complete
 
 ## Summary
 
