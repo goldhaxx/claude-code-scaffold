@@ -788,18 +788,35 @@ cmd_index() {
   mv "$out.tmp" "$out"
 }
 
+# @manifest
+# purpose: Walk a downstream-node substrate and emit a proposed manifest allowlist on stdout, in canonical format with section headers, deduped against an existing allowlist when present.
+# input: flag --dir <path> (default cwd)
+# output: stdout proposed-allowlist text
+# output: exit-codes 0 ok, 2 usage-error|directory-not-found
+# depends-on: grep
+# depends-on: awk
+# side-effect: reads-substrate-and-existing-allowlist
+# failure-mode: usage-error | exit=2 | visible=stderr-usage
+# failure-mode: directory-not-found | exit=2 | visible=stderr-error
+# contract: empty-substrate-emits-empty-stdout
+# contract: dedup-against-existing-allowlist-when-present
+# contract: section-headers-only-when-section-has-entries
+# anchor: BTS-267 (origin)
 cmd_seed_allowlist() {
   local dir="."
   while [[ $# -gt 0 ]]; do
     case "$1" in
       --dir) dir="$2"; shift 2 ;;
+      # @failure-mode: usage-error
       *)     echo "Usage: module-manifest.sh seed-allowlist [--dir <path>]" >&2; return 2 ;;
     esac
   done
+  # @failure-mode: directory-not-found
   if [[ ! -d "$dir" ]]; then
     echo "ERROR: directory not found: $dir" >&2
     return 2
   fi
+  # @side-effect: reads-substrate-and-existing-allowlist
 
   (
     cd "$dir" || exit 2
