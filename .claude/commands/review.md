@@ -23,20 +23,33 @@ manifest:
 
 Review the current uncommitted changes using the code-reviewer sub-agent.
 
-## Step 0: Manifest pre-flight (BTS-257 Layer 3 ramp)
+## Step 0: Manifest pre-flight (BTS-257 Layer 3 ramp; BTS-268 deterministic gate)
 
-Before spawning the code-reviewer agent, run the deterministic manifest pre-flight:
+Before spawning the code-reviewer agent, run two manifest pre-flight checks:
+
+**Check A: structural drift (existing state).**
 
 ```bash
 bash .ccanvil/scripts/module-manifest.sh validate --json 2>/dev/null
 ```
 
-When `.ccanvil/manifest-allowlist.txt` exists, parse the JSON envelope and surface the result before the review proceeds:
+When `.ccanvil/manifest-allowlist.txt` exists, parse the JSON envelope:
 
-- If `coverage.covered == coverage.total` AND `drift == []` → silent pass (no extra section).
-- If `(.drift | length) > 0` → render `## Manifest drift` with one bullet per drifted entry (`<path>:<id> — <reason> [value]`). The reviewer agent uses this as the starting list for Layer 3 manifest-aware checks; the operator decides whether to clear drift first or proceed with review.
+- `coverage.covered == coverage.total` AND `drift == []` → silent pass.
+- `(.drift | length) > 0` → render `## Manifest drift (existing state)` with one bullet per drifted entry (`<path>:<id> — <reason> [value]`).
 
-Skip this step silently when the allowlist is missing (downstream nodes that haven't adopted Layer 2 yet).
+**Check B: diff-introduced drift (BTS-268 deterministic Layer 3 gate).**
+
+```bash
+git diff main...HEAD | bash .ccanvil/scripts/module-manifest.sh diff-vs-manifest --diff -
+```
+
+Parse the JSON envelope:
+
+- `status == "ok"` (drift == []) → silent pass.
+- `status == "drift"` → render `## Manifest drift (introduced by this branch)` with one bullet per entry, format: `**<drift_type>** — <path> — value: <value>`. **All entries are BLOCKING** regardless of agent commentary. The operator must either (a) update the primitive's manifest declaration to include the new caller / depends-on / exit-path / side-effect, or (b) revert the introducing change.
+
+Skip both checks silently when the allowlist is missing (downstream nodes that haven't adopted Layer 2 yet).
 
 ## Step 1: Code review
 

@@ -1211,6 +1211,7 @@ cmd_diff_vs_manifest() {
     drift_array=$(echo "$drift_entries" | jq -s '.')
   fi
   local status_val="ok"
+  # @failure-mode: drift-detected
   [[ "$drift_array" != '[]' ]] && status_val="drift"
   jq -nc --argjson d "$drift_array" --arg s "$status_val" '{drift:$d,status:$s}'
   [[ "$status_val" == "drift" ]] && return 2 || return 0
