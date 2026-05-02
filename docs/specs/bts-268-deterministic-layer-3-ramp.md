@@ -44,6 +44,11 @@ Today Layer 3 (Comprehension Gate at PR time) is operator-attention-dependent: t
 - **Requires:** module-manifest.sh substrate (BTS-239) + cmd_extract / cmd_validate in their current shape; manifest-allowlist.txt populated (185 entries today).
 - **Blocked by:** none. The 1-week verification routine `trig_01V3eu7T8WurLRzg1iSPSA3j` (fires 2026-05-06) produces tuning evidence post-ship — it does NOT gate this ticket.
 
+## Known Limitations (first ramp — tolerable, follow-up tickets if friction)
+
+- **Cross-file primitive-name collision.** When two files in the allowlist define the same `cmd_X` (e.g., both `module-manifest.sh:cmd_validate` and `docs-check.sh:cmd_validate`), an added text mention in one file's diff flags as a new caller for the OTHER file's primitive. Heuristic limit; mitigation in follow-up: require dispatch-shape (`bash <path> <verb>` or `<primitive_path>` mention) before flagging.
+- **Hunk-context misattribution on multi-commit branches.** Git's `@@ ... @@` context anchors to the function declaration that PRECEDES the hunk in the merge-base file. When a branch adds a NEW function later in the file, additions inside the new function get attributed to its preceding sibling. Surfaces as occasional misattributed drift on multi-commit feature branches. Mitigation in follow-up: brace-count attribution against the post-state file when hunk context is ambiguous.
+
 ## Out of Scope
 
 - The Layer 3 cohesion graph (BTS-269 / L3-B) — separate sibling ticket.
