@@ -843,6 +843,14 @@ cmd_seed_allowlist() {
         echo "$f"
       done
     done
+
+    # Hooks — file-level entries.
+    if [[ -d .claude/hooks ]]; then
+      for f in .claude/hooks/*.sh; do
+        [[ -f "$f" ]] || continue
+        echo "$f"
+      done
+    fi
   )
 }
 

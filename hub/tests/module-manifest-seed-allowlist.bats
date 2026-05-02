@@ -112,3 +112,17 @@ EOMD
   echo "$entries" | grep -qE '^\.claude/agents/helper\.md$'
   echo "$entries" | grep -qE '^\.claude/commands/dispatch\.md$'
 }
+
+# AC-1: hooks emit bare path (file-level).
+@test "seed-allowlist: hooks emit bare path entries" {
+  set -e
+  node="$BATS_TEST_TMPDIR/hooks-node"
+  mkdir -p "$node/.claude/hooks"
+  echo "#!/usr/bin/env bash" > "$node/.claude/hooks/protect-foo.sh"
+  echo "#!/usr/bin/env bash" > "$node/.claude/hooks/lint-bar.sh"
+  run bash "$SCRIPT" seed-allowlist --dir "$node"
+  [ "$status" -eq 0 ]
+  entries=$(echo "$output" | grep -vE '^\s*(#|$)')
+  echo "$entries" | grep -qE '^\.claude/hooks/protect-foo\.sh$'
+  echo "$entries" | grep -qE '^\.claude/hooks/lint-bar\.sh$'
+}
