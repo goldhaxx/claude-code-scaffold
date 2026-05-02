@@ -4,7 +4,7 @@
 > Work: linear:BTS-268
 > Created: 1777691396
 > Subject: Deterministic Layer 3 ramp — diff-vs-manifest
-> Status: In Progress
+> Status: Complete
 
 ## Summary
 

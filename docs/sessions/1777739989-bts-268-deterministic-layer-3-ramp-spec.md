@@ -32,7 +32,7 @@ Today Layer 3 (Comprehension Gate at PR time) is operator-attention-dependent: t
 ## Affected Files
 
 | File | Change |
-|------|--------|
+| -- | -- |
 | `.ccanvil/scripts/module-manifest.sh` | Modified — add `cmd_diff_vs_manifest` + dispatch entry |
 | `.claude/commands/review.md` | Modified — augment Step 0 manifest pre-flight to invoke diff-vs-manifest |
 | `hub/tests/module-manifest-diff-vs-manifest.bats` | New — bats coverage for AC-1..7 |
@@ -41,25 +41,30 @@ Today Layer 3 (Comprehension Gate at PR time) is operator-attention-dependent: t
 
 ## Dependencies
 
-- **Requires:** module-manifest.sh substrate (BTS-239) + cmd_extract / cmd_validate in their current shape; manifest-allowlist.txt populated (185 entries today).
-- **Blocked by:** none. The 1-week verification routine `trig_01V3eu7T8WurLRzg1iSPSA3j` (fires 2026-05-06) produces tuning evidence post-ship — it does NOT gate this ticket.
+* **Requires:** [module-manifest.sh](<http://module-manifest.sh>) substrate (BTS-239) + cmd_extract / cmd_validate in their current shape; manifest-allowlist.txt populated (185 entries today).
+* **Blocked by:** none. The 1-week verification routine `trig_01V3eu7T8WurLRzg1iSPSA3j` (fires 2026-05-06) produces tuning evidence post-ship — it does NOT gate this ticket.
+
+## Known Limitations (first ramp — tolerable, follow-up tickets if friction)
+
+* **Cross-file primitive-name collision.** When two files in the allowlist define the same `cmd_X` (e.g., both `module-manifest.sh:cmd_validate` and `docs-check.sh:cmd_validate`), an added text mention in one file's diff flags as a new caller for the OTHER file's primitive. Heuristic limit; mitigation in follow-up: require dispatch-shape (`bash <path> <verb>` or `<primitive_path>` mention) before flagging.
+* **Hunk-context misattribution on multi-commit branches.** Git's `@@ ... @@` context anchors to the function declaration that PRECEDES the hunk in the merge-base file. When a branch adds a NEW function later in the file, additions inside the new function get attributed to its preceding sibling. Surfaces as occasional misattributed drift on multi-commit feature branches. Mitigation in follow-up: brace-count attribution against the post-state file when hunk context is ambiguous.
 
 ## Out of Scope
 
-- The Layer 3 cohesion graph (BTS-269 / L3-B) — separate sibling ticket.
-- Manifest query helpers (BTS-270 / L3-C) — separate sibling ticket.
-- Auto-suggesting manifest updates from drift (e.g., "add this caller, here's the snippet") — Phase 3 enhancement; this ship surfaces the drift only.
-- Diff-vs-manifest invocation from CI on the GitHub side (workflow YAML). Local /review + /pr coverage is the first ramp; CI integration is BTS-21-territory.
-- Retiring the code-reviewer.md Layer 3 prose section. Keep it as fallback — when `diff-vs-manifest` returns drift, the prose helps the agent explain WHY in human terms; when the substrate misses an edge case the prose still catches it.
+* The Layer 3 cohesion graph (BTS-269 / L3-B) — separate sibling ticket.
+* Manifest query helpers (BTS-270 / L3-C) — separate sibling ticket.
+* Auto-suggesting manifest updates from drift (e.g., "add this caller, here's the snippet") — Phase 3 enhancement; this ship surfaces the drift only.
+* Diff-vs-manifest invocation from CI on the GitHub side (workflow YAML). Local /review + /pr coverage is the first ramp; CI integration is BTS-21-territory.
+* Retiring the [code-reviewer.md](<http://code-reviewer.md>) Layer 3 prose section. Keep it as fallback — when `diff-vs-manifest` returns drift, the prose helps the agent explain WHY in human terms; when the substrate misses an edge case the prose still catches it.
 
 ## Implementation Notes
 
-- Pattern: `cmd_diff_vs_manifest` follows `cmd_extract` / `cmd_validate` shape — manifest block above, dispatch entry, pure bash + awk + grep (no python / yq / external diff parser deps).
-- Diff parsing approach: walk `+++ b/<path>` headers to identify changed files; for each file in the manifest allowlist, walk added lines (`^+` not `^+++`) within hunks. Build a `{path: <bare-or-:fn>, added_lines: […]}` map per touched primitive.
-- For new-caller detection: walk added lines in NON-manifested files (skills/commands/rules/agents/scripts/hooks) for `cmd_X\b` where `cmd_X` is on the allowlist; cross-reference against the primitive's existing `caller:` list (extract via `cmd_extract`).
-- For new-depends-on / new-exit / new-side-effect: scope to added lines INSIDE manifested primitive bodies (use brace-counted body grep helpers `_function_body_grep` / `_target_body_grep` already in module-manifest.sh).
-- `--diff -` (stdin) for the /review and /pr piping case; `--diff <path>` for tests with fixture files.
-- JSON envelope mirrors `cmd_validate`'s shape so consumers (review skill) read both with the same jq idioms.
+* Pattern: `cmd_diff_vs_manifest` follows `cmd_extract` / `cmd_validate` shape — manifest block above, dispatch entry, pure bash + awk + grep (no python / yq / external diff parser deps).
+* Diff parsing approach: walk `+++ b/<path>` headers to identify changed files; for each file in the manifest allowlist, walk added lines (`^+` not `^+++`) within hunks. Build a `{path: <bare-or-:fn>, added_lines: […]}` map per touched primitive.
+* For new-caller detection: walk added lines in NON-manifested files (skills/commands/rules/agents/scripts/hooks) for `cmd_X\b` where `cmd_X` is on the allowlist; cross-reference against the primitive's existing `caller:` list (extract via `cmd_extract`).
+* For new-depends-on / new-exit / new-side-effect: scope to added lines INSIDE manifested primitive bodies (use brace-counted body grep helpers `_function_body_grep` / `_target_body_grep` already in [module-manifest.sh](<http://module-manifest.sh>)).
+* `--diff -` (stdin) for the /review and /pr piping case; `--diff <path>` for tests with fixture files.
+* JSON envelope mirrors `cmd_validate`'s shape so consumers (review skill) read both with the same jq idioms.
 
 <!-- NODE-SPECIFIC-START -->
 <!-- Add project-specific content below this line. -->
