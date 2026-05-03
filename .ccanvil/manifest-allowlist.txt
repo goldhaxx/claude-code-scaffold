@@ -192,6 +192,7 @@
 # BTS-251 — Session 8: file-level shell + hooks.
 # Batch 1 — single-purpose scripts (5).
 .ccanvil/scripts/bats-lint.sh
+.ccanvil/scripts/bats-profile.sh
 .ccanvil/scripts/bats-report.sh
 .ccanvil/scripts/fetch-license.sh
 .ccanvil/scripts/fix-cloudflare-certs.sh
