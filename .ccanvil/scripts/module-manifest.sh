@@ -371,6 +371,80 @@ _target_body_grep() {
 # Matches either the function name directly OR the dispatch-verb form
 # (cmd_foo_bar → foo-bar) used by skills/hooks invoking via `bash <script> <verb>`.
 # Returns 0 if call relationship found, 1 otherwise.
+# BTS-293 Phase 1: build a TSV index of (file, function, body) tuples by
+# walking the search_dirs ONCE. Replaces ~7,500 per-validate-run grep+awk
+# scans (BTS-282 profile) with a per-(caller, primitive) jq-grep on
+# pre-extracted bodies. Bash 3.2 / awk only — no associative arrays.
+#
+# Index format: <abspath>\t<funcname>\t<body-with-newlines-encoded-as-\\n>
+# Lookup: awk-filter by funcname → for each match, sed-decode \\n →
+# grep against pattern.
+_build_caller_index() {
+  local out_file="$1" project_dir="${2:-.}"
+  local search_dirs=(".ccanvil/scripts" ".claude/hooks" ".claude/hooks/_lib")
+  : > "$out_file"
+  local d f abs
+  for d in "${search_dirs[@]}"; do
+    [[ ! -d "$project_dir/$d" ]] && continue
+    for f in "$project_dir/$d"/*.sh; do
+      [[ ! -f "$f" ]] && continue
+      abs=$(cd "$(dirname "$f")" && pwd)/$(basename "$f")
+      awk -v path="$abs" '
+        BEGIN { in_fn=0; depth=0; fn=""; body="" }
+        function emit() {
+          if (fn != "") {
+            gsub(/\t/, " ", body)
+            gsub(/\n/, "\\n", body)
+            printf "%s\t%s\t%s\n", path, fn, body
+          }
+        }
+        function count_open(s,   c) { c = gsub(/\{/, "&", s); return c }
+        function count_close(s,   c) { c = gsub(/\}/, "&", s); return c }
+        {
+          if (in_fn == 0) {
+            if (match($0, /^[a-zA-Z_][a-zA-Z_0-9]*\(\)[ \t]*\{/)) {
+              fn = $0
+              sub(/\(\).*/, "", fn)
+              in_fn = 1
+              body = $0 "\n"
+              # Count braces on declaration line itself.
+              depth = count_open($0) - count_close($0)
+              if (depth <= 0) {
+                emit()
+                in_fn = 0; fn = ""; body = ""
+              }
+              next
+            }
+          } else {
+            body = body $0 "\n"
+            depth = depth + count_open($0) - count_close($0)
+            if (depth <= 0) {
+              emit()
+              in_fn = 0; fn = ""; body = ""
+            }
+          }
+        }
+      ' "$f" >> "$out_file"
+    done
+  done
+}
+
+# BTS-293 Phase 1: lookup helper. Returns 0 if any indexed body for
+# <caller_ref> matches <pattern>; 1 otherwise.
+_index_caller_check() {
+  local index_file="$1" caller_ref="$2" pattern="$3"
+  [[ -s "$index_file" ]] || return 1
+  local encoded decoded
+  while IFS= read -r encoded; do
+    decoded=$(printf '%s' "$encoded" | sed 's/\\n/\
+/g')
+    if printf '%s\n' "$decoded" | grep -qE -- "$pattern"; then
+      return 0
+    fi
+  done < <(awk -F'\t' -v fn="$caller_ref" '$2 == fn { print $3 }' "$index_file")
+  return 1
+}
+
 _caller_actually_calls_primitive() {
   local caller_ref="$1" primitive_id="$2" project_dir="${3:-.}"
   local verb="${primitive_id#cmd_}"
@@ -401,6 +475,15 @@ _caller_actually_calls_primitive() {
       fi
     done
     return 1
+  fi
+
+  # BTS-293 Phase 1: bare-form caller. Use the in-memory index when
+  # cmd_validate has populated MM_CALLER_INDEX (the common path); fall
+  # back to the original walk when the env var is unset (preserves
+  # correctness for direct callers of this helper outside cmd_validate).
+  if [[ -n "${MM_CALLER_INDEX:-}" ]] && [[ -s "$MM_CALLER_INDEX" ]]; then
+    _index_caller_check "$MM_CALLER_INDEX" "$caller_ref" "$pattern"
+    return $?
   fi
 
   local search_dirs=(".ccanvil/scripts" ".claude/hooks" ".claude/hooks/_lib")
@@ -445,6 +528,16 @@ cmd_validate() {
     esac
   done
   [[ -z "$allowlist" ]] && allowlist=".ccanvil/manifest-allowlist.txt"
+
+  # BTS-293 Phase 1: build caller-resolution index ONCE per invocation.
+  # _caller_actually_calls_primitive consults MM_CALLER_INDEX when set,
+  # eliminating ~7,500 redundant grep+awk file scans per validate run.
+  local _mm_caller_index
+  _mm_caller_index=$(mktemp)
+  # shellcheck disable=SC2064
+  trap "rm -f '$_mm_caller_index'" RETURN
+  _build_caller_index "$_mm_caller_index" "."
+  export MM_CALLER_INDEX="$_mm_caller_index"
 
   local entries=()
   if [[ -f "$allowlist" ]]; then
