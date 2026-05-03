@@ -131,6 +131,33 @@ seed_bats() {
 # Defaults to hub/tests/ when no target given
 # ----------------------------------------------------------------------------
 
+# ----------------------------------------------------------------------------
+# BTS-277 — --help documents perf-core default + new envelope shape
+# ----------------------------------------------------------------------------
+
+@test "BTS-277 AC-4: --help mentions perf-core default for --jobs" {
+  set -e
+  run bash "$REPORT" --help
+  [ "$status" -eq 0 ]
+  echo "$output" | grep -qF 'perf-core'
+}
+
+@test "BTS-277 AC-4: --help mentions wall_ms / jobs / cpus envelope fields" {
+  set -e
+  run bash "$REPORT" --help
+  [ "$status" -eq 0 ]
+  echo "$output" | grep -qF 'wall_ms'
+  echo "$output" | grep -qF 'jobs'
+  echo "$output" | grep -qF 'cpus'
+}
+
+@test "BTS-277 AC-4: --help mentions bats-runs.jsonl append behavior" {
+  set -e
+  run bash "$REPORT" --help
+  [ "$status" -eq 0 ]
+  echo "$output" | grep -qF 'bats-runs.jsonl'
+}
+
 @test "BTS-118: no-arg invocation defaults to hub/tests/" {
   set -e
   # Can't easily run a no-arg invocation against a fixture — verify via --help
