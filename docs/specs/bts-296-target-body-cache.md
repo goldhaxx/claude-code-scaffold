@@ -4,7 +4,7 @@
 > Work: linear:BTS-296
 > Created: 1777826148
 > Subject: Phase 1.5 — target-body cache for cmd_validate markers
-> Status: In Progress
+> Status: Complete
 
 ## Summary
 
