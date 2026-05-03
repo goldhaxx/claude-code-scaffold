@@ -4,7 +4,7 @@
 > Work: linear:BTS-293
 > Created: 1777789773
 > Subject: Phase 1 — caller-resolution cache for cmd_validate
-> Status: In Progress
+> Status: Complete
 
 ## Summary
 
