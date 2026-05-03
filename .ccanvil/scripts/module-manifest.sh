@@ -335,6 +335,97 @@ _function_body_grep() {
   return 1
 }
 
+# BTS-296 Phase 1.5: build a (path, id) → body-tempfile index from the
+# allowlist. _target_body_grep consults the index, eliminating per-marker
+# awk re-extraction (~2,800 file walks per validate run at hub scale).
+#
+# Index format (TSV at $MM_TARGET_BODY_INDEX):
+#   <abs_path>\t<id>\t<body_tempfile_path>
+# Cache files live under $MM_TARGET_BODY_DIR. On lookup miss (e.g., file-level
+# shell fallback or invocation outside cmd_validate) callers fall through to
+# the original awk path.
+_build_target_body_index() {
+  local out_index="$1" out_dir="$2" allowlist="$3"
+  : > "$out_index"
+  mkdir -p "$out_dir"
+  [[ -f "$allowlist" ]] || return 0
+  local raw path id abs body_file ctr=0
+  while IFS= read -r raw || [[ -n "$raw" ]]; do
+    raw="${raw%%#*}"
+    raw="${raw## }"; raw="${raw%% }"
+    raw="${raw#"${raw%%[![:space:]]*}"}"
+    raw="${raw%"${raw##*[![:space:]]}"}"
+    [[ -z "$raw" ]] && continue
+
+    if [[ "$raw" == *":"* ]]; then
+      path="${raw%%:*}"
+      id="${raw#*:}"
+    else
+      path="$raw"
+      local _vext="${path##*.}"
+      id="$(basename "$path" ".${_vext}")"
+    fi
+
+    [[ ! -f "$path" ]] && continue
+    abs=$(cd "$(dirname "$path")" && pwd)/$(basename "$path")
+
+    ctr=$((ctr + 1))
+    body_file="$out_dir/body-$ctr"
+
+    if [[ "$path" == *.md ]]; then
+      awk '
+        BEGIN { fm=0; body=0 }
+        /^---$/ {
+          if (fm == 0) { fm=1; next }
+          else if (fm == 1) { body=1; next }
+        }
+        body == 1 { print }
+        fm == 0 { print }
+      ' "$path" > "$body_file"
+    else
+      awk -v fn_id="$id" '
+        BEGIN { in_fn=0; depth=0; fn_decl_seen=0 }
+        function count_open(s,   c) { c = gsub(/\{/, "&", s); return c }
+        function count_close(s,   c) { c = gsub(/\}/, "&", s); return c }
+        {
+          if (in_fn == 0) {
+            if (match($0, "^"fn_id"\\(\\)[ \t]*\\{")) {
+              fn_decl_seen=1
+              in_fn=1
+              print
+              depth = count_open($0) - count_close($0)
+              if (depth <= 0) exit
+              next
+            }
+          } else {
+            print
+            depth = depth + count_open($0) - count_close($0)
+            if (depth <= 0) exit
+          }
+        }
+      ' "$path" > "$body_file"
+    fi
+
+    if [[ ! -s "$body_file" ]]; then
+      rm -f "$body_file"
+      continue
+    fi
+
+    printf '%s\t%s\t%s\n' "$abs" "$id" "$body_file" >> "$out_index"
+  done < "$allowlist"
+}
+
+_target_body_index_lookup() {
+  local index_file="$1" path="$2" id="$3"
+  [[ -s "$index_file" ]] || return 1
+  local abs body_file
+  abs=$(cd "$(dirname "$path")" 2>/dev/null && pwd 2>/dev/null)/$(basename "$path")
+  body_file=$(awk -F'\t' -v p="$abs" -v i="$id" '$1 == p && $2 == i { print $3; exit }' "$index_file")
+  if [[ -n "$body_file" ]] && [[ -s "$body_file" ]]; then
+    printf '%s' "$body_file"
+  fi
+}
+
 # BTS-240: target-aware body grep. For .md targets, the manifest scope is
 # the file's BODY (everything after the closing frontmatter `---` delimiter)
 # — skipping the frontmatter avoids false-positive matches against the
@@ -342,6 +433,18 @@ _function_body_grep() {
 # _function_body_grep.
 _target_body_grep() {
   local path="$1" id="$2" pattern="$3"
+
+  # BTS-296: consult the cached body when cmd_validate has populated the
+  # index. Falls through to the original path on cache miss.
+  if [[ -n "${MM_TARGET_BODY_INDEX:-}" ]] && [[ -s "$MM_TARGET_BODY_INDEX" ]]; then
+    local _bf
+    _bf=$(_target_body_index_lookup "$MM_TARGET_BODY_INDEX" "$path" "$id")
+    if [[ -n "$_bf" ]]; then
+      grep -qE -- "$pattern" "$_bf"
+      return $?
+    fi
+  fi
+
   if [[ "$path" == *.md ]]; then
     # BTS-252: capture awk output into a var before grep, instead of piping
     # `awk | grep -qE`. Under `set -o pipefail`, the awk-grep pipe trips on
@@ -532,12 +635,20 @@ cmd_validate() {
   # BTS-293 Phase 1: build caller-resolution index ONCE per invocation.
   # _caller_actually_calls_primitive consults MM_CALLER_INDEX when set,
   # eliminating ~7,500 redundant grep+awk file scans per validate run.
-  local _mm_caller_index
+  local _mm_caller_index _mm_target_body_index _mm_target_body_dir
   _mm_caller_index=$(mktemp)
+  _mm_target_body_index=$(mktemp)
+  _mm_target_body_dir=$(mktemp -d)
   # shellcheck disable=SC2064
-  trap "rm -f '$_mm_caller_index'" RETURN
+  trap "rm -rf '$_mm_caller_index' '$_mm_target_body_index' '$_mm_target_body_dir'" RETURN
   _build_caller_index "$_mm_caller_index" "."
   export MM_CALLER_INDEX="$_mm_caller_index"
+
+  # BTS-296 Phase 1.5: build per-(path, id) body cache so _target_body_grep
+  # serves depends-on / failure-mode / side-effect marker checks from
+  # pre-extracted bodies instead of re-walking the source file per marker.
+  _build_target_body_index "$_mm_target_body_index" "$_mm_target_body_dir" "$allowlist"
+  export MM_TARGET_BODY_INDEX="$_mm_target_body_index"
 
   local entries=()
   if [[ -f "$allowlist" ]]; then
