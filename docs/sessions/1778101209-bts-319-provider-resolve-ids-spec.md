@@ -8,7 +8,7 @@
 
 ## Summary
 
-Add `docs-check.sh provider-resolve-ids` — a single-verb substrate primitive that resolves a Linear provider's IDs (team_id, project_id, eight state_ids by canonical role names, label_ids[idea]) from live Linear queries and deep-merges them into `.claude/ccanvil.local.json`'s `integrations.providers.linear` block. Phase 1 of BTS-319 (the `provider-heal` umbrella surfaced by the unifi-toolbox dogfood 2026-05-06). Closes the highest-friction gap of the heal flow: the manual chain of 4 separate `linear-query.sh` calls + jq composition that took ~12 substrate operations on unifi-toolbox, collapsed to one verb. Out of scope for Phase 1: substrate-drift handling (`pull-auto-with-new`), `LINEAR_API_KEY` preflight, dispatch smoke-test verification — captured separately under BTS-316.
+Add `docs-check.sh provider-resolve-ids` — a single-verb substrate primitive that resolves a Linear provider's IDs (team_id, project_id, eight state_ids by canonical role names, label_ids\[idea\]) from live Linear queries and deep-merges them into `.claude/ccanvil.local.json`'s `integrations.providers.linear` block. Phase 1 of BTS-319 (the `provider-heal` umbrella surfaced by the unifi-toolbox dogfood 2026-05-06). Closes the highest-friction gap of the heal flow: the manual chain of 4 separate `linear-query.sh` calls + jq composition that took \~12 substrate operations on unifi-toolbox, collapsed to one verb. Out of scope for Phase 1: substrate-drift handling (`pull-auto-with-new`), `LINEAR_API_KEY` preflight, dispatch smoke-test verification — captured separately under BTS-316.
 
 ## Job To Be Done
 
@@ -34,29 +34,29 @@ Each criterion is independently testable. Binary pass/fail.
 ## Affected Files
 
 | File | Change |
-|------|--------|
+| -- | -- |
 | `.ccanvil/scripts/docs-check.sh` | New: `cmd_provider_resolve_ids` function + `provider-resolve-ids` subcommand dispatch in main case statement |
 | `hub/tests/provider-resolve-ids.bats` | New: bats coverage for AC-1 through AC-7 using LINEAR_QUERY_OVERRIDE stubs |
 | `.ccanvil/manifest-allowlist.txt` | Modified: register `cmd_provider_resolve_ids` for Layer 2 manifest enforcement |
 
 ## Dependencies
 
-- **Requires:** existing `linear-query.sh list-teams|list-projects|list-states|list-labels` subcommands (already shipped, BTS-164/166/167 era).
-- **Requires:** existing `LINEAR_QUERY_OVERRIDE` test pattern (already shipped, BTS-203 era).
-- **Blocked by:** none.
+* **Requires:** existing `linear-query.sh list-teams|list-projects|list-states|list-labels` subcommands (already shipped, BTS-164/166/167 era).
+* **Requires:** existing `LINEAR_QUERY_OVERRIDE` test pattern (already shipped, BTS-203 era).
+* **Blocked by:** none.
 
 ## Out of Scope
 
-- **Substrate-drift handling.** Heal-substrate must `/ccanvil-pull` before exercising new verbs, but that's a separate gap captured under BTS-316. This phase assumes substrate is current.
-- **`LINEAR_API_KEY` preflight + smoke-test verification.** Heal-substrate must verify auth works before declaring success; separate sibling under BTS-316.
-- **Compound `provider-heal` verb that orchestrates all phases.** This phase is just the ID-resolution primitive; the umbrella verb is a follow-up that composes this + the other heal phases.
-- **Auto-discovery of team/project from existing partial config.** Operator must pass `--team` and `--project` explicitly. Auto-discovery is a future enhancement.
-- **Microsoft365-toolbox-shape (zero config) heal.** This phase assumes `routing.idea = "linear"` is already set. Configuring routing from scratch is BTS-313 territory.
+* **Substrate-drift handling.** Heal-substrate must `/ccanvil-pull` before exercising new verbs, but that's a separate gap captured under BTS-316. This phase assumes substrate is current.
+* `LINEAR_API_KEY` preflight + smoke-test verification. Heal-substrate must verify auth works before declaring success; separate sibling under BTS-316.
+* **Compound** `provider-heal` verb that orchestrates all phases. This phase is just the ID-resolution primitive; the umbrella verb is a follow-up that composes this + the other heal phases.
+* **Auto-discovery of team/project from existing partial config.** Operator must pass `--team` and `--project` explicitly. Auto-discovery is a future enhancement.
+* **Microsoft365-toolbox-shape (zero config) heal.** This phase assumes `routing.idea = "linear"` is already set. Configuring routing from scratch is BTS-313 territory.
 
 ## Implementation Notes
 
-- Mirror the existing `cmd_idea_setup` (`docs-check.sh:4364`) shape for arg parsing and config write — that's the closest precedent.
-- Composition: 4 `linear-query.sh` calls (`list-teams`, `list-projects`, `list-states --team <name>`, label fallback chain), parsed via `jq` into the canonical block, deep-merged via `jq '. * $slice'` (same merge pattern proven on unifi-toolbox 2026-05-06).
-- Test fixture pattern: stub `linear-query.sh` per the `artifact-write-concurrent-edit.bats:43-84` `write_lq_stub()` helper. Each subcommand returns a deterministic JSON shape parameterized by env vars. Use `LINEAR_QUERY_OVERRIDE` to inject the stub into `cmd_provider_resolve_ids`'s shell-out paths.
-- `cmd_provider_resolve_ids` runs four subprocesses to `linear-query.sh`. That's deterministic substrate composition, NOT stochastic orchestration — operator-friction-mitigation per `feedback_deterministic_first` rule.
-- Anchor file references for the test (per AC-7 BTS-265 file-ref validator): `.ccanvil/scripts/linear-query.sh`, `.claude/rules/provider-integration.md`.
+* Mirror the existing `cmd_idea_setup` (`docs-check.sh:4364`) shape for arg parsing and config write — that's the closest precedent.
+* Composition: 4 `linear-query.sh` calls (`list-teams`, `list-projects`, `list-states --team <name>`, label fallback chain), parsed via `jq` into the canonical block, deep-merged via `jq '. * $slice'` (same merge pattern proven on unifi-toolbox 2026-05-06).
+* Test fixture pattern: stub `linear-query.sh` per the `artifact-write-concurrent-edit.bats:43-84` `write_lq_stub()` helper. Each subcommand returns a deterministic JSON shape parameterized by env vars. Use `LINEAR_QUERY_OVERRIDE` to inject the stub into `cmd_provider_resolve_ids`'s shell-out paths.
+* `cmd_provider_resolve_ids` runs four subprocesses to `linear-query.sh`. That's deterministic substrate composition, NOT stochastic orchestration — operator-friction-mitigation per `feedback_deterministic_first` rule.
+* Anchor file references for the test (per AC-7 BTS-265 file-ref validator): `.ccanvil/scripts/linear-query.sh`, `.claude/rules/provider-integration.md`.

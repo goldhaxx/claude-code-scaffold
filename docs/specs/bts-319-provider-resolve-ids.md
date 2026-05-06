@@ -4,7 +4,7 @@
 > Work: linear:BTS-319
 > Created: 1778097957
 > Subject: provider-resolve-ids substrate primitive (Phase 1)
-> Status: In Progress
+> Status: Complete
 
 ## Summary
 
