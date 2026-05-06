@@ -42,7 +42,7 @@ PROJECT_TREE_SUBCOMMANDS=(
   sync-check pr-guard radar-gather
   idea-add idea-list idea-count idea-count-local idea-update idea-sync
   idea-pending-replay idea-review-icebox idea-migrate-state idea-migrate
-  idea-setup idea-upgrade
+  idea-setup idea-upgrade provider-resolve-ids
   refresh-plan-hash archive-stasis sessions-list legacy-refs-scan stamp-spec
   evidence-scan-session lifecycle-state
   artifact-read artifact-write route-of ssot-migrate
@@ -4442,6 +4442,154 @@ cmd_idea_setup() {
 }
 
 # ---------------------------------------------------------------------------
+# cmd_provider_resolve_ids — Resolve Linear provider IDs (team_id, project_id,
+# state_ids[8], label_ids[idea]) from live API + deep-merge into
+# .claude/ccanvil.local.json. Phase 1 of the provider-heal umbrella surfaced
+# by the unifi-toolbox dogfood 2026-05-06.
+# ---------------------------------------------------------------------------
+# @manifest
+# purpose: Resolve Linear provider IDs (team_id, project_id, eight canonical state_ids by role name, label_ids[idea]) from live linear-query.sh calls and deep-merge them into .claude/ccanvil.local.json's integrations.providers.linear block; collapses the 4-call manual heal flow surfaced by the unifi-toolbox dogfood into one verb
+# input: --provider <name> (only "linear" supported in Phase 1)
+# input: --team <name>
+# input: --project <name>
+# input: --project-dir <path>
+# input: env LINEAR_API_KEY (consumed by linear-query.sh subprocess)
+# input: env LINEAR_QUERY_OVERRIDE (test-injection point)
+# output: stdout SETUP/RESOLVED summary lines
+# output: writes .claude/ccanvil.local.json with merged providers.linear block
+# output: exit-codes 0 ok, 1 missing-team-or-project-or-required-flag, 2 unknown-flag
+# depends-on: jq
+# depends-on: linear-query.sh
+# side-effect: writes-ccanvil-local-json
+# failure-mode: missing-team | exit=1 | visible=stderr-error-NamedTeam-not-found | mitigation=verify-team-name-matches-Linear
+# failure-mode: missing-project | exit=1 | visible=stderr-error-NamedProject-not-found-in-team | mitigation=verify-project-name-and-team-scope
+# failure-mode: missing-label-warn | exit=0 | visible=stderr-WARN-idea-label-not-resolved | mitigation=create-workspace-idea-label-and-rerun
+# contract: idempotent-on-rerun
+# contract: deep-merge-preserves-node_uuid-and-routing
+# anchor: BTS-319 (provider-heal Phase 1)
+cmd_provider_resolve_ids() {
+  local provider=""
+  local team=""
+  local project=""
+  local project_dir="."
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --provider)    provider="$2"; shift 2 ;;
+      --team)        team="$2";     shift 2 ;;
+      --project)     project="$2";  shift 2 ;;
+      --project-dir) project_dir="${2:-.}"; shift 2 ;;
+      --) shift; break ;;
+      # @failure-mode: unknown-flag
+      --*) echo "Usage: docs-check.sh provider-resolve-ids --provider linear --team <name> --project <name> [--project-dir <path>]" >&2; exit 2 ;;
+      *) shift ;;
+    esac
+  done
+
+  [[ "$provider" == "linear" ]] || { echo "ERROR: --provider must be 'linear' (Phase 1)" >&2; exit 1; }
+  [[ -n "$team" ]]    || { echo "ERROR: --team is required" >&2; exit 1; }
+  [[ -n "$project" ]] || { echo "ERROR: --project is required" >&2; exit 1; }
+
+  local script_dir
+  script_dir="$(dirname "${BASH_SOURCE[0]}")"
+  local lq="${LINEAR_QUERY_OVERRIDE:-$script_dir/linear-query.sh}"
+
+  # Step 1: resolve team_id by name.
+  local team_id
+  team_id=$(bash "$lq" list-teams 2>/dev/null \
+    | jq -r --arg n "$team" '[.[] | select(.name == $n)] | .[0].id // empty')
+  if [[ -z "$team_id" ]]; then
+    # @failure-mode: missing-team
+    echo "ERROR: team '$team' not found in Linear. Verify name matches an existing team." >&2
+    exit 1
+  fi
+
+  # Step 2: resolve project_id by name (filter to team via list-projects).
+  # list-projects has no --team flag; filter client-side by name.
+  local project_id
+  project_id=$(bash "$lq" list-projects 2>/dev/null \
+    | jq -r --arg n "$project" '[.[] | select(.name == $n)] | .[0].id // empty')
+  if [[ -z "$project_id" ]]; then
+    # @failure-mode: missing-project
+    echo "ERROR: project '$project' not found in Linear (team '$team'). Verify name." >&2
+    exit 1
+  fi
+
+  # Step 3: resolve state_ids[8] from list-states --team <name>.
+  # Map by case-insensitive name match to canonical roles. Extra states ignored.
+  local states_json
+  states_json=$(bash "$lq" list-states --team "$team" 2>/dev/null)
+  local state_ids
+  state_ids=$(echo "$states_json" | jq '
+    def lookup(n): [.[] | select((.name | ascii_downcase) == (n | ascii_downcase))] | .[0].id // empty;
+    {
+      triage: lookup("Triage"),
+      backlog: lookup("Backlog"),
+      icebox: lookup("Icebox"),
+      todo: lookup("Todo"),
+      in_progress: lookup("In Progress"),
+      done: lookup("Done"),
+      duplicate: lookup("Duplicate"),
+      canceled: lookup("Canceled")
+    }')
+
+  # Step 4: resolve label_ids[idea] — try team-scoped first, then workspace.
+  local label_id
+  label_id=$(bash "$lq" list-labels --team "$team" 2>/dev/null \
+    | jq -r '[.[] | select(.name == "idea")] | .[0].id // empty')
+  if [[ -z "$label_id" ]]; then
+    label_id=$(bash "$lq" list-labels --workspace-scoped 2>/dev/null \
+      | jq -r '[.[] | select(.name == "idea")] | .[0].id // empty')
+  fi
+
+  # Compose the heal slice.
+  local slice
+  if [[ -n "$label_id" ]]; then
+    slice=$(jq -n \
+      --arg team_id "$team_id" \
+      --arg project_id "$project_id" \
+      --argjson state_ids "$state_ids" \
+      --arg label_id "$label_id" \
+      '{integrations: {providers: {linear: {
+        team_id: $team_id,
+        project_id: $project_id,
+        state_ids: $state_ids,
+        label_ids: {idea: $label_id}
+      }}}}')
+  else
+    # @failure-mode: missing-label-warn
+    echo "WARN: idea label not resolved (neither team-scoped nor workspace-scoped) — capture-via-/idea will fail until label is created" >&2
+    slice=$(jq -n \
+      --arg team_id "$team_id" \
+      --arg project_id "$project_id" \
+      --argjson state_ids "$state_ids" \
+      '{integrations: {providers: {linear: {
+        team_id: $team_id,
+        project_id: $project_id,
+        state_ids: $state_ids
+      }}}}')
+  fi
+
+  # Deep-merge into existing config.
+  local cfg="$project_dir/.claude/ccanvil.local.json"
+  mkdir -p "$project_dir/.claude"
+  local existing='{}'
+  [[ -f "$cfg" ]] && existing=$(cat "$cfg")
+  echo "$existing" | jq --argjson slice "$slice" '. * $slice' > "$cfg.tmp"
+  # @side-effect: writes-ccanvil-local-json
+  mv "$cfg.tmp" "$cfg"
+
+  echo "RESOLVED: provider=linear team=$team project=$project"
+  echo "  team_id=$team_id"
+  echo "  project_id=$project_id"
+  echo "  state_ids: $(echo "$state_ids" | jq -r '[.[] | select(. != null)] | length')/8 resolved"
+  if [[ -n "$label_id" ]]; then
+    echo "  label_ids.idea=$label_id"
+  fi
+  echo "Wrote $cfg"
+}
+
+# ---------------------------------------------------------------------------
 # cmd_legacy_refs_scan — Find references to legacy ccanvil verbs/artifacts.
 #
 # Scans a project dir for:
@@ -6891,6 +7039,7 @@ case "$cmd" in
   idea-migrate-state) cmd_idea_migrate_state "$@" ;;
   idea-migrate)      cmd_idea_migrate "$@" ;;
   idea-setup)        cmd_idea_setup "$@" ;;
+  provider-resolve-ids) cmd_provider_resolve_ids "$@" ;;
   idea-upgrade)      cmd_idea_upgrade "$@" ;;
   title-from-body)   cmd_title_from_body "$@" ;;
   legacy-refs-scan)  cmd_legacy_refs_scan "$@" ;;
