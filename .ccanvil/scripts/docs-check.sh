@@ -6215,9 +6215,9 @@ cmd_artifact_read() {
   if [[ "$route" != "linear" ]]; then
     local target
     case "$kind" in
-      spec)   target="docs/spec.md" ;;
-      plan)   target="docs/plan.md" ;;
-      stasis) target="docs/stasis.md" ;;
+      spec)   target="$project_dir/docs/spec.md" ;;
+      plan)   target="$project_dir/docs/plan.md" ;;
+      stasis) target="$project_dir/docs/stasis.md" ;;
       *) echo "ERROR: artifact-read unknown kind '$kind'" >&2; return 2 ;;
     esac
     [[ ! -f "$target" ]] && return 2

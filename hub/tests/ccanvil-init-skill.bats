@@ -53,18 +53,30 @@ SKILL_FILE="$BATS_TEST_DIRNAME/../../global-commands/ccanvil-init.md"
 }
 
 # =========================================================================
-# AC-10: skip-if-exists for lifecycle docs
+# AC-10: skip-if-exists for the strategic doc (BTS-318: per-feature lifecycle
+# artifacts are NOT seeded at init — created on demand by /spec, /plan, /stasis)
 # =========================================================================
 
-@test "AC-10: skill declares skip-if-exists for docs/*.md" {
+@test "AC-10: skill declares skip-if-exists for docs/roadmap.md" {
   grep -q 'PRESERVED:' "$SKILL_FILE"
 }
 
-@test "AC-10: skill names the four lifecycle docs by path" {
-  grep -q 'docs/spec.md' "$SKILL_FILE"
-  grep -q 'docs/plan.md' "$SKILL_FILE"
-  grep -q 'docs/stasis.md' "$SKILL_FILE"
+@test "AC-10: skill seeds only docs/roadmap.md at init" {
+  # Strategic doc IS seeded.
   grep -q 'docs/roadmap.md' "$SKILL_FILE"
+  # Per-feature lifecycle docs are NOT in the Step 6 seed region (BTS-318).
+  awk '/^## Step 6/,/^## Step 7/' "$SKILL_FILE" > "$BATS_TEST_TMPDIR/step6.md"
+  ! grep -qE 'cp .*\.ccanvil/templates/(spec|plan|stasis)\.md' "$BATS_TEST_TMPDIR/step6.md"
+  ! grep -qE 'for f in .*docs/(spec|plan|stasis)\.md' "$BATS_TEST_TMPDIR/step6.md"
+}
+
+@test "AC-10b: drift-guard — Step 6 seed loop excludes per-feature lifecycle docs (BTS-318)" {
+  awk '/^## Step 6/,/^## Step 7/' "$SKILL_FILE" > "$BATS_TEST_TMPDIR/step6.md"
+  # The Step 6 region must NOT seed any of the three per-feature lifecycle artifacts.
+  # Phrasing the assertion against `cp ... templates/<name>.md` form so prose
+  # mentions of `docs/stasis.md` (e.g., for in-progress detection) don't trip it.
+  run grep -cE 'cp .*templates/(spec|plan|stasis)\.md' "$BATS_TEST_TMPDIR/step6.md"
+  [ "$output" = "0" ]
 }
 
 # =========================================================================

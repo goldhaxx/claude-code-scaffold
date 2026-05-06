@@ -51,23 +51,21 @@ Actions you may see:
    bash .ccanvil/scripts/ccanvil-sync.sh init-apply ~/projects/ccanvil .ccanvil/init-plan.json
    ```
 
-## Step 6 — Lifecycle docs placeholders (AC-10, AC-11)
+## Step 6 — Strategic doc placeholder + lifecycle archive dir (AC-10, AC-11)
 
-For each of `docs/spec.md`, `docs/plan.md`, `docs/stasis.md`, `docs/roadmap.md`:
+Seed only the strategic roadmap. **Per-feature lifecycle artifacts (`docs/spec.md`, `docs/plan.md`, `docs/stasis.md`) are NOT seeded at init** — they are created on demand by `/spec`, `/plan`, and `/stasis` at the appropriate lifecycle phase, and removed by `/pr`'s `pr-cleanup`. Seeding them would pre-fill branch-local state into a fresh repo with no active feature, violating the lifecycle invariant "active spec exists ↔ docs/spec.md exists" and breaking the very first `/stasis` (BTS-318).
 
 ```bash
-for f in docs/spec.md docs/plan.md docs/stasis.md docs/roadmap.md; do
-  if [[ -s "$f" ]]; then
-    echo "PRESERVED: $f"
-  else
-    mkdir -p "$(dirname "$f")"
-    cp "$HUB/.ccanvil/templates/$(basename "$f")" "$f"
-  fi
-done
+mkdir -p docs
+if [[ -s docs/roadmap.md ]]; then
+  echo "PRESERVED: docs/roadmap.md"
+else
+  cp "$HUB/.ccanvil/templates/roadmap.md" docs/roadmap.md
+fi
 mkdir -p docs/specs
 ```
 
-If `docs/stasis.md` was preserved AND contains a `> Feature: <id>` header, surface it in the post-init summary as: `detected in-progress feature: <id>`. This tells the user their mid-flight work is intact.
+In `mature-repo` / `partial-ccanvil` mode, if a pre-existing `docs/stasis.md` is present (i.e., the project was already mid-feature before retrofit) AND it contains a `> Feature: <id>` header, surface it in the post-init summary as: `detected in-progress feature: <id>`. This tells the user their mid-flight work is intact. The detection only fires for genuinely-preserved stasis files, never for freshly-seeded ones (because there are none).
 
 ## Step 7 — Copy GitHub templates
 
