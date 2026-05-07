@@ -79,25 +79,30 @@ _die() {
   exit "$code"
 }
 
-# Walk up from $PWD looking for .git; when found AND LINEAR_API_KEY is unset
-# AND a sibling .env exists, source it. Eliminates the per-shell
-# `set -a; source .env; set +a` ritual that has to run before every Bash
-# tool invocation that touches Linear (BTS-167).
+# Resolve LINEAR_API_KEY through a 4-tier chain (BTS-167 + BTS-331):
+#   1. Already-exported env var — operator intent always wins.
+#   2. Project-root `.env`, found by walking up from $PWD to the first
+#      `.git` ancestor. Eliminates the per-shell `set -a; source .env`
+#      ritual recurring across every http-routed substrate dispatch.
+#   3. `$HOME/.env` — single canonical user-default, no per-node
+#      distribution required across the registered downstream-node fleet.
+#   4. macOS Keychain via `security find-generic-password -a $USER -s
+#      <service> -w`. Service-name mapping rule: lowercased env var name
+#      (`LINEAR_API_KEY` → `linear_api_key`). Encrypted-at-rest. Skipped
+#      silently when `security` is not on PATH (non-macOS / restricted shell).
 #
-# Walks $PWD only — not the script's own dirname — so test isolation works
-# (tests cd into a controlled tmpdir) and the user-intent "my project's
-# .env, found from where I am" stays the contract. If the script is invoked
-# while $PWD is outside any git tree, no auto-source fires.
-#
-# Already-exported LINEAR_API_KEY always wins; .env is only consulted when
-# the env var is unset (no override of operator intent).
+# Walks $PWD only for tier 2 — not the script's own dirname — so test
+# isolation works (tests cd into a controlled tmpdir) and the user-intent
+# "my project's .env, found from where I am" stays the contract.
 _load_env_if_needed() {
   if [[ -n "${LINEAR_API_KEY:-}" ]]; then
     return 0
   fi
+
+  # Tier 2: project-root .env via .git walk-up.
   local dir
-  dir="$(pwd -P 2>/dev/null)" || return 0
-  while [[ "$dir" != "/" && -n "$dir" ]]; do
+  dir="$(pwd -P 2>/dev/null)" || dir=""
+  while [[ -n "$dir" && "$dir" != "/" ]]; do
     if [[ -d "$dir/.git" ]]; then
       if [[ -f "$dir/.env" ]]; then
         # `set -a` exports every var assigned during the source step; the
@@ -112,18 +117,45 @@ _load_env_if_needed() {
         . "$dir/.env"
         set +a
       fi
-      return 0
+      break
     fi
     dir="$(dirname "$dir")"
   done
+
+  if [[ -n "${LINEAR_API_KEY:-}" ]]; then
+    return 0
+  fi
+
+  # Tier 3: ~/.env user-default (BTS-331).
+  if [[ -n "${HOME:-}" && -f "$HOME/.env" ]]; then
+    set -a
+    # shellcheck disable=SC1091
+    . "$HOME/.env"
+    set +a
+  fi
+
+  if [[ -n "${LINEAR_API_KEY:-}" ]]; then
+    return 0
+  fi
+
+  # Tier 4: macOS Keychain (BTS-331). Service name = lowercased env var
+  # name. `security` absent → silent no-op (non-macOS / restricted PATH).
+  if command -v security >/dev/null 2>&1; then
+    local kc_value
+    if kc_value=$(security find-generic-password -a "${USER:-$LOGNAME}" -s linear_api_key -w 2>/dev/null) \
+       && [[ -n "$kc_value" ]]; then
+      export LINEAR_API_KEY="$kc_value"
+    fi
+  fi
 }
 
 # Every subcommand calls this before doing any work. Exits 2 with a clear
-# remediation hint when the env var is missing.
+# remediation hint when the env var is missing — names every resolution tier
+# verbatim so the operator can pick whichever fits their setup (BTS-331).
 _require_api_key() {
   _load_env_if_needed
   if [[ -z "${LINEAR_API_KEY:-}" ]]; then
-    _die 2 "LINEAR_API_KEY not set. Export it (export LINEAR_API_KEY=<key>) or add LINEAR_API_KEY=<key> to .env at the project root. Generate a key at https://linear.app/settings/api."
+    _die 2 "LINEAR_API_KEY not set. Resolution tiers (in order): (1) export LINEAR_API_KEY=<key>; (2) add LINEAR_API_KEY=<key> to .env at the project root; (3) add LINEAR_API_KEY=<key> to ~/.env; (4) store under Keychain service name 'linear_api_key' via 'security add-generic-password -a \$USER -s linear_api_key -w'. Generate a key at https://linear.app/settings/api."
   fi
 }
 

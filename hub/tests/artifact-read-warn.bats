@@ -17,6 +17,15 @@ setup() {
   export TMPDIR="${BATS_TEST_TMPDIR}"
   unset LINEAR_API_KEY
   unset LINEAR_QUERY_ENDPOINT
+  # BTS-331: isolate ~/.env and Keychain tiers so missing-key tests don't
+  # silently resolve via the operator's real fallbacks.
+  export HOME="$BATS_TEST_TMPDIR/fake-home"
+  mkdir -p "$HOME"
+  local stub_bin="$BATS_TEST_TMPDIR/stub-bin"
+  mkdir -p "$stub_bin"
+  printf '#!/usr/bin/env bash\nexit 44\n' > "$stub_bin/security"
+  chmod +x "$stub_bin/security"
+  export PATH="$stub_bin:$PATH"
 }
 
 # Fixture: linear-routed project dir.

@@ -13,6 +13,15 @@ setup() {
   # Strip operator env so tests don't pick up a leaked real key.
   unset LINEAR_API_KEY
   unset LINEAR_QUERY_ENDPOINT
+  # BTS-331: isolate ~/.env tier and macOS Keychain tier so tests that
+  # expect exit-2-on-missing-key don't pick up the operator's real fallbacks.
+  export HOME="$BATS_TEST_TMPDIR/fake-home"
+  mkdir -p "$HOME"
+  local stub_bin="$BATS_TEST_TMPDIR/stub-bin"
+  mkdir -p "$stub_bin"
+  printf '#!/usr/bin/env bash\nexit 44\n' > "$stub_bin/security"
+  chmod +x "$stub_bin/security"
+  export PATH="$stub_bin:$PATH"
 }
 
 # Stage a fake project root: <root>/.git/ (sentinel) and optionally <root>/.env.

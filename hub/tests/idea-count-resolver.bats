@@ -21,6 +21,15 @@ setup() {
   # bugs in this repo's lifecycle.)
   cp "$BATS_TEST_DIRNAME/../../.ccanvil/scripts/linear-query.sh" "$PROJECT/.ccanvil/scripts/linear-query.sh"
   unset LINEAR_API_KEY LINEAR_QUERY_ENDPOINT
+  # BTS-331: isolate ~/.env and Keychain tiers so missing-key tests don't
+  # silently resolve via the operator's real fallbacks.
+  export HOME="$BATS_TEST_TMPDIR/fake-home"
+  mkdir -p "$HOME"
+  local stub_bin="$BATS_TEST_TMPDIR/stub-bin"
+  mkdir -p "$stub_bin"
+  printf '#!/usr/bin/env bash\nexit 44\n' > "$stub_bin/security"
+  chmod +x "$stub_bin/security"
+  export PATH="$stub_bin:$PATH"
 }
 
 teardown() {
