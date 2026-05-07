@@ -42,7 +42,7 @@ PROJECT_TREE_SUBCOMMANDS=(
   sync-check pr-guard radar-gather
   idea-add idea-list idea-count idea-count-local idea-update idea-sync
   idea-pending-replay idea-review-icebox idea-migrate-state idea-migrate
-  idea-setup idea-upgrade provider-resolve-ids provider-heal-preflight provider-heal-auth
+  idea-setup idea-upgrade provider-resolve-ids provider-heal-preflight provider-heal-auth provider-heal
   refresh-plan-hash archive-stasis sessions-list legacy-refs-scan stamp-spec
   evidence-scan-session lifecycle-state
   artifact-read artifact-write route-of ssot-migrate
@@ -4590,6 +4590,131 @@ cmd_provider_resolve_ids() {
 }
 
 # ---------------------------------------------------------------------------
+# cmd_provider_heal — Capstone: composes the three Phase primitives
+# (BTS-321 auth → BTS-320 substrate-drift → BTS-319 ID resolution) into
+# one fail-fast operator-facing verb.
+# ---------------------------------------------------------------------------
+# @manifest
+# purpose: Operator-facing capstone that composes the three provider-heal phase primitives (BTS-321 auth check → BTS-320 substrate-drift gate → BTS-319 ID resolution) into one fail-fast verb; collapses the 3-command heal chain to a single operator action with halt-and-remediate behavior on each phase
+# input: --provider <name> (only "linear" supported)
+# input: --team <name>
+# input: --project <name>
+# input: --project-dir <path>
+# input: --json (optional, structured envelope)
+# input: env LINEAR_API_KEY (consumed by Phase 3 + Phase 1)
+# input: env LINEAR_QUERY_OVERRIDE (test-injection point)
+# input: env CCANVIL_SYNC_OVERRIDE (test-injection point)
+# output: stdout PROVIDER-HEAL-OK summary or JSON envelope
+# output: stderr forwards each phase's stderr verbatim on failure
+# output: writes-ccanvil-local-json (only when all 3 phases succeed; via Phase 1)
+# output: exit-codes 0 ok, 1 phase-halt, 2 unknown-flag-or-missing-required
+# depends-on: jq
+# depends-on: cmd_provider_heal_auth
+# depends-on: cmd_provider_heal_preflight
+# depends-on: cmd_provider_resolve_ids
+# side-effect: writes-ccanvil-local-json-on-success-only
+# failure-mode: auth-failed | exit=1 | visible=Phase-3-stderr | mitigation=fix-LINEAR_API_KEY
+# failure-mode: drift-detected | exit=1 | visible=Phase-2-stderr | mitigation=run-/ccanvil-pull
+# failure-mode: resolve-failed | exit=1 | visible=Phase-1-stderr | mitigation=verify-team-and-project
+# contract: fail-fast-halt-on-first-phase-error
+# contract: never-invokes-pull-auto-or-pull-apply
+# anchor: BTS-326 (provider-heal umbrella)
+cmd_provider_heal() {
+  local provider="" team="" project="" project_dir="."
+  local json_out=0
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --provider)    provider="$2"; shift 2 ;;
+      --team)        team="$2";     shift 2 ;;
+      --project)     project="$2";  shift 2 ;;
+      --project-dir) project_dir="${2:-.}"; shift 2 ;;
+      --json)        json_out=1; shift ;;
+      --) shift; break ;;
+      # @failure-mode: unknown-flag
+      --*) echo "Usage: docs-check.sh provider-heal --provider linear --team <name> --project <name> [--project-dir <path>] [--json]" >&2; exit 2 ;;
+      *) shift ;;
+    esac
+  done
+
+  [[ "$provider" == "linear" ]] || { echo "ERROR: --provider must be 'linear' (only linear supported in this phase)" >&2; exit 2; }
+  [[ -n "$team" ]]    || { echo "ERROR: --team is required" >&2; exit 2; }
+  [[ -n "$project" ]] || { echo "ERROR: --project is required" >&2; exit 2; }
+
+  # Phase 3: auth
+  local auth_json="" auth_rc=0
+  if (( json_out )); then
+    auth_json=$(cmd_provider_heal_auth --project-dir "$project_dir" --json) || auth_rc=$?
+  else
+    cmd_provider_heal_auth --project-dir "$project_dir" || auth_rc=$?
+  fi
+  if (( auth_rc != 0 )); then
+    # @failure-mode: auth-failed
+    if (( json_out )); then
+      jq -n --argjson auth "$auth_json" '{status:"auth-failed", phases:{auth:$auth, drift:null, resolve_ids:null}, error:"Phase 3 (auth) halted"}'
+    fi
+    return 1
+  fi
+
+  # Phase 2: drift gate
+  local drift_json="" drift_rc=0
+  if (( json_out )); then
+    drift_json=$(cmd_provider_heal_preflight --project-dir "$project_dir" --json) || drift_rc=$?
+  else
+    cmd_provider_heal_preflight --project-dir "$project_dir" || drift_rc=$?
+  fi
+  if (( drift_rc != 0 )); then
+    # @failure-mode: drift-detected
+    if (( json_out )); then
+      jq -n --argjson auth "$auth_json" --argjson drift "$drift_json" \
+        '{status:"drift-detected", phases:{auth:$auth, drift:$drift, resolve_ids:null}, error:"Phase 2 (drift) halted"}'
+    fi
+    return 1
+  fi
+
+  # Phase 1: resolve IDs
+  # @side-effect: writes-ccanvil-local-json-on-success-only
+  # In --json mode, suppress Phase 1's text summary output so it doesn't
+  # contaminate the umbrella's JSON envelope on stdout. Phase 1's actual
+  # work (config write) still happens normally.
+  local resolve_rc=0
+  if (( json_out )); then
+    cmd_provider_resolve_ids --provider linear --team "$team" --project "$project" --project-dir "$project_dir" >/dev/null || resolve_rc=$?
+  else
+    cmd_provider_resolve_ids --provider linear --team "$team" --project "$project" --project-dir "$project_dir" || resolve_rc=$?
+  fi
+  if (( resolve_rc != 0 )); then
+    # @failure-mode: resolve-failed
+    if (( json_out )); then
+      jq -n --argjson auth "$auth_json" --argjson drift "$drift_json" \
+        '{status:"resolve-failed", phases:{auth:$auth, drift:$drift, resolve_ids:null}, error:"Phase 1 (resolve-ids) halted"}'
+    fi
+    return 1
+  fi
+
+  # All three phases succeeded.
+  if (( json_out )); then
+    # Re-run Phase 1 in JSON mode? No — the env was already mutated.
+    # Synthesize a minimal resolve_ids envelope from the written config.
+    local cfg="$project_dir/.claude/ccanvil.local.json"
+    local resolve_envelope
+    resolve_envelope=$(jq '.integrations.providers.linear | {status:"ok", team_id, project_id, state_count:(.state_ids | length), label_count:(.label_ids | length)}' "$cfg")
+    jq -n --argjson auth "$auth_json" --argjson drift "$drift_json" --argjson resolve "$resolve_envelope" \
+      '{status:"ok", phases:{auth:$auth, drift:$drift, resolve_ids:$resolve}, error:null}'
+  else
+    local viewer_id
+    viewer_id=$(echo "$auth_json" | jq -r '.viewer_id // empty' 2>/dev/null)
+    [[ -z "$viewer_id" ]] && viewer_id="VIEWER-1"  # fallback if json mode wasn't run
+    # Re-extract from auth_json if available; otherwise use a generic placeholder.
+    # Better: re-run cmd_provider_heal_auth --json once at the end to grab viewer-id.
+    if [[ -z "$viewer_id" || "$viewer_id" == "VIEWER-1" ]]; then
+      viewer_id=$(cmd_provider_heal_auth --project-dir "$project_dir" --json 2>/dev/null | jq -r '.viewer_id // "unknown"')
+    fi
+    echo "PROVIDER-HEAL-OK: auth=$viewer_id drift=clean ids=resolved"
+  fi
+  return 0
+}
+
+# ---------------------------------------------------------------------------
 # cmd_provider_heal_auth — Phase 3 of provider-heal: read-only auth check.
 # Sources the standard .env chain (shell env → <project>/.env → ~/.env),
 # verifies LINEAR_API_KEY is present, and runs linear-query.sh viewer as
@@ -7278,6 +7403,7 @@ case "$cmd" in
   provider-resolve-ids) cmd_provider_resolve_ids "$@" ;;
   provider-heal-preflight) cmd_provider_heal_preflight "$@" ;;
   provider-heal-auth) cmd_provider_heal_auth "$@" ;;
+  provider-heal) cmd_provider_heal "$@" ;;
   idea-upgrade)      cmd_idea_upgrade "$@" ;;
   title-from-body)   cmd_title_from_body "$@" ;;
   legacy-refs-scan)  cmd_legacy_refs_scan "$@" ;;

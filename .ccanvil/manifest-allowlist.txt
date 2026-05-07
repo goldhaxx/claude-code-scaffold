@@ -22,6 +22,7 @@
 .ccanvil/scripts/docs-check.sh:cmd_provider_resolve_ids
 .ccanvil/scripts/docs-check.sh:cmd_provider_heal_preflight
 .ccanvil/scripts/docs-check.sh:cmd_provider_heal_auth
+.ccanvil/scripts/docs-check.sh:cmd_provider_heal
 
 # BTS-240: 4 reference markdown manifests (Session 1 of manifest rollout).
 # Sessions 9-10 extend coverage to remaining markdown sub-shapes per
