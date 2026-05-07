@@ -59,7 +59,7 @@ Main is protected — PreToolUse hook blocks direct commits to main/master.
 - When preset structure changes, update relevant `.ccanvil/guide/` file.
 
 ## Error Recovery
-- After 2 failed attempts, STOP. Checkpoint and suggest alternatives.
+- After 2 failed attempts, STOP. Run `/stasis` and suggest alternatives.
 
 <!-- NODE-SPECIFIC-START -->
 <!-- Add project-specific content below this line. -->

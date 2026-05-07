@@ -64,15 +64,42 @@ A separate, durable measure of system maturity: **opening the project shows tria
 
 4. **Soak observation** ✅ — captures stayed <2/week throughout the rollout. Stabilization held; Dark Code's substrate growth was offset by its disconnection-prevention value as planned.
 
-### Phase 2 candidates (not yet committed)
+### Phase 2 — SHIPPED 2026-05-01
 
-- **Layer 3 deterministic ramp** — convert the BTS-257 prose nudge to a deterministic check primitive (`module-manifest.sh diff-vs-manifest --diff <git-diff>`) so PR drift findings ride as machine-readable JSON rather than agent prose. ~55% → fully structural.
-- **Manifest-driven query helpers** — `module-manifest.sh query --by-caller <fn>` / `--by-side-effect <type>` to power `/recall` cold-start surfaces ("everything that writes to disk", "everything that calls Linear").
-- **Cross-substrate cohesion graph** — graph view of which manifests reference which others (callers + depends-on edges). Visualizable; useful for `/radar` strategic briefings.
+✅ All three Phase 2 candidates shipped, plus a substrate-perf chain that surfaced during the rollout:
 
-These are candidates only — operator decides whether to commit Phase 2 or rotate themes after Phase 1 closes.
+- ✅ **Layer 3 deterministic ramp** — BTS-265 (`validate-spec` primitive) + BTS-266 (`/spec --review` critic-mode handoff). Phase 1.5 cache hardening: BTS-281/282/293/296 substrate-perf chain (caller-resolution cache, target-body cache, bats fixture cache, profiler).
+- ✅ **Manifest-driven query helpers** — BTS-270 (`module-manifest.sh query --by-caller`, `--by-side-effect`).
+- ✅ **Cross-substrate cohesion graph** — BTS-269 (`module-manifest.sh graph`).
+- ✅ **Bats observability + perf** — BTS-277 (perf-core default), BTS-282 (subprocess profiler).
 
-## Next Theme — Direction (not yet committed)
+Phase 2 closed end-to-end through 6 PRs (#150–#155 substrate, #156–#160 perf chain). Manifest coverage held at 188/188 throughout. 1-week ramp verification (BTS-317) scheduled 2026-05-06 ~9am PT.
+
+## Up Next — Onboarding & Hub/Spoke Separation (active 2026-05-06)
+
+Theme surfaced when `/ccanvil-init` was exercised on three downstream nodes (inbox-toolbox, unifi-toolbox, microsoft365-toolbox) and produced three different agent-driven config divergences. Root cause: no canonical interactive provider-selection / heal flow; agents make stochastic choices that diverge across sessions. Empirically validated by the unifi-toolbox manual heal walkthrough 2026-05-06.
+
+**Shipped today (session 25, 2026-05-06):**
+
+- ✅ **BTS-318** — `/ccanvil-init` Step 6 simplified: per-feature lifecycle docs (`docs/spec.md`/`plan.md`/`stasis.md`) no longer seeded at init. Plus scope-up: `cmd_artifact_read` honors `--project-dir` for local-route reads.
+- ✅ **BTS-319 Phase 1** — `provider-resolve-ids` substrate primitive: single-verb Linear ID resolution (team_id, project_id, state_ids[8], label_ids[idea]) + deep-merge into ccanvil.local.json. Live-verified on hub itself.
+
+**Backlog cluster (priority order):**
+
+- **BTS-315 (P1)** — `/ccanvil-pull-globals` staleness gate. User-level skill prose drifts from hub canonical; affects every onboarding. Smallest urgent fix.
+- **BTS-316 (P2 umbrella)** — Modular provider connectivity, forklift-heal flow. Subsumes 313 + 314. Strategic anchor for the theme.
+- **BTS-313 (P2)** — Linear provider activation: deterministic flow during `/ccanvil-init`. Implementation slice under 316.
+- **BTS-314 (P2)** — Onboarding repair: Linear-config audit substrate + heal pass for 3 drifted nodes (unifi done; inbox + microsoft365 remain).
+- **BTS-320 (P2)** — provider-heal Phase 2: substrate-drift gate (pull-plan preflight). Composes with BTS-319.
+- **BTS-321 (P2)** — provider-heal Phase 3: LINEAR_API_KEY preflight + viewer smoke-test. Composes with BTS-319.
+- **BTS-324 (P2)** — `routing.ticket` non-canonical key rename → `routing.idea` (concrete inbox-toolbox heal).
+- **BTS-312 (P2)** — Test-runner indirection: generic test-suite verb, per-spoke config dispatch. Smallest pattern-anchor; validates hub-spoke separation.
+- **BTS-322 (P3)** — `pull-auto-with-new`: fold accept-new per-file loop into `ccanvil-sync.sh pull-auto`.
+- **BTS-323 (P3)** — `ccanvil-sync.sh` self-update mid-pull-auto crash hardening.
+
+**Theme exit criteria:** new-node onboarding produces correct + complete config in one operator command (no manual jq, no per-file pull loops, no auth-discovery friction). Verified on a fresh node.
+
+### Next Theme — Direction (not yet committed)
 
 **Working idea: "Simplicity through leverage" — Raptor v1 → v3.** The visual: maximal efficiency, fewer parts, cleaner lines, an order-of-magnitude upgrade arrived at by removing the wrong things, not adding more.
 

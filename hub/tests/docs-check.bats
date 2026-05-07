@@ -80,7 +80,7 @@ create_stasis() {
   local updated="${2:-1742861000}"
   local plan_hash="${3:-efgh5678}"
   cat > "$DOCS/stasis.md" <<EOF
-# Checkpoint
+# Stasis
 
 > Feature: ${feature_id}
 > Last updated: ${updated}
@@ -649,7 +649,7 @@ TEMPLATES="$BATS_TEST_DIRNAME/../../.ccanvil/templates"
   local plan_hash
   plan_hash=$(bash "$SCRIPT" status "$DOCS" | jq -r '.plan.content_hash')
   cat > "$DOCS/stasis.md" <<EOF
-# Checkpoint
+# Stasis
 
 > Feature: my-feature
 > Last updated: 1742861000
@@ -687,7 +687,7 @@ EOF
   local plan_hash
   plan_hash=$(bash "$SCRIPT" status "$DOCS" | jq -r '.plan.content_hash')
   cat > "$DOCS/stasis.md" <<EOF
-# Checkpoint
+# Stasis
 
 > Feature: my-feature
 > Last updated: 1742861000
@@ -714,7 +714,7 @@ EOF
   local plan_hash
   plan_hash=$(bash "$SCRIPT" status "$DOCS" | jq -r '.plan.content_hash')
   cat > "$DOCS/stasis.md" <<EOF
-# Checkpoint
+# Stasis
 
 > Feature: my-feature
 > Last updated: 1742861000
