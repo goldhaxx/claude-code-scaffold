@@ -42,7 +42,7 @@ PROJECT_TREE_SUBCOMMANDS=(
   sync-check pr-guard radar-gather
   idea-add idea-list idea-count idea-count-local idea-update idea-sync
   idea-pending-replay idea-review-icebox idea-migrate-state idea-migrate
-  idea-setup idea-upgrade provider-resolve-ids provider-heal-preflight
+  idea-setup idea-upgrade provider-resolve-ids provider-heal-preflight provider-heal-auth
   refresh-plan-hash archive-stasis sessions-list legacy-refs-scan stamp-spec
   evidence-scan-session lifecycle-state
   artifact-read artifact-write route-of ssot-migrate
@@ -4590,6 +4590,117 @@ cmd_provider_resolve_ids() {
 }
 
 # ---------------------------------------------------------------------------
+# cmd_provider_heal_auth — Phase 3 of provider-heal: read-only auth check.
+# Sources the standard .env chain (shell env → <project>/.env → ~/.env),
+# verifies LINEAR_API_KEY is present, and runs linear-query.sh viewer as
+# a live smoke-test to confirm the key is functional.
+# ---------------------------------------------------------------------------
+# @manifest
+# purpose: Phase 3 of provider-heal — read-only auth check that sources the standard .env chain (shell env → project/.env → ~/.env), verifies LINEAR_API_KEY is set, and runs linear-query.sh viewer as a live smoke-test to confirm the key is functional; pairs with BTS-319 (Phase 1 ID resolution) and BTS-320 (Phase 2 substrate-drift gate) into the future provider-heal umbrella verb
+# input: --project-dir <path>
+# input: --json (optional, structured envelope output)
+# input: env LINEAR_API_KEY (consumed; shell-env wins over .env files)
+# input: env LINEAR_QUERY_OVERRIDE (test-injection point for viewer stub)
+# output: stdout AUTH-OK message or JSON envelope
+# output: stderr clear remediation when missing or invalid key
+# output: exit-codes 0 ok, 1 missing-key-or-invalid-key, 2 unknown-flag
+# depends-on: jq
+# depends-on: linear-query.sh
+# side-effect: read-only
+# failure-mode: missing-key | exit=1 | visible=stderr-ERROR-LINEAR_API_KEY-not-found | mitigation=add-key-to-shell-env-or-.env
+# failure-mode: invalid-key | exit=1 | visible=stderr-ERROR-viewer-smoke-test-failed | mitigation=verify-key-not-revoked-or-expired
+# contract: read-only-no-state-mutation
+# contract: env-isolation-no-leak-to-caller-shell
+# anchor: BTS-321 (provider-heal Phase 3)
+cmd_provider_heal_auth() {
+  # @side-effect: read-only
+  local project_dir="."
+  local json_out=0
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --project-dir) project_dir="${2:-.}"; shift 2 ;;
+      --json)        json_out=1; shift ;;
+      --) shift; break ;;
+      # @failure-mode: unknown-flag
+      --*) echo "Usage: docs-check.sh provider-heal-auth [--project-dir <path>] [--json]" >&2; exit 2 ;;
+      *) shift ;;
+    esac
+  done
+
+  local key_source=""
+  if [[ -n "${LINEAR_API_KEY:-}" ]]; then
+    key_source="shell-env"
+  fi
+
+  if [[ -z "${LINEAR_API_KEY:-}" ]] && [[ -f "$project_dir/.env" ]]; then
+    set -a; source "$project_dir/.env" 2>/dev/null || true; set +a
+    if [[ -n "${LINEAR_API_KEY:-}" ]]; then
+      key_source="$project_dir/.env"
+    fi
+  fi
+
+  if [[ -z "${LINEAR_API_KEY:-}" ]] && [[ -f "$HOME/.env" ]]; then
+    set -a; source "$HOME/.env" 2>/dev/null || true; set +a
+    if [[ -n "${LINEAR_API_KEY:-}" ]]; then
+      key_source="$HOME/.env"
+    fi
+  fi
+
+  if [[ -z "${LINEAR_API_KEY:-}" ]]; then
+    # @failure-mode: missing-key
+    if (( json_out )); then
+      jq -n '{status:"missing-key", key_source:null, viewer_id:null, error:"LINEAR_API_KEY not found in shell env, project .env, or ~/.env"}'
+    else
+      echo "ERROR: LINEAR_API_KEY not found in shell env, $project_dir/.env, or ~/.env. Generate at https://linear.app/settings/api and add to shell env or .env." >&2
+    fi
+    exit 1
+  fi
+
+  local script_dir
+  script_dir="$(dirname "${BASH_SOURCE[0]}")"
+  local lq="${LINEAR_QUERY_OVERRIDE:-$script_dir/linear-query.sh}"
+
+  local viewer_stderr viewer_stdout viewer_rc viewer_id
+  viewer_stderr=$(mktemp)
+  if viewer_stdout=$(bash "$lq" viewer 2>"$viewer_stderr"); then
+    viewer_rc=0
+  else
+    viewer_rc=$?
+  fi
+  viewer_id=$(echo "$viewer_stdout" | jq -r '.id // empty' 2>/dev/null)
+
+  if (( viewer_rc != 0 )) || [[ -z "$viewer_id" ]]; then
+    # @failure-mode: invalid-key
+    local err_text
+    err_text=$(cat "$viewer_stderr")
+    rm -f "$viewer_stderr"
+    if (( json_out )); then
+      jq -n --arg src "$key_source" --arg err "$err_text" \
+        '{status:"invalid-key", key_source:$src, viewer_id:null, error:$err}'
+    else
+      echo "ERROR: LINEAR_API_KEY found ($key_source) but viewer smoke-test failed. Key may be invalid, expired, or revoked." >&2
+      if [[ -n "$err_text" ]]; then
+        echo "WRAPPER ERROR:" >&2
+        echo "$err_text" >&2
+      else
+        echo "WRAPPER ERROR: viewer returned no .id (got: $viewer_stdout)" >&2
+      fi
+    fi
+    exit 1
+  fi
+  rm -f "$viewer_stderr"
+
+  if (( json_out )); then
+    jq -n --arg src "$key_source" --arg id "$viewer_id" \
+      '{status:"ok", key_source:$src, viewer_id:$id, error:null}'
+  else
+    echo "AUTH-OK: viewer=$viewer_id"
+  fi
+  return 0
+}
+
+# ---------------------------------------------------------------------------
 # cmd_provider_heal_preflight — Phase 2 of provider-heal: read-only substrate-
 # drift gate. Runs ccanvil-sync.sh pull-plan against the configured hub and
 # exits non-zero if any non-zero action count remains.
@@ -7166,6 +7277,7 @@ case "$cmd" in
   idea-setup)        cmd_idea_setup "$@" ;;
   provider-resolve-ids) cmd_provider_resolve_ids "$@" ;;
   provider-heal-preflight) cmd_provider_heal_preflight "$@" ;;
+  provider-heal-auth) cmd_provider_heal_auth "$@" ;;
   idea-upgrade)      cmd_idea_upgrade "$@" ;;
   title-from-body)   cmd_title_from_body "$@" ;;
   legacy-refs-scan)  cmd_legacy_refs_scan "$@" ;;
