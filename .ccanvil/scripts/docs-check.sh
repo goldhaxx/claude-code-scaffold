@@ -4450,9 +4450,12 @@ cmd_idea_setup() {
 
 # _operator_config_file — emit $HOME/.ccanvil/operator.json or "" when HOME unset.
 # Mirrors operations.sh::_operator_config_path; duplicated here so docs-check.sh
-# stays self-contained (no cross-script source).
+# stays self-contained (no cross-script source). CCANVIL_OPERATOR_CONFIG_OVERRIDE
+# wins for test-injection (BTS-316).
 _operator_config_file() {
-  if [[ -n "${HOME:-}" ]]; then
+  if [[ -n "${CCANVIL_OPERATOR_CONFIG_OVERRIDE:-}" ]]; then
+    echo "$CCANVIL_OPERATOR_CONFIG_OVERRIDE"
+  elif [[ -n "${HOME:-}" ]]; then
     echo "$HOME/.ccanvil/operator.json"
   else
     echo ""
@@ -4461,7 +4464,9 @@ _operator_config_file() {
 
 # _operator_config_dir — parent dir of operator.json. Used by set/init for mkdir.
 _operator_config_dir() {
-  if [[ -n "${HOME:-}" ]]; then
+  if [[ -n "${CCANVIL_OPERATOR_CONFIG_OVERRIDE:-}" ]]; then
+    dirname "$CCANVIL_OPERATOR_CONFIG_OVERRIDE"
+  elif [[ -n "${HOME:-}" ]]; then
     echo "$HOME/.ccanvil"
   else
     echo ""
@@ -4546,11 +4551,18 @@ cmd_operator_config_init() {
     fi
     existing=$(cat "$file")
   fi
+  # Seed shape mirrors ccanvil.json exactly — operator-tier values nest under
+  # .integrations so 3-tier merge_config produces semantic results (operator
+  # provides defaults at the same path that hub/node would override). The
+  # default_routes block lives at .integrations.default_routes since it's a
+  # provider-activate input, not a routing target itself.
   local seed
   seed=$(jq -n --arg provider "$provider" --arg team "$team" '
     {
-      providers: { ($provider): { team: $team } },
-      default_routes: { spec: $provider, plan: $provider, stasis: $provider, idea: $provider }
+      integrations: {
+        providers: { ($provider): { team: $team } },
+        default_routes: { spec: $provider, plan: $provider, stasis: $provider, idea: $provider }
+      }
     }')
   # Deep-merge: existing tier wins (preserves user customizations); seed
   # only fills in absent keys. Ensures idempotency when called repeatedly.
@@ -5038,13 +5050,13 @@ cmd_provider_activate() {
   # @failure-mode: non-linear-provider
   [[ "$provider" == "linear" ]] || { echo "ERROR: --provider must be 'linear' (only linear supported in Phase 1)" >&2; return 2; }
 
-  # Team: explicit flag → operator-config providers.<p>.team → fail.
+  # Team: explicit flag → operator-config integrations.providers.<p>.team → fail.
   if [[ -z "$team" ]]; then
-    team=$(cmd_operator_config_get "providers.$provider.team" 2>/dev/null)
+    team=$(cmd_operator_config_get "integrations.providers.$provider.team" 2>/dev/null)
   fi
   # @failure-mode: missing-team
   if [[ -z "$team" ]]; then
-    echo "ERROR: --team is required (no operator-config providers.$provider.team fallback found; run 'docs-check.sh operator-config init --provider $provider --team <name>' to set a default)" >&2
+    echo "ERROR: --team is required (no operator-config integrations.providers.$provider.team fallback found; run 'docs-check.sh operator-config init --provider $provider --team <name>' to set a default)" >&2
     return 2
   fi
 
@@ -5054,17 +5066,17 @@ cmd_provider_activate() {
     return 2
   fi
 
-  # Routes: explicit flag → operator-config default_routes (per-kind dict, scan known kinds) → hard default.
+  # Routes: explicit flag → operator-config integrations.default_routes (per-kind dict, scan known kinds) → hard default.
   local routes=""
   if [[ -n "$routes_arg" ]]; then
     routes="$routes_arg"
   else
     # Pull each kind from operator-config default_routes; include kinds where value matches our provider.
     local r_spec r_plan r_stasis r_idea
-    r_spec=$(cmd_operator_config_get "default_routes.spec" 2>/dev/null)
-    r_plan=$(cmd_operator_config_get "default_routes.plan" 2>/dev/null)
-    r_stasis=$(cmd_operator_config_get "default_routes.stasis" 2>/dev/null)
-    r_idea=$(cmd_operator_config_get "default_routes.idea" 2>/dev/null)
+    r_spec=$(cmd_operator_config_get "integrations.default_routes.spec" 2>/dev/null)
+    r_plan=$(cmd_operator_config_get "integrations.default_routes.plan" 2>/dev/null)
+    r_stasis=$(cmd_operator_config_get "integrations.default_routes.stasis" 2>/dev/null)
+    r_idea=$(cmd_operator_config_get "integrations.default_routes.idea" 2>/dev/null)
     local default_kinds=()
     [[ "$r_spec"   == "$provider" ]] && default_kinds+=("spec")
     [[ "$r_plan"   == "$provider" ]] && default_kinds+=("plan")
@@ -5168,10 +5180,10 @@ cmd_provider_activate() {
 # a live smoke-test to confirm the key is functional.
 # ---------------------------------------------------------------------------
 # @manifest
-# purpose: Phase 3 of provider-heal — read-only auth check that sources the standard .env chain (shell env → project/.env → ~/.env), verifies LINEAR_API_KEY is set, and runs linear-query.sh viewer as a live smoke-test to confirm the key is functional; pairs with BTS-319 (Phase 1 ID resolution) and BTS-320 (Phase 2 substrate-drift gate) into the future provider-heal umbrella verb
+# purpose: Phase 3 of provider-heal — read-only auth check that walks the 4-tier auth chain (shell env → project/.env → ~/.env → macOS keychain via security find-generic-password), verifies LINEAR_API_KEY resolves, and runs linear-query.sh viewer as a live smoke-test to confirm the key is functional; pairs with BTS-319 (Phase 1 ID resolution) and BTS-320 (Phase 2 substrate-drift gate) into the provider-heal umbrella verb
 # input: --project-dir <path>
 # input: --json (optional, structured envelope output)
-# input: env LINEAR_API_KEY (consumed; shell-env wins over .env files)
+# input: env LINEAR_API_KEY (consumed; shell-env wins over .env files and keychain)
 # input: env LINEAR_QUERY_OVERRIDE (test-injection point for viewer stub)
 # output: stdout AUTH-OK message or JSON envelope
 # output: stderr clear remediation when missing or invalid key
@@ -5179,11 +5191,14 @@ cmd_provider_activate() {
 # depends-on: jq
 # depends-on: linear-query.sh
 # side-effect: read-only
-# failure-mode: missing-key | exit=1 | visible=stderr-ERROR-LINEAR_API_KEY-not-found | mitigation=add-key-to-shell-env-or-.env
+# side-effect: invokes-subprocess-security
+# failure-mode: missing-key | exit=1 | visible=stderr-ERROR-LINEAR_API_KEY-not-found | mitigation=add-key-to-shell-env-.env-or-keychain
 # failure-mode: invalid-key | exit=1 | visible=stderr-ERROR-viewer-smoke-test-failed | mitigation=verify-key-not-revoked-or-expired
 # contract: read-only-no-state-mutation
 # contract: env-isolation-no-leak-to-caller-shell
+# contract: 4-tier-auth-chain-matches-linear-query-sh
 # anchor: BTS-321 (provider-heal Phase 3)
+# anchor: BTS-316 (4-tier auth chain extension)
 cmd_provider_heal_auth() {
   # @side-effect: read-only
   local project_dir="."
@@ -5219,12 +5234,26 @@ cmd_provider_heal_auth() {
     fi
   fi
 
+  # BTS-316: extend the auth chain to include keychain (Tier 4 in linear-query.sh
+  # since BTS-331). Mirrors linear-query.sh's _load_env_if_needed exactly so the
+  # pre-check parity matches the actual call. Without this, operators who store
+  # their key in keychain hit a fast-fail at this check before linear-query.sh's
+  # own chain has a chance to resolve.
+  if [[ -z "${LINEAR_API_KEY:-}" ]] && command -v security >/dev/null 2>&1; then
+    local kc_value
+    if kc_value=$(security find-generic-password -a "${USER:-$LOGNAME}" -s linear_api_key -w 2>/dev/null) \
+       && [[ -n "$kc_value" ]]; then
+      export LINEAR_API_KEY="$kc_value"
+      key_source="keychain"
+    fi
+  fi
+
   if [[ -z "${LINEAR_API_KEY:-}" ]]; then
     # @failure-mode: missing-key
     if (( json_out )); then
-      jq -n '{status:"missing-key", key_source:null, viewer_id:null, error:"LINEAR_API_KEY not found in shell env, project .env, or ~/.env"}'
+      jq -n '{status:"missing-key", key_source:null, viewer_id:null, error:"LINEAR_API_KEY not found in shell env, project .env, ~/.env, or macOS keychain (service: linear_api_key)"}'
     else
-      echo "ERROR: LINEAR_API_KEY not found in shell env, $project_dir/.env, or ~/.env. Generate at https://linear.app/settings/api and add to shell env or .env." >&2
+      echo "ERROR: LINEAR_API_KEY not found. Tiers checked: shell env, $project_dir/.env, ~/.env, macOS keychain (service: linear_api_key). Generate at https://linear.app/settings/api and add via 'security add-generic-password -a \$USER -s linear_api_key -w' or .env file." >&2
     fi
     exit 1
   fi
@@ -5333,12 +5362,20 @@ cmd_provider_heal_preflight() {
   fi
 
   local script_dir
-  script_dir="$(dirname "${BASH_SOURCE[0]}")"
+  script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
   local sync="${CCANVIL_SYNC_OVERRIDE:-$script_dir/ccanvil-sync.sh}"
 
+  # BTS-316: ccanvil-sync.sh's LOCKFILE is a cwd-relative path
+  # (".ccanvil/ccanvil.lock"). When provider-heal-preflight is invoked from a
+  # cwd OTHER than the target project_dir (e.g. by provider-activate from the
+  # hub repo against a remote downstream node), pull-plan reads the wrong
+  # cwd's lockfile and errors with "No .ccanvil/ccanvil.lock found." Fix: run
+  # the subshell with cwd=project_dir so pull-plan sees the right lockfile.
+  # script_dir is canonicalized to absolute path above so the cd doesn't
+  # change which ccanvil-sync.sh resolves.
   local plan_stderr plan_stdout plan_rc
   plan_stderr=$(mktemp)
-  if plan_stdout=$(bash "$sync" pull-plan "$hub_path" 2>"$plan_stderr"); then
+  if plan_stdout=$(cd "$project_dir" && bash "$sync" pull-plan "$hub_path" 2>"$plan_stderr"); then
     plan_rc=0
   else
     plan_rc=$?

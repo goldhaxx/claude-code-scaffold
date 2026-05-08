@@ -20,11 +20,11 @@ setup() {
   run bash "$DC" operator-config init --provider linear --team "Acme Corp"
   [ "$status" -eq 0 ]
   [ -f "$HOME/.ccanvil/operator.json" ]
-  jq -e '.providers.linear.team == "Acme Corp"' "$HOME/.ccanvil/operator.json" >/dev/null
-  jq -e '.default_routes.spec == "linear"' "$HOME/.ccanvil/operator.json" >/dev/null
-  jq -e '.default_routes.plan == "linear"' "$HOME/.ccanvil/operator.json" >/dev/null
-  jq -e '.default_routes.stasis == "linear"' "$HOME/.ccanvil/operator.json" >/dev/null
-  jq -e '.default_routes.idea == "linear"' "$HOME/.ccanvil/operator.json" >/dev/null
+  jq -e '.integrations.providers.linear.team == "Acme Corp"' "$HOME/.ccanvil/operator.json" >/dev/null
+  jq -e '.integrations.default_routes.spec == "linear"' "$HOME/.ccanvil/operator.json" >/dev/null
+  jq -e '.integrations.default_routes.plan == "linear"' "$HOME/.ccanvil/operator.json" >/dev/null
+  jq -e '.integrations.default_routes.stasis == "linear"' "$HOME/.ccanvil/operator.json" >/dev/null
+  jq -e '.integrations.default_routes.idea == "linear"' "$HOME/.ccanvil/operator.json" >/dev/null
 }
 
 @test "BTS-316 AC-1: operator-config init is idempotent — second run produces zero diff" {
@@ -38,7 +38,7 @@ setup() {
 @test "BTS-316 AC-2: operator-config get reads dotted path" {
   set -e
   bash "$DC" operator-config init --provider linear --team "Acme Corp"
-  run bash "$DC" operator-config get providers.linear.team
+  run bash "$DC" operator-config get integrations.providers.linear.team
   [ "$status" -eq 0 ]
   [ "$output" = "Acme Corp" ]
 }
@@ -46,7 +46,7 @@ setup() {
 @test "BTS-316 AC-2: operator-config get returns empty + exit 0 on missing key" {
   set -e
   bash "$DC" operator-config init --provider linear --team "Acme Corp"
-  run bash "$DC" operator-config get providers.linear.nonexistent
+  run bash "$DC" operator-config get integrations.providers.linear.nonexistent
   [ "$status" -eq 0 ]
   [ -z "$output" ]
 }
@@ -54,7 +54,7 @@ setup() {
 @test "BTS-316 AC-2: operator-config get on missing file returns empty + exit 0" {
   set -e
   # No init — operator.json does not exist.
-  run bash "$DC" operator-config get providers.linear.team
+  run bash "$DC" operator-config get integrations.providers.linear.team
   [ "$status" -eq 0 ]
   [ -z "$output" ]
 }
@@ -62,19 +62,19 @@ setup() {
 @test "BTS-316 AC-3: operator-config set updates dotted key" {
   set -e
   bash "$DC" operator-config init --provider linear --team "Acme Corp"
-  run bash "$DC" operator-config set providers.linear.team "Beta Co"
+  run bash "$DC" operator-config set integrations.providers.linear.team "Beta Co"
   [ "$status" -eq 0 ]
-  run bash "$DC" operator-config get providers.linear.team
+  run bash "$DC" operator-config get integrations.providers.linear.team
   [ "$output" = "Beta Co" ]
 }
 
 @test "BTS-316 AC-3: operator-config set creates the file when absent" {
   set -e
   # No init first.
-  run bash "$DC" operator-config set providers.linear.team "Solo"
+  run bash "$DC" operator-config set integrations.providers.linear.team "Solo"
   [ "$status" -eq 0 ]
   [ -f "$HOME/.ccanvil/operator.json" ]
-  jq -e '.providers.linear.team == "Solo"' "$HOME/.ccanvil/operator.json" >/dev/null
+  jq -e '.integrations.providers.linear.team == "Solo"' "$HOME/.ccanvil/operator.json" >/dev/null
 }
 
 @test "BTS-316 AC-3: operator-config set creates the parent dir when absent" {
@@ -101,7 +101,7 @@ setup() {
   bash "$DC" operator-config init --provider linear --team "Acme Corp"
   run bash "$DC" operator-config show
   [ "$status" -eq 0 ]
-  echo "$output" | jq -e '.providers.linear.team == "Acme Corp"' >/dev/null
+  echo "$output" | jq -e '.integrations.providers.linear.team == "Acme Corp"' >/dev/null
 }
 
 @test "BTS-316 AC-4: operator-config show on missing file emits {}" {
@@ -128,5 +128,5 @@ setup() {
   OPS="$BATS_TEST_DIRNAME/../../.ccanvil/scripts/operations.sh"
   run bash "$OPS" merge-config --project-dir "$fx"
   [ "$status" -eq 0 ]
-  echo "$output" | jq -e '.providers.linear.team == "Op-Team"' >/dev/null
+  echo "$output" | jq -e '.integrations.providers.linear.team == "Op-Team"' >/dev/null
 }

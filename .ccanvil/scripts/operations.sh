@@ -119,8 +119,15 @@ CONFIG_FILE=""
 # _operator_config_path — Return the operator-config file path.
 # Reads $HOME directly; emits empty when HOME is unset (treated as "no
 # operator tier" by callers). BTS-316.
+#
+# Test-injection: CCANVIL_OPERATOR_CONFIG_OVERRIDE wins when set (mirrors
+# LINEAR_QUERY_OVERRIDE pattern). Lets bats fixtures point at a temp file
+# without mutating $HOME, so other config-reading tests see a clean
+# operator-tier (empty / non-existent) without per-test HOME juggling.
 _operator_config_path() {
-  if [[ -n "${HOME:-}" ]]; then
+  if [[ -n "${CCANVIL_OPERATOR_CONFIG_OVERRIDE:-}" ]]; then
+    echo "$CCANVIL_OPERATOR_CONFIG_OVERRIDE"
+  elif [[ -n "${HOME:-}" ]]; then
     echo "$HOME/.ccanvil/operator.json"
   else
     echo ""
