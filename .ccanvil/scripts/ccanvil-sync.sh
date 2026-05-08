@@ -349,6 +349,26 @@ is_excluded() {
   return 1
 }
 
+# is_distributable_path — Test if a path matches any TRACKED_PATTERN or
+# INIT_EXTRA_FILES entry. Returns 0 (true) on match, 1 otherwise. BTS-382.
+# Used by cmd_changelog to filter hub-internal commits/files that would
+# never land on a downstream node out of pre-pull preview output.
+is_distributable_path() {
+  local path="$1"
+  local pattern
+  for pattern in "${TRACKED_PATTERNS[@]}"; do
+    # shellcheck disable=SC2254
+    case "$path" in
+      $pattern) return 0 ;;
+    esac
+  done
+  local extra
+  for extra in "${INIT_EXTRA_FILES[@]}"; do
+    [[ "$path" == "$extra" ]] && return 0
+  done
+  return 1
+}
+
 # Scan project for all files matching tracked patterns
 scan_tracked_files() {
   local files=()
@@ -1200,26 +1220,46 @@ cmd_changelog() {
     die "Last synced version $last_version not found in hub repo. History may have been rewritten."
   fi
 
-  # Commit log
+  # BTS-382: filter to distributable paths only. Hub-internal commits that
+  # only touch docs/, hub/, etc. (paths NOT in TRACKED_PATTERNS or
+  # INIT_EXTRA_FILES) leak into downstream pre-pull previews as noise. The
+  # downstream operator parses extra rows that won't land. Filter both
+  # `files_changed` and `commits` so the envelope only shows what would
+  # actually affect the downstream node.
+  local files_changed_filtered_json="[]"
+  while IFS=$'\t' read -r change_type filepath; do
+    if is_distributable_path "$filepath"; then
+      files_changed_filtered_json=$(echo "$files_changed_filtered_json" \
+        | jq --arg t "$change_type" --arg f "$filepath" \
+          '. + [{"type": $t, "file": $f}]')
+    fi
+  done < <(git -C "$hub_root" diff --name-status "$last_version".."$current_version")
+
+  # Commit log — keep only commits whose diff intersects distributable paths.
   local commits_json="[]"
   while IFS=$'\t' read -r hash subject; do
-    commits_json=$(echo "$commits_json" | jq --arg h "$hash" --arg s "$subject" \
-      '. + [{"hash": $h, "subject": $s}]')
+    local commit_files
+    commit_files=$(git -C "$hub_root" show --name-only --format= "$hash" 2>/dev/null)
+    local commit_touches_distributable=false
+    while IFS= read -r commit_file; do
+      [[ -z "$commit_file" ]] && continue
+      if is_distributable_path "$commit_file"; then
+        commit_touches_distributable=true
+        break
+      fi
+    done <<< "$commit_files"
+    if [[ "$commit_touches_distributable" == "true" ]]; then
+      commits_json=$(echo "$commits_json" | jq --arg h "$hash" --arg s "$subject" \
+        '. + [{"hash": $h, "subject": $s}]')
+    fi
   done < <(git -C "$hub_root" log --format="%h%x09%s" "$last_version".."$current_version")
 
   local commit_count
   commit_count=$(echo "$commits_json" | jq 'length')
 
-  # Files changed across the range
-  local files_json="[]"
-  while IFS=$'\t' read -r change_type filepath; do
-    files_json=$(echo "$files_json" | jq --arg t "$change_type" --arg f "$filepath" \
-      '. + [{"type": $t, "file": $f}]')
-  done < <(git -C "$hub_root" diff --name-status "$last_version".."$current_version")
-
   jq -n --arg from "$last_version" --arg to "$current_version" \
     --argjson count "$commit_count" \
-    --argjson commits "$commits_json" --argjson files "$files_json" \
+    --argjson commits "$commits_json" --argjson files "$files_changed_filtered_json" \
     '{"status":"behind","from":$from,"to":$to,"commit_count":$count,"commits":$commits,"files_changed":$files}'
 }
 
