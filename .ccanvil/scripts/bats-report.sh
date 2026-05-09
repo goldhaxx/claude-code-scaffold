@@ -12,6 +12,7 @@
 # input: --json (emit structured {ok, not_ok, total, tail, raw_exit, timings, wall_ms, jobs, cpus} to stdout)
 # input: --timings (run bats -T; append slowest-first timing table to human output)
 # input: --slow-top <N> (cap timing rows to N slowest; N=0 emits zero rows; non-integer fails with exit 2)
+# input: --progress (BTS-383: per-file orchestrated mode; emits `[N/M] <file>: PASS X/Y in T.Ts` on stderr after each file completes; aggregates output for the existing summary/JSON pipeline)
 # input: --help / -h (print usage and exit 0)
 # input: env BATS_REPORT_HAS_PARALLEL (=0 forces no-parallel branch even when parallel is installed; testability hook)
 # input: env BATS_REPORT_PERF_CORES (override the perf-core count probed via sysctl; testability + cross-host pinning)
@@ -20,6 +21,7 @@
 # output: stdout (default): bats raw output + `---` separator + `PASS: <N> / FAIL: <M> / TOTAL: <T>`; with --timings, second `---` + `Timings (slowest first):` table
 # output: stdout (--json): JSON envelope `{ok, not_ok, total, tail, raw_exit, timings:[{test, ms}], wall_ms, jobs, cpus}`
 # output: side-effect appends one line to .ccanvil/state/bats-runs.jsonl per run with shape {epoch, wall_ms, ok, not_ok, total, jobs, cpus, raw_exit, parallel}
+# output: stderr (--progress, BTS-383): per-file completion lines `[N/M] <file>: PASS|FAIL X/Y in T.Ts`
 # output: exit-code mirrors bats's exit (0 pass / non-zero fail / 2 invalid-arg)
 # caller: skill:/pr
 # caller: skill:/stasis
@@ -42,6 +44,7 @@
 # anchor: BTS-137 (--timings / --slow-top)
 # anchor: BTS-251 (manifest seed)
 # anchor: BTS-277 (perf-core default + metrics envelope + bats-runs.jsonl)
+# anchor: BTS-383 (--progress per-file orchestration + heartbeat + per-failure detail)
 #
 # Usage:
 #   bats-report.sh [--parallel] [--json] [--timings] [--slow-top N] [--] [<bats-args>...]
@@ -67,15 +70,15 @@
 set -uo pipefail
 
 usage() {
-  # BTS-277: bumped range from 28→44 to surface new manifest fields
-  # (BATS_REPORT_PERF_CORES / BATS_REPORT_STATE_DIR / wall_ms / jobs / cpus
-  # / bats-runs.jsonl) in --help output.
-  sed -n '2,44p' "$0" | sed 's/^# \{0,1\}//'
+  # BTS-383: bumped range from 44→47 to surface --progress + stderr-progress
+  # output line + BTS-383 anchor.
+  sed -n '2,47p' "$0" | sed 's/^# \{0,1\}//'
 }
 
 parallel_mode=0
 json_mode=0
 timings_mode=0
+progress_mode=0
 slow_top=-1
 passthrough=()
 
@@ -84,6 +87,7 @@ while [[ $# -gt 0 ]]; do
     --parallel) parallel_mode=1 ;;
     --json)     json_mode=1 ;;
     --timings)  timings_mode=1 ;;
+    --progress) progress_mode=1 ;;
     --slow-top)
       timings_mode=1
       shift
@@ -192,8 +196,60 @@ _now_ms() {
   fi
 }
 start_ms=$(_now_ms)
-"${bats_cmd[@]}" > "$tmp" 2>&1
-bats_exit=$?
+if (( progress_mode )); then
+  # BTS-383 per-file orchestration. Walk the passthrough list, expand
+  # directories to top-level *.bats files, run each file as a separate
+  # `bats <args> <file>` subprocess, and emit progress to stderr as each
+  # completes. Aggregate captured TAP into $tmp so the existing summary,
+  # --json, --timings, and bats-runs.jsonl pipelines downstream stay
+  # unchanged. Exit code is the worst (max) per-file exit.
+  bp_files=()
+  bp_extra_args=()
+  for p in "${passthrough[@]+"${passthrough[@]}"}"; do
+    if [[ "$p" == -* ]]; then
+      bp_extra_args+=("$p")
+    elif [[ -d "$p" ]]; then
+      while IFS= read -r f; do bp_files+=("$f"); done < <(find "$p" -maxdepth 1 -name '*.bats' -type f | sort)
+    elif [[ -f "$p" ]]; then
+      bp_files+=("$p")
+    fi
+  done
+  bp_total="${#bp_files[@]}"
+  bats_exit=0
+  for (( bp_i = 0; bp_i < bp_total; bp_i++ )); do
+    bp_f="${bp_files[$bp_i]}"
+    bp_start=$(_now_ms)
+    bp_cmd=(bats)
+    (( timings_mode )) && bp_cmd+=(-T)
+    if (( ${#bp_extra_args[@]} > 0 )); then
+      bp_cmd+=("${bp_extra_args[@]}")
+    fi
+    bp_cmd+=("$bp_f")
+    bp_filetmp=$(mktemp)
+    "${bp_cmd[@]}" > "$bp_filetmp" 2>&1
+    bp_exit=$?
+    bp_end=$(_now_ms)
+    bp_ms=$((bp_end - bp_start))
+    bp_ok=$(grep -cE '^ok ' "$bp_filetmp" 2>/dev/null || true)
+    bp_not_ok=$(grep -cE '^not ok ' "$bp_filetmp" 2>/dev/null || true)
+    [[ -z "$bp_ok" ]] && bp_ok=0
+    [[ -z "$bp_not_ok" ]] && bp_not_ok=0
+    bp_filetotal=$((bp_ok + bp_not_ok))
+    if (( bp_not_ok > 0 )); then
+      bp_label="FAIL ${bp_ok}/${bp_filetotal}"
+    else
+      bp_label="PASS ${bp_ok}/${bp_filetotal}"
+    fi
+    bp_secs=$(awk -v ms="$bp_ms" 'BEGIN{ printf "%.1fs", ms/1000 }')
+    printf '[%d/%d] %s: %s in %s\n' "$((bp_i + 1))" "$bp_total" "$(basename "$bp_f")" "$bp_label" "$bp_secs" >&2
+    cat "$bp_filetmp" >> "$tmp"
+    rm -f "$bp_filetmp"
+    (( bp_exit > bats_exit )) && bats_exit=$bp_exit
+  done
+else
+  "${bats_cmd[@]}" > "$tmp" 2>&1
+  bats_exit=$?
+fi
 end_ms=$(_now_ms)
 wall_ms=$((end_ms - start_ms))
 (( wall_ms < 0 )) && wall_ms=0
