@@ -1,6 +1,6 @@
 ---
 tier: 0
-scope: universal
+scope: substrate
 stack: any
 anchors:
   evidence:
