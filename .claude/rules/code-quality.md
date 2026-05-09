@@ -1,4 +1,8 @@
 ---
+tier: 0
+scope: universal
+stack: any
+anchors: {}
 manifest:
   id: code-quality
   purpose: Codify the project's code-quality discipline — pattern-first over ad-hoc descriptions, explicit error paths over silent swallowing, justified dependencies, one-concept-per-file organization, intent-revealing names, and the protected-files invariant (foundations.md as research source material).

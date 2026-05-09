@@ -43,11 +43,12 @@ PROJECT_TREE_SUBCOMMANDS=(
   idea-add idea-list idea-count idea-count-local idea-update idea-sync
   idea-pending-replay idea-review-icebox idea-migrate-state idea-migrate
   idea-setup idea-upgrade provider-resolve-ids provider-heal-preflight provider-heal-auth provider-heal
+  provider-activate
   refresh-plan-hash archive-stasis sessions-list legacy-refs-scan stamp-spec
   evidence-scan-session lifecycle-state
   artifact-read artifact-write route-of ssot-migrate
   session-info assert-pr-title remote-presence
-  stasis-carry-forward ship-finalize validate-spec
+  stasis-carry-forward ship-finalize validate-spec rule-resolve
 )
 
 # ---------------------------------------------------------------------------
@@ -7852,6 +7853,134 @@ cmd_validate_spec() {
   [[ "$status_val" == "drift" ]] && return 2 || return 0
 }
 
+# @manifest
+# purpose: Resolve a rule file's tier metadata + anchor pointers into a JSON envelope; reads top-level YAML frontmatter (tier, scope, stack, anchors) from .claude/rules/<id>.md, backward-compat default applied when fields absent. Substrate for the BTS-385 rule atomicity ramp.
+# input: <rule-id> positional
+# input: --project-dir <path>
+# output: stdout JSON envelope {rule, tier, scope, stack, anchors, body_path}
+# output: exit-codes 0 ok, 1 rule-not-found, 2 usage-error|frontmatter-malformed
+# depends-on: jq
+# depends-on: python3
+# side-effect: reads-rule-file
+# failure-mode: usage-error | exit=2 | visible=stderr-usage
+# failure-mode: rule-not-found | exit=1 | visible=stdout-error-json
+# failure-mode: frontmatter-malformed | exit=2 | visible=stdout-error-json
+# contract: default-envelope-when-frontmatter-absent
+# contract: tier-defaults-to-0
+# contract: scope-defaults-to-universal
+# contract: stack-defaults-to-any
+# contract: anchors-defaults-to-empty-object
+# anchor: BTS-385 (Session A substrate)
+cmd_rule_resolve() {
+  local rule_id=""
+  local project_dir="."
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --project-dir) project_dir="$2"; shift 2 ;;
+      # @failure-mode: usage-error
+      -*) echo "Usage: docs-check.sh rule-resolve <rule-id> [--project-dir <path>]" >&2; return 2 ;;
+      *) rule_id="$1"; shift ;;
+    esac
+  done
+  if [[ -z "$rule_id" ]]; then
+    echo "Usage: docs-check.sh rule-resolve <rule-id> [--project-dir <path>]" >&2
+    return 2
+  fi
+
+  local body_path=".claude/rules/${rule_id}.md"
+  local rule_file="${project_dir}/${body_path}"
+
+  # @failure-mode: rule-not-found
+  if [[ ! -f "$rule_file" ]]; then
+    jq -nc --arg id "$rule_id" '{error:"rule-not-found",rule:$id}'
+    return 1
+  fi
+
+  # Parse top-level YAML frontmatter via python3+yaml. Emits a JSON object on
+  # stdout — either the parsed fields, or {"_error": "..."} for parse failure.
+  # @side-effect: reads-rule-file
+  local fm_json
+  fm_json=$(python3 - "$rule_file" <<'PY'
+import sys, json
+try:
+    import yaml
+except ImportError:
+    print(json.dumps({"_error": "yaml-module-missing"}))
+    sys.exit(0)
+
+with open(sys.argv[1], "r") as f:
+    text = f.read()
+
+lines = text.splitlines()
+if not lines or lines[0].strip() != "---":
+    # No frontmatter — emit default envelope marker
+    print(json.dumps({"_no_frontmatter": True}))
+    sys.exit(0)
+
+end = None
+for i in range(1, len(lines)):
+    if lines[i].strip() == "---":
+        end = i
+        break
+if end is None:
+    print(json.dumps({"_error": "frontmatter-unclosed"}))
+    sys.exit(0)
+
+fm_text = "\n".join(lines[1:end])
+try:
+    fm = yaml.safe_load(fm_text) or {}
+except yaml.YAMLError as e:
+    print(json.dumps({"_error": "frontmatter-malformed", "reason": str(e)[:200]}))
+    sys.exit(0)
+
+if not isinstance(fm, dict):
+    print(json.dumps({"_error": "frontmatter-not-mapping"}))
+    sys.exit(0)
+
+print(json.dumps({
+    "tier": fm.get("tier", 0),
+    "scope": fm.get("scope", "universal"),
+    "stack": fm.get("stack", "any"),
+    "anchors": fm.get("anchors") or {},
+}))
+PY
+  )
+
+  # Check for parse-error envelope
+  local parse_error
+  parse_error=$(echo "$fm_json" | jq -r '._error // empty')
+  if [[ -n "$parse_error" ]]; then
+    case "$parse_error" in
+      yaml-module-missing)
+        echo "ERROR: python3 yaml module not available — cannot parse rule frontmatter" >&2
+        return 2
+        ;;
+      frontmatter-malformed|frontmatter-unclosed|frontmatter-not-mapping)
+        # @failure-mode: frontmatter-malformed
+        local reason
+        reason=$(echo "$fm_json" | jq -r '.reason // empty')
+        jq -nc --arg id "$rule_id" --arg err "$parse_error" --arg r "$reason" \
+          '{error:"frontmatter-malformed",rule:$id,reason:($err + (if $r == "" then "" else ": " + $r end))}'
+        return 2
+        ;;
+    esac
+  fi
+
+  # Compose final envelope. Defaults applied when frontmatter absent (back-compat).
+  jq -nc \
+    --arg rule "$rule_id" \
+    --arg body_path "$body_path" \
+    --argjson fm "$fm_json" \
+    '{
+      rule: $rule,
+      tier: ($fm.tier // 0),
+      scope: ($fm.scope // "universal"),
+      stack: ($fm.stack // "any"),
+      anchors: ($fm.anchors // {}),
+      body_path: $body_path
+    }'
+}
+
 cmd="${1:-}"
 shift || true
 
@@ -7914,6 +8043,7 @@ case "$cmd" in
   ssot-migrate)      cmd_ssot_migrate "$@" ;;
   session-info)      cmd_session_info "$@" ;;
   validate-spec)     cmd_validate_spec "$@" ;;
+  rule-resolve)      cmd_rule_resolve "$@" ;;
   *)
     _print_usage
     exit 1

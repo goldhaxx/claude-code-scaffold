@@ -136,6 +136,7 @@ Claude Code's `/loop` and `/schedule` features emit `.claude/scheduled_tasks*` a
 | `docs-check.sh sync-check <repo-root>` | Fetches `origin/main` (5s timeout), then compares local `main` against the refreshed ref. Exit codes: 0 synced or no-op (no origin, no origin/main, or fetch failed with graceful `WARN:`), 1 ahead (unpushed leak risk), 2 behind (stale baseline). Called by `cmd_activate` (BTS-122). |
 | `docs-check.sh pr-guard` | Pre-`/pr` safety net (BTS-122). Fetches `origin/main` from the current feature branch and halts with remediation if the base has moved past HEAD (exit 1). No-op (exit 0) when no origin remote, no origin/main ref, or fetch failure (`WARN:` emitted). Invoked from the `/pr` skill's pre-flight block. |
 | `docs-check.sh config-get <key> [project-dir]` | Read feature toggle from `.claude/ccanvil.json` (returns `true`/`false`) |
+| `docs-check.sh rule-resolve <rule-id> [--project-dir <path>]` | BTS-385 substrate: resolve a rule file's tier metadata + anchor pointers. Reads top-level YAML frontmatter (`tier`, `scope`, `stack`, `anchors`) from `.claude/rules/<rule-id>.md`. Emits JSON envelope `{rule, tier, scope, stack, anchors, body_path}` on stdout. Backward-compat default `{tier:0, scope:universal, stack:any, anchors:{}}` when frontmatter absent. Exit codes: 0 ok, 1 rule-not-found (with `{error:"rule-not-found"}` JSON on stdout), 2 frontmatter-malformed (with `{error:"frontmatter-malformed", reason:...}` JSON) or usage-error. |
 
 ## Idea Management Scripts
 

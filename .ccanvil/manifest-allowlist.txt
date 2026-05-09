@@ -18,6 +18,7 @@
 .ccanvil/scripts/module-manifest.sh:cmd_seed_allowlist
 .ccanvil/scripts/module-manifest.sh:cmd_diff_vs_manifest
 .ccanvil/scripts/docs-check.sh:cmd_validate_spec
+.ccanvil/scripts/docs-check.sh:cmd_rule_resolve
 .ccanvil/scripts/module-manifest.sh:cmd_graph
 .ccanvil/scripts/docs-check.sh:cmd_provider_resolve_ids
 .ccanvil/scripts/docs-check.sh:cmd_provider_heal_preflight

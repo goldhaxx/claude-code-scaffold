@@ -9,6 +9,10 @@ DOCS_CHECK="$BATS_TEST_DIRNAME/../../.ccanvil/scripts/docs-check.sh"
 
 setup() {
   export TMPDIR="${BATS_TEST_TMPDIR}"
+  # BTS-385: isolate from real ~/.ccanvil/operator.json (BTS-316 3-tier merge)
+  # so the operator's config doesn't bleed into fixtures that assert
+  # provider-resolution failure modes.
+  export CCANVIL_OPERATOR_CONFIG_OVERRIDE="${BATS_TEST_TMPDIR}/no-operator-config.json"
   PROJECT=$(mktemp -d)
   mkdir -p "$PROJECT/.ccanvil"
 }
