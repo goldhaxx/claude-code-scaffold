@@ -17,7 +17,6 @@ manifest:
     - .claude/skills/tdd/SKILL.md
   depends-on:
     - bats-report.sh
-    - bats-lint.sh
   side-effect:
     - "shapes-implementation-flow (no file mutation; behavioral influence on Claude)"
   failure-mode:
