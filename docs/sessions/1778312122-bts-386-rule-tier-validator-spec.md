@@ -52,37 +52,37 @@ Each criterion is independently testable. Binary pass/fail.
 ## Affected Files
 
 | File | Change |
-|------|--------|
+| -- | -- |
 | `.ccanvil/scripts/module-manifest.sh` | Modified: extend `cmd_validate` to scan rule files, emit warn-shape drift + info entries, accept `--strict` flag |
 | `hub/tests/rule-frontmatter-validate.bats` | New — covers AC-1 through AC-7 with isolated fixtures |
 | `hub/tests/fixtures/rule-tier/over-budget.md` | New fixture — tier-0 rule with body > 200 tokens |
 | `hub/tests/fixtures/rule-tier/under-budget.md` | New fixture — tier-0 rule with body < 150 tokens |
-| `.ccanvil/manifest-allowlist.txt` | Add new helpers introduced in module-manifest.sh |
+| `.ccanvil/manifest-allowlist.txt` | Add new helpers introduced in [module-manifest.sh](<http://module-manifest.sh>) |
 | `.ccanvil/guide/configuration.md` | Update Rule frontmatter subsection with validator behavior |
 
 ## Dependencies
 
-- **Requires:** BTS-385 merged (rule frontmatter substrate + `cmd_rule_resolve`). BTS-385 shipped at commit `c7a40b6` (squash merge of PR #169).
-- **Blocked by:** none.
-- **Blocks:** BTS-387 (Session B atomization audit) — Session B benefits from this ticket's drift signal during the per-rule transformation work.
+* **Requires:** BTS-385 merged (rule frontmatter substrate + `cmd_rule_resolve`). BTS-385 shipped at commit `c7a40b6` (squash merge of PR #169).
+* **Blocked by:** none.
+* **Blocks:** BTS-387 (Session B atomization audit) — Session B benefits from this ticket's drift signal during the per-rule transformation work.
 
 ## Out of Scope
 
-- **Token-count exact tokenizer.** Char-count / 4 heuristic stays. Future hardening if drift accuracy becomes a friction point; not load-bearing for v1.
-- **Stack-conditional skill auto-load** (BTS-385 Out-of-Scope §5). Separate concern.
-- **Atom file naming convention overhaul** (BTS-385 Out-of-Scope deferred to atomization audit).
-- **BTS-384 scope-tag distribution filter.** Composes on top of this substrate; ships as separate PR after BTS-387.
+* **Token-count exact tokenizer.** Char-count / 4 heuristic stays. Future hardening if drift accuracy becomes a friction point; not load-bearing for v1.
+* **Stack-conditional skill auto-load** (BTS-385 Out-of-Scope §5). Separate concern.
+* **Atom file naming convention overhaul** (BTS-385 Out-of-Scope deferred to atomization audit).
+* **BTS-384 scope-tag distribution filter.** Composes on top of this substrate; ships as separate PR after BTS-387.
 
 ## Implementation Notes
 
-- **Reuse the python3+yaml parser** from `cmd_rule_resolve` (`.ccanvil/scripts/docs-check.sh`). The parsing logic is identical; consider factoring into a shared helper `_parse_rule_frontmatter` if the duplication is meaningful (judgment call at impl time — duplication acceptable for v1 if the helper would only have 2 callers).
-- **Token counting:** char-count of the WHOLE FILE divided by 4. Matches the `context-budget.sh` heuristic for consistency. The whole-file count is what the harness auto-loads, not just the body.
-- **`--strict` parsing:** add to `cmd_validate`'s arg parser at the top of the function (line 626 area). Set `local strict=0` default; flag toggles to 1.
-- **Rule-scan loop placement:** insert after the existing manifest-allowlist scan loop (line 808 area, before `drift_count` calculation). Keeps the two scans separate; envelope composition combines them.
-- **Drift entry shape consistency:** match the existing `{path, id, reason}` shape so consumers don't need conditional parsing. New optional fields (`value`, `threshold`, `reason_detail`) are additive.
-- **Info array emit:** when `info_records` array is non-empty, include `info: [...]` in the JSON envelope. When empty, still include `info: []` so consumers can rely on the field existing (no conditional output).
-- **No live-API risk** — all substrate work; doesn't trigger the live-API validation gate.
-- **TDD cadence:** during iteration run only the new + existing manifest-validate bats files. Full-suite at PR finalize per the test-execution-discipline rule.
+* **Reuse the python3+yaml parser** from `cmd_rule_resolve` (`.ccanvil/scripts/docs-check.sh`). The parsing logic is identical; consider factoring into a shared helper `_parse_rule_frontmatter` if the duplication is meaningful (judgment call at impl time — duplication acceptable for v1 if the helper would only have 2 callers).
+* **Token counting:** char-count of the WHOLE FILE divided by 4. Matches the `context-budget.sh` heuristic for consistency. The whole-file count is what the harness auto-loads, not just the body.
+* `--strict` parsing: add to `cmd_validate`'s arg parser at the top of the function (line 626 area). Set `local strict=0` default; flag toggles to 1.
+* **Rule-scan loop placement:** insert after the existing manifest-allowlist scan loop (line 808 area, before `drift_count` calculation). Keeps the two scans separate; envelope composition combines them.
+* **Drift entry shape consistency:** match the existing `{path, id, reason}` shape so consumers don't need conditional parsing. New optional fields (`value`, `threshold`, `reason_detail`) are additive.
+* **Info array emit:** when `info_records` array is non-empty, include `info: [...]` in the JSON envelope. When empty, still include `info: []` so consumers can rely on the field existing (no conditional output).
+* **No live-API risk** — all substrate work; doesn't trigger the live-API validation gate.
+* **TDD cadence:** during iteration run only the new + existing manifest-validate bats files. Full-suite at PR finalize per the test-execution-discipline rule.
 
 <!-- NODE-SPECIFIC-START -->
 <!-- Add project-specific content below this line. -->

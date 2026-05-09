@@ -4,7 +4,7 @@
 > Work: linear:BTS-386
 > Created: 1778305859
 > Subject: Rule-tier validator extension — module-manifest scan + warn-shape drift + info array
-> Status: In Progress
+> Status: Complete
 
 ## Summary
 
