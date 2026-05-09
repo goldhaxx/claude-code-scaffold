@@ -19,7 +19,7 @@
 # input: positional <dir-or-file> (lint a single .bats file or recursively all .bats under a dir)
 # output: stderr per violation: `<file>:<lineno>: leaky jq -e pattern (<N> jq -e calls, no set -e)`
 # output: exit-codes 0 clean, 1 violations-found, 2 usage-error
-# caller: .claude/rules/tdd.md
+# caller: docs/research/tdd-foundations.md
 # depends-on: find
 # side-effect: writes-stderr-on-violation
 # failure-mode: missing-target | exit=2 | visible=stderr-error-and-usage | mitigation=pass-dir-or-file-arg
