@@ -4,11 +4,11 @@
 > Work: linear:BTS-383
 > Created: 1778291503
 > Subject: Test execution velocity — bats observability + agent invocation
-> Status: Complete
+> Status: In Progress
 
 ## Summary
 
-Test execution is currently the highest single source of operator-idle time outside of operator availability. A single feature session burned ~1-2 hours waiting on bats theater: 8+ full-suite invocations (some in parallel), 10+ manifest validates stacked, premature wait-loops firing, and a 40-minute zombie `until [[ -s ... ]]` shell still alive when surfaced. Substrate buffers output (looks hung), agent re-spawns thinking it's hung, oversubscription cascades. This spec ships substrate observability fixes AND behavioral discipline rules so this never recurs.
+Test execution is currently the highest single source of operator-idle time outside of operator availability. A single feature session burned \~1-2 hours waiting on bats theater: 8+ full-suite invocations (some in parallel), 10+ manifest validates stacked, premature wait-loops firing, and a 40-minute zombie `until [[ -s ... ]]` shell still alive when surfaced. Substrate buffers output (looks hung), agent re-spawns thinking it's hung, oversubscription cascades. This spec ships substrate observability fixes AND behavioral discipline rules so this never recurs.
 
 The behavioral half (full-suite-only-at-/pr + wait-loop discipline) ships immediately as `.claude/rules/` additions in the BTS-316 PR. The substrate half ships in this dedicated session: bats progress streaming, per-test failure preservation, manifest incremental mode.
 
@@ -57,7 +57,7 @@ Each criterion is independently testable. Binary pass/fail.
 ## Affected Files
 
 | File | Change |
-|------|--------|
+| -- | -- |
 | `.ccanvil/scripts/bats-report.sh` | Add `--progress` flag (streaming output); preserve per-test failure detail in `--json` output and `bats-runs.jsonl` |
 | `.ccanvil/scripts/module-manifest.sh` | Add `--changed-only [--since <ref>]` flag |
 | `.claude/rules/tdd.md` | LANDED in BTS-316 PR — verify only |
@@ -68,27 +68,27 @@ Each criterion is independently testable. Binary pass/fail.
 
 ## Dependencies
 
-- **Requires:** BTS-118 (`bats-report.sh` substrate baseline), BTS-277 (`bats-runs.jsonl` envelope), BTS-137 (per-test timing format precedent for output format).
-- **Blocked by:** BTS-316 PR (the rules half ships there; full BTS-383 close blocks until BTS-316 merges).
+* **Requires:** BTS-118 (`bats-report.sh` substrate baseline), BTS-277 (`bats-runs.jsonl` envelope), BTS-137 (per-test timing format precedent for output format).
+* **Blocked by:** BTS-316 PR (the rules half ships there; full BTS-383 close blocks until BTS-316 merges).
 
 ## Out of Scope
 
-- Reducing test count or migrating off bats. Orthogonal concern.
-- Harness-level limits on max concurrent background tasks. Harness changes are outside ccanvil substrate scope.
-- Per-test parallelization beyond bats's existing `--jobs N`. Substrate-level optimization (BTS-294, BTS-295) handles that.
-- Removing the buffering at the kernel level (would require shell-level configuration). The fix is at the application layer (emit progress lines explicitly).
+* Reducing test count or migrating off bats. Orthogonal concern.
+* Harness-level limits on max concurrent background tasks. Harness changes are outside ccanvil substrate scope.
+* Per-test parallelization beyond bats's existing `--jobs N`. Substrate-level optimization (BTS-294, BTS-295) handles that.
+* Removing the buffering at the kernel level (would require shell-level configuration). The fix is at the application layer (emit progress lines explicitly).
 
 ## Implementation Notes
 
-- **`--progress` implementation:** wrap bats invocation with a tee + line-buffered stream. Use `awk` or `python -u` to detect file boundaries from bats's TAP output. Heartbeat via background `while sleep 30; do ...; done` loop killed at end.
-- **Per-failure detail preservation:** parse the bats TAP output for `not ok N <name>` lines, accumulate the next 3-5 indented `#` comment lines as the error_excerpt, emit as `{test_name, file (from current scope), line_number (from `# (in test file ... line N)` comment), error_excerpt}`.
-- **`--changed-only` implementation:** `git diff --name-only $SINCE_REF...HEAD` produces the file list. Filter manifest-allowlist intersection. Run extract+validate only on intersected files. The `_extract_manifests` helper is already file-keyed; just feed it the subset list.
-- **Test stub for `--progress`:** create a minimal 2-file fake bats tree with one slow (sleep) test; assert `--progress` output contains `[1/2]` and `[2/2]` lines emitted at file-boundary moments.
+* `--progress` implementation: wrap bats invocation with a tee + line-buffered stream. Use `awk` or `python -u` to detect file boundaries from bats's TAP output. Heartbeat via background `while sleep 30; do ...; done` loop killed at end.
+* **Per-failure detail preservation:** parse the bats TAP output for `not ok N <name>` lines, accumulate the next 3-5 indented `#` comment lines as the error_excerpt, emit as `{test_name, file (from current scope), line_number (from `# (in test file ... line N)` comment), error_excerpt}`.
+* `--changed-only` implementation: `git diff --name-only $SINCE_REF...HEAD` produces the file list. Filter manifest-allowlist intersection. Run extract+validate only on intersected files. The `_extract_manifests` helper is already file-keyed; just feed it the subset list.
+* **Test stub for** `--progress`: create a minimal 2-file fake bats tree with one slow (sleep) test; assert `--progress` output contains `[1/2]` and `[2/2]` lines emitted at file-boundary moments.
 
 ## Related
 
-- BTS-316 (origin session — the actual cost incurred; rules half landed there)
-- BTS-382 (changelog filter — sibling discipline issue from same session)
-- BTS-118 (bats-report.sh BTS predecessor)
-- BTS-277 (`bats-runs.jsonl` envelope extension)
-- BTS-281, BTS-282, BTS-294, BTS-295 (adjacent perf surfaces)
+* BTS-316 (origin session — the actual cost incurred; rules half landed there)
+* BTS-382 (changelog filter — sibling discipline issue from same session)
+* BTS-118 ([bats-report.sh](<http://bats-report.sh>) BTS predecessor)
+* BTS-277 (`bats-runs.jsonl` envelope extension)
+* BTS-281, BTS-282, BTS-294, BTS-295 (adjacent perf surfaces)

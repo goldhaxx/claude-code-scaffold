@@ -12,14 +12,17 @@
 # input: --json (emit structured {ok, not_ok, total, tail, raw_exit, timings, wall_ms, jobs, cpus} to stdout)
 # input: --timings (run bats -T; append slowest-first timing table to human output)
 # input: --slow-top <N> (cap timing rows to N slowest; N=0 emits zero rows; non-integer fails with exit 2)
+# input: --progress (BTS-383: streaming progress mode. With --parallel: defers to native `bats --jobs N` for speed + spawns periodic heartbeat (no per-file lines, since parallel TAP interleaves). Without --parallel: per-file orchestrated mode; emits `[N/M] <file>: PASS X/Y in T.Ts` on stderr after each file completes; aggregates output for the existing summary/JSON pipeline. Heartbeat fires in both sub-modes.)
+# input: env BATS_PROGRESS_HEARTBEAT_SECS (override --progress heartbeat interval in seconds; default 30; non-positive disables heartbeat)
 # input: --help / -h (print usage and exit 0)
 # input: env BATS_REPORT_HAS_PARALLEL (=0 forces no-parallel branch even when parallel is installed; testability hook)
 # input: env BATS_REPORT_PERF_CORES (override the perf-core count probed via sysctl; testability + cross-host pinning)
 # input: env BATS_REPORT_STATE_DIR (override the directory where bats-runs.jsonl is appended; defaults to .ccanvil/state)
 # input: positional bats-args (target paths or filters like `-f 'pattern'`); defaults to `hub/tests/` when no path arg present
 # output: stdout (default): bats raw output + `---` separator + `PASS: <N> / FAIL: <M> / TOTAL: <T>`; with --timings, second `---` + `Timings (slowest first):` table
-# output: stdout (--json): JSON envelope `{ok, not_ok, total, tail, raw_exit, timings:[{test, ms}], wall_ms, jobs, cpus}`
-# output: side-effect appends one line to .ccanvil/state/bats-runs.jsonl per run with shape {epoch, wall_ms, ok, not_ok, total, jobs, cpus, raw_exit, parallel}
+# output: stdout (--json): JSON envelope `{ok, not_ok, total, tail, raw_exit, timings:[{test, ms}], failures:[{test_name, file, line_number, error_excerpt}], wall_ms, jobs, cpus}`
+# output: side-effect appends one line to .ccanvil/state/bats-runs.jsonl per run with shape {epoch, wall_ms, ok, not_ok, total, jobs, cpus, raw_exit, parallel, failures:[{test_name, file, line_number, error_excerpt}]}
+# output: stderr (--progress, BTS-383): per-file completion lines `[N/M] <file>: PASS|FAIL X/Y in T.Ts`
 # output: exit-code mirrors bats's exit (0 pass / non-zero fail / 2 invalid-arg)
 # caller: skill:/pr
 # caller: skill:/stasis
@@ -42,6 +45,7 @@
 # anchor: BTS-137 (--timings / --slow-top)
 # anchor: BTS-251 (manifest seed)
 # anchor: BTS-277 (perf-core default + metrics envelope + bats-runs.jsonl)
+# anchor: BTS-383 (--progress per-file orchestration + heartbeat + per-failure detail)
 #
 # Usage:
 #   bats-report.sh [--parallel] [--json] [--timings] [--slow-top N] [--] [<bats-args>...]
@@ -67,15 +71,15 @@
 set -uo pipefail
 
 usage() {
-  # BTS-277: bumped range from 28→44 to surface new manifest fields
-  # (BATS_REPORT_PERF_CORES / BATS_REPORT_STATE_DIR / wall_ms / jobs / cpus
-  # / bats-runs.jsonl) in --help output.
-  sed -n '2,44p' "$0" | sed 's/^# \{0,1\}//'
+  # BTS-383: bumped range from 44→47 to surface --progress + stderr-progress
+  # output line + BTS-383 anchor.
+  sed -n '2,48p' "$0" | sed 's/^# \{0,1\}//'
 }
 
 parallel_mode=0
 json_mode=0
 timings_mode=0
+progress_mode=0
 slow_top=-1
 passthrough=()
 
@@ -84,6 +88,7 @@ while [[ $# -gt 0 ]]; do
     --parallel) parallel_mode=1 ;;
     --json)     json_mode=1 ;;
     --timings)  timings_mode=1 ;;
+    --progress) progress_mode=1 ;;
     --slow-top)
       timings_mode=1
       shift
@@ -179,7 +184,7 @@ fi
 # Run bats ONCE, capture to tempfile.
 # @side-effect: writes-temp-file
 tmp=$(mktemp)
-trap 'rm -f "$tmp" "${BTS_MANIFEST_VALIDATE_CACHE:-}"' EXIT
+trap '[[ -n "${hb_pid:-}" ]] && kill "$hb_pid" 2>/dev/null; rm -f "$tmp" "${BTS_MANIFEST_VALIDATE_CACHE:-}"' EXIT INT TERM
 
 # BTS-277: wall-time around the bats invocation. Use perl Time::HiRes
 # (ships on macOS + Linux) for ms-precision; fall back to second-precision
@@ -191,9 +196,133 @@ _now_ms() {
     echo "$(($(date +%s) * 1000))"
   fi
 }
+
+# BTS-383 AC-2: parse the captured TAP for `not ok` records + the indented
+# `# (in test file <path>, line N)` and `#   ...` annotations bats emits
+# below them. Emit a JSON array `[{test_name, file, line_number,
+# error_excerpt}, ...]`. Empty array when there are no failures.
+_parse_failures() {
+  local tap_file="$1"
+  perl -e '
+    use strict; use warnings;
+    use JSON::PP;
+    my @failures;
+    my $current;
+    while (my $line = <STDIN>) {
+      chomp $line;
+      if ($line =~ /^not ok \d+ - (.+?)(?:\s+in \d+ms)?$/ ||
+          $line =~ /^not ok \d+ (.+?)(?:\s+in \d+ms)?$/) {
+        push @failures, $current if $current;
+        $current = {
+          test_name     => $1,
+          file          => "",
+          line_number   => undef,
+          error_excerpt => "",
+        };
+      } elsif ($line =~ /^ok /) {
+        push @failures, $current if $current;
+        $current = undef;
+      } elsif (defined $current) {
+        if ($line =~ /^# \(in test file (.+), line (\d+)\)/ ||
+            $line =~ /^# \(from .+ in test file (.+), line (\d+)\)/) {
+          $current->{file}        = $1;
+          $current->{line_number} = $2 + 0;
+        } elsif ($line =~ /^# (.+)$/) {
+          $current->{error_excerpt} .= "\n" if length $current->{error_excerpt};
+          $current->{error_excerpt} .= $1;
+        }
+      }
+    }
+    push @failures, $current if $current;
+    print encode_json(\@failures);
+  ' < "$tap_file"
+}
 start_ms=$(_now_ms)
-"${bats_cmd[@]}" > "$tmp" 2>&1
-bats_exit=$?
+if (( progress_mode )); then
+  # BTS-383 streaming progress. Two sub-modes:
+  #
+  # (a) --progress + --parallel: keep native `bats --jobs N` for speed
+  #     (TAP from parallel jobs interleaves so per-file `[N/M]` boundaries
+  #     are not extractable in a useful order); spawn ONLY a periodic
+  #     heartbeat so 0-byte stderr is impossible during the run. This is
+  #     the canonical /pr full-suite path.
+  #
+  # (b) --progress alone (no --parallel): per-file orchestration. Walk
+  #     the passthrough list, expand directories to top-level *.bats
+  #     files, run each as a separate `bats <args> <file>` subprocess,
+  #     emit `[N/M] <file>: PASS X/Y in T.Ts` to stderr as each
+  #     completes. Aggregate captured TAP into $tmp so the existing
+  #     summary, --json, --timings, and bats-runs.jsonl pipelines stay
+  #     unchanged.
+  #
+  # Heartbeat is shared across both branches. Cleanup trap above kills
+  # the process on EXIT/INT/TERM.
+  hb_secs="${BATS_PROGRESS_HEARTBEAT_SECS:-30}"
+  if [[ "$hb_secs" =~ ^[0-9]+$ ]] && (( hb_secs > 0 )); then
+    (
+      hb_elapsed=0
+      while sleep "$hb_secs"; do
+        hb_elapsed=$((hb_elapsed + hb_secs))
+        printf '[heartbeat] still working — %ds elapsed\n' "$hb_elapsed" >&2
+      done
+    ) &
+    hb_pid=$!
+  fi
+
+  if (( parallel_mode )); then
+    # Branch (a) — defer to native bats --jobs N (already in $bats_cmd).
+    "${bats_cmd[@]}" > "$tmp" 2>&1
+    bats_exit=$?
+  else
+    # Branch (b) — per-file orchestration with [N/M] emission.
+    bp_files=()
+    bp_extra_args=()
+    for p in "${passthrough[@]+"${passthrough[@]}"}"; do
+      if [[ "$p" == -* ]]; then
+        bp_extra_args+=("$p")
+      elif [[ -d "$p" ]]; then
+        while IFS= read -r f; do bp_files+=("$f"); done < <(find "$p" -maxdepth 1 -name '*.bats' -type f | sort)
+      elif [[ -f "$p" ]]; then
+        bp_files+=("$p")
+      fi
+    done
+    bp_total="${#bp_files[@]}"
+    bats_exit=0
+    for (( bp_i = 0; bp_i < bp_total; bp_i++ )); do
+      bp_f="${bp_files[$bp_i]}"
+      bp_start=$(_now_ms)
+      bp_cmd=(bats)
+      (( timings_mode )) && bp_cmd+=(-T)
+      if (( ${#bp_extra_args[@]} > 0 )); then
+        bp_cmd+=("${bp_extra_args[@]}")
+      fi
+      bp_cmd+=("$bp_f")
+      bp_filetmp=$(mktemp)
+      "${bp_cmd[@]}" > "$bp_filetmp" 2>&1
+      bp_exit=$?
+      bp_end=$(_now_ms)
+      bp_ms=$((bp_end - bp_start))
+      bp_ok=$(grep -cE '^ok ' "$bp_filetmp" 2>/dev/null || true)
+      bp_not_ok=$(grep -cE '^not ok ' "$bp_filetmp" 2>/dev/null || true)
+      [[ -z "$bp_ok" ]] && bp_ok=0
+      [[ -z "$bp_not_ok" ]] && bp_not_ok=0
+      bp_filetotal=$((bp_ok + bp_not_ok))
+      if (( bp_not_ok > 0 )); then
+        bp_label="FAIL ${bp_ok}/${bp_filetotal}"
+      else
+        bp_label="PASS ${bp_ok}/${bp_filetotal}"
+      fi
+      bp_secs=$(awk -v ms="$bp_ms" 'BEGIN{ printf "%.1fs", ms/1000 }')
+      printf '[%d/%d] %s: %s in %s\n' "$((bp_i + 1))" "$bp_total" "$(basename "$bp_f")" "$bp_label" "$bp_secs" >&2
+      cat "$bp_filetmp" >> "$tmp"
+      rm -f "$bp_filetmp"
+      (( bp_exit > bats_exit )) && bats_exit=$bp_exit
+    done
+  fi
+else
+  "${bats_cmd[@]}" > "$tmp" 2>&1
+  bats_exit=$?
+fi
 end_ms=$(_now_ms)
 wall_ms=$((end_ms - start_ms))
 (( wall_ms < 0 )) && wall_ms=0
@@ -224,6 +353,16 @@ if (( timings_mode )); then
   fi
 fi
 
+# BTS-383 AC-2/AC-3: per-failure detail array. Computed unconditionally so
+# both --json output AND the bats-runs.jsonl writer below can reference it.
+# Empty when not_ok == 0.
+if (( not_ok > 0 )); then
+  failures_json=$(_parse_failures "$tmp")
+  [[ -z "$failures_json" ]] && failures_json='[]'
+else
+  failures_json='[]'
+fi
+
 if (( json_mode )); then
   # Build timings JSON array from the TSV. Empty input → [].
   if [[ -n "$timings_tsv" ]]; then
@@ -243,10 +382,11 @@ if (( json_mode )); then
     --arg tail "$tail_output" \
     --argjson exit "$bats_exit" \
     --argjson timings "$timings_json" \
+    --argjson failures "$failures_json" \
     --argjson wall_ms "$wall_ms" \
     --argjson jobs "$jobs_used" \
     --argjson cpus "$cpus_total" \
-    '{ok:$ok, not_ok:$not_ok, total:$total, tail:$tail, raw_exit:$exit, timings:$timings, wall_ms:$wall_ms, jobs:$jobs, cpus:$cpus}'
+    '{ok:$ok, not_ok:$not_ok, total:$total, tail:$tail, raw_exit:$exit, timings:$timings, failures:$failures, wall_ms:$wall_ms, jobs:$jobs, cpus:$cpus}'
 else
   cat "$tmp"
   echo "---"
@@ -275,7 +415,8 @@ jsonl_entry=$(jq -c -n \
   --argjson cpus "$cpus_total" \
   --argjson raw_exit "$bats_exit" \
   --argjson parallel "$parallel_bool" \
-  '{epoch:$epoch, wall_ms:$wall_ms, ok:$ok, not_ok:$not_ok, total:$total, jobs:$jobs, cpus:$cpus, raw_exit:$raw_exit, parallel:$parallel}')
+  --argjson failures "$failures_json" \
+  '{epoch:$epoch, wall_ms:$wall_ms, ok:$ok, not_ok:$not_ok, total:$total, jobs:$jobs, cpus:$cpus, raw_exit:$raw_exit, parallel:$parallel, failures:$failures}')
 # @side-effect: writes-bats-runs-jsonl
 if mkdir -p "$state_dir" 2>/dev/null && printf '%s\n' "$jsonl_entry" >> "$jsonl_path" 2>/dev/null; then
   :

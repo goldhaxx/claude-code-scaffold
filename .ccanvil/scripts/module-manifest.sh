@@ -609,6 +609,8 @@ _caller_actually_calls_primitive() {
 # input: --json
 # input: --allowlist <path>
 # input: --strict
+# input: --changed-only (BTS-383: scope drift detection to git-diff ∩ allowlist)
+# input: --since <ref> (BTS-383: ref to diff against, default HEAD~1; only meaningful with --changed-only)
 # output: stdout JSON envelope on --json (coverage, drift, info, status)
 # output: stderr DRIFT lines per drift incident
 # output: exit-codes 0 clean-or-info-only, 2 block-shape-drift|--strict-with-info-warn
@@ -627,14 +629,18 @@ _caller_actually_calls_primitive() {
 # contract: info-array-always-present
 # anchor: BTS-239 (origin)
 # anchor: BTS-386 (rule-tier extension)
+# anchor: BTS-383 (--changed-only incremental mode)
 cmd_validate() {
-  local json_mode=0 allowlist="" strict=0
+  local json_mode=0 allowlist="" strict=0 changed_only=0 since_ref="HEAD~1"
   while [[ $# -gt 0 ]]; do
     case "$1" in
       --json) json_mode=1; shift ;;
       --allowlist) allowlist="$2"; shift 2 ;;
       # BTS-386: escalate warn-shape rule-tier-budget-exceeded drift to exit 2.
       --strict) strict=1; shift ;;
+      # BTS-383: scope drift detection to git-diff ∩ allowlist.
+      --changed-only) changed_only=1; shift ;;
+      --since) since_ref="$2"; shift 2 ;;
       *) shift ;;
     esac
   done
@@ -669,6 +675,33 @@ cmd_validate() {
       [[ -z "$raw" ]] && continue
       entries+=("$raw")
     done < "$allowlist"
+  fi
+
+  # BTS-383 AC-4/AC-5: in --changed-only mode, scope entries to the
+  # intersection of git-diff <since> and the allowlist. Empty diff
+  # → empty entries (zero coverage, status ok). Non-allowlisted files
+  # in the diff are silently dropped.
+  local scanned_files=()
+  if (( changed_only )); then
+    local _changed_list
+    _changed_list=$(git diff --name-only "$since_ref" 2>/dev/null || true)
+    local _filtered=() _entry _entry_path
+    for _entry in "${entries[@]+"${entries[@]}"}"; do
+      if [[ "$_entry" == *":"* ]]; then
+        _entry_path="${_entry%%:*}"
+      else
+        _entry_path="$_entry"
+      fi
+      if [[ -n "$_changed_list" ]] && echo "$_changed_list" | grep -Fxq -- "$_entry_path"; then
+        _filtered+=("$_entry")
+        scanned_files+=("$_entry_path")
+      fi
+    done
+    if [[ "${#_filtered[@]}" -gt 0 ]]; then
+      entries=("${_filtered[@]}")
+    else
+      entries=()
+    fi
   fi
 
   local total="${#entries[@]}" covered=0
@@ -920,10 +953,24 @@ PY
     if [[ "$info_count" -gt 0 ]]; then
       info_arr=$(printf '%s\n' "${info_records[@]}" | jq -s '.')
     fi
-    jq -n --argjson covered "$covered" --argjson total "$total" \
-      --argjson drift "$drift_arr" --argjson info "$info_arr" \
-      --arg status "$status_str" \
-      '{coverage:{covered:$covered, total:$total}, drift:$drift, info:$info, status:$status}'
+    if (( changed_only )); then
+      # BTS-383: surface scanned_files so callers can verify the right
+      # subset was checked.
+      local scanned_arr="[]"
+      if [[ "${#scanned_files[@]}" -gt 0 ]]; then
+        scanned_arr=$(printf '%s\n' "${scanned_files[@]}" | jq -Rn '[inputs | select(length > 0)]')
+      fi
+      jq -n --argjson covered "$covered" --argjson total "$total" \
+        --argjson drift "$drift_arr" --argjson info "$info_arr" \
+        --argjson scanned "$scanned_arr" \
+        --arg status "$status_str" \
+        '{coverage:{covered:$covered, total:$total}, drift:$drift, info:$info, scanned_files:$scanned, status:$status}'
+    else
+      jq -n --argjson covered "$covered" --argjson total "$total" \
+        --argjson drift "$drift_arr" --argjson info "$info_arr" \
+        --arg status "$status_str" \
+        '{coverage:{covered:$covered, total:$total}, drift:$drift, info:$info, status:$status}'
+    fi
   fi
 
   if (( has_block )); then return 2; fi
