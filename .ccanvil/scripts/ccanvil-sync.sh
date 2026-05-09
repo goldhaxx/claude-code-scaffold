@@ -366,6 +366,57 @@ cmd_node_role() {
   _resolve_node_role "$project_dir"
 }
 
+# extract_rule_scope — Read the `scope:` value from a rule file's YAML
+# frontmatter. Emits the value (e.g. "universal") on stdout, or empty if no
+# frontmatter or no scope key. Used by is_scope_allowed_for_role. BTS-384.
+extract_rule_scope() {
+  local file="$1"
+  [[ -f "$file" ]] || { echo ""; return 0; }
+  awk '
+    NR == 1 && /^---$/ { in_fm = 1; next }
+    in_fm && /^---$/ { exit }
+    in_fm && /^scope:[[:space:]]*/ {
+      sub(/^scope:[[:space:]]*/, "")
+      sub(/[[:space:]]+$/, "")
+      print
+      exit
+    }
+  ' "$file"
+}
+
+# is_scope_allowed_for_role — Apply the scope-filter rules. Echoes one of:
+#   "allowed"           — no frontmatter scope, scope:universal, or scope:substrate
+#                         when role=hub-substrate-developer
+#   "skipped:substrate" — scope:substrate × role=substrate-consumer
+#   "skipped:hub-only"  — scope:hub-only (any role)
+# Exit codes: 0 allowed, 1 skipped. Invalid scope values fail open (allowed) —
+# rule-scope-invalid is surfaced separately by `module-manifest.sh validate`.
+# Files without frontmatter scope are always allowed (covers scripts, hooks,
+# settings, and rule files that haven't yet adopted the scope field). BTS-384.
+is_scope_allowed_for_role() {
+  local file="$1" role="$2"
+  local scope
+  scope=$(extract_rule_scope "$file")
+  case "$scope" in
+    ""|universal) echo "allowed"; return 0 ;;
+    substrate)
+      if [[ "$role" == "hub-substrate-developer" ]]; then
+        echo "allowed"; return 0
+      else
+        echo "skipped:substrate"; return 1
+      fi ;;
+    hub-only) echo "skipped:hub-only"; return 1 ;;
+    *) echo "allowed"; return 0 ;;
+  esac
+}
+
+# cmd_scope_check — Verb wrapper for is_scope_allowed_for_role. BTS-384.
+cmd_scope_check() {
+  local file="${1:?file required}"
+  local role="${2:?role required}"
+  is_scope_allowed_for_role "$file" "$role"
+}
+
 # is_distributable_path — Test if a path matches any TRACKED_PATTERN or
 # INIT_EXTRA_FILES entry. Returns 0 (true) on match, 1 otherwise. BTS-382.
 # Used by cmd_changelog to filter hub-internal commits/files that would
@@ -1864,6 +1915,9 @@ cmd_pull_plan() {
   hub_source=$(get_hub_source)
 
   local plan="[]"
+  # BTS-384: resolve node role once for the scope filter applied per file below.
+  local _node_role
+  _node_role=$(_resolve_node_role .)
 
   # Check each tracked file in the lockfile
   while IFS= read -r file; do
@@ -1921,6 +1975,18 @@ cmd_pull_plan() {
       continue
     fi
 
+    # BTS-384: scope filter — substrate/hub-only rules emit scope-skipped
+    # instead of any pull action. Non-rule paths and universal rules pass through.
+    local _scope_decision
+    if _scope_decision=$(is_scope_allowed_for_role "$hub_file" "$_node_role"); then
+      :
+    else
+      local _scope_value="${_scope_decision#skipped:}"
+      plan=$(echo "$plan" | jq --arg f "$file" --arg s "$_scope_value" --arg r "$_node_role" \
+        '. + [{"file": $f, "action": "scope-skipped", "reason": ("scope=" + $s + " not allowed for role=" + $r), "scope": $s}]')
+      continue
+    fi
+
     if [[ "$current_local_h" == "MISSING" ]]; then
       # File exists in lockfile but not locally (deleted locally)
       plan=$(echo "$plan" | jq --arg f "$file" \
@@ -1957,6 +2023,14 @@ cmd_pull_plan() {
   # Check for new files in hub not in lockfile
   while IFS= read -r file; do
     if ! jq -e --arg f "$file" '.files[$f]' "$LOCKFILE" >/dev/null 2>&1; then
+      # BTS-384: scope filter applies to new-in-hub files too.
+      local _scope_decision_new
+      if ! _scope_decision_new=$(is_scope_allowed_for_role "$hub_source/$file" "$_node_role"); then
+        local _scope_value_new="${_scope_decision_new#skipped:}"
+        plan=$(echo "$plan" | jq --arg f "$file" --arg s "$_scope_value_new" --arg r "$_node_role" \
+          '. + [{"file": $f, "action": "scope-skipped", "reason": ("scope=" + $s + " not allowed for role=" + $r), "scope": $s}]')
+        continue
+      fi
       if [[ -f "$file" ]]; then
         # File exists locally but isn't in lockfile (e.g., manual copy)
         local hub_h local_h
@@ -4414,6 +4488,7 @@ case "${1:-}" in
   section-merge)    shift; cmd_section_merge "$@" ;;
   scan)             cmd_scan ;;
   node-role)        shift; cmd_node_role "${1:-}" ;;
+  scope-check)      shift; cmd_scope_check "$@" ;;
 
   # --- Classification commands ---
   node-only)        shift; cmd_node_only "$@" ;;
