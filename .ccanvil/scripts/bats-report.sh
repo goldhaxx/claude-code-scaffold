@@ -20,8 +20,8 @@
 # input: env BATS_REPORT_STATE_DIR (override the directory where bats-runs.jsonl is appended; defaults to .ccanvil/state)
 # input: positional bats-args (target paths or filters like `-f 'pattern'`); defaults to `hub/tests/` when no path arg present
 # output: stdout (default): bats raw output + `---` separator + `PASS: <N> / FAIL: <M> / TOTAL: <T>`; with --timings, second `---` + `Timings (slowest first):` table
-# output: stdout (--json): JSON envelope `{ok, not_ok, total, tail, raw_exit, timings:[{test, ms}], wall_ms, jobs, cpus}`
-# output: side-effect appends one line to .ccanvil/state/bats-runs.jsonl per run with shape {epoch, wall_ms, ok, not_ok, total, jobs, cpus, raw_exit, parallel}
+# output: stdout (--json): JSON envelope `{ok, not_ok, total, tail, raw_exit, timings:[{test, ms}], failures:[{test_name, file, line_number, error_excerpt}], wall_ms, jobs, cpus}`
+# output: side-effect appends one line to .ccanvil/state/bats-runs.jsonl per run with shape {epoch, wall_ms, ok, not_ok, total, jobs, cpus, raw_exit, parallel, failures:[{test_name, file, line_number, error_excerpt}]}
 # output: stderr (--progress, BTS-383): per-file completion lines `[N/M] <file>: PASS|FAIL X/Y in T.Ts`
 # output: exit-code mirrors bats's exit (0 pass / non-zero fail / 2 invalid-arg)
 # caller: skill:/pr
@@ -196,6 +196,47 @@ _now_ms() {
     echo "$(($(date +%s) * 1000))"
   fi
 }
+
+# BTS-383 AC-2: parse the captured TAP for `not ok` records + the indented
+# `# (in test file <path>, line N)` and `#   ...` annotations bats emits
+# below them. Emit a JSON array `[{test_name, file, line_number,
+# error_excerpt}, ...]`. Empty array when there are no failures.
+_parse_failures() {
+  local tap_file="$1"
+  perl -e '
+    use strict; use warnings;
+    use JSON::PP;
+    my @failures;
+    my $current;
+    while (my $line = <STDIN>) {
+      chomp $line;
+      if ($line =~ /^not ok \d+ - (.+?)(?:\s+in \d+ms)?$/ ||
+          $line =~ /^not ok \d+ (.+?)(?:\s+in \d+ms)?$/) {
+        push @failures, $current if $current;
+        $current = {
+          test_name     => $1,
+          file          => "",
+          line_number   => undef,
+          error_excerpt => "",
+        };
+      } elsif ($line =~ /^ok /) {
+        push @failures, $current if $current;
+        $current = undef;
+      } elsif (defined $current) {
+        if ($line =~ /^# \(in test file (.+), line (\d+)\)/ ||
+            $line =~ /^# \(from .+ in test file (.+), line (\d+)\)/) {
+          $current->{file}        = $1;
+          $current->{line_number} = $2 + 0;
+        } elsif ($line =~ /^# (.+)$/) {
+          $current->{error_excerpt} .= "\n" if length $current->{error_excerpt};
+          $current->{error_excerpt} .= $1;
+        }
+      }
+    }
+    push @failures, $current if $current;
+    print encode_json(\@failures);
+  ' < "$tap_file"
+}
 start_ms=$(_now_ms)
 if (( progress_mode )); then
   # BTS-383 per-file orchestration. Walk the passthrough list, expand
@@ -298,6 +339,16 @@ if (( timings_mode )); then
   fi
 fi
 
+# BTS-383 AC-2/AC-3: per-failure detail array. Computed unconditionally so
+# both --json output AND the bats-runs.jsonl writer below can reference it.
+# Empty when not_ok == 0.
+if (( not_ok > 0 )); then
+  failures_json=$(_parse_failures "$tmp")
+  [[ -z "$failures_json" ]] && failures_json='[]'
+else
+  failures_json='[]'
+fi
+
 if (( json_mode )); then
   # Build timings JSON array from the TSV. Empty input → [].
   if [[ -n "$timings_tsv" ]]; then
@@ -317,10 +368,11 @@ if (( json_mode )); then
     --arg tail "$tail_output" \
     --argjson exit "$bats_exit" \
     --argjson timings "$timings_json" \
+    --argjson failures "$failures_json" \
     --argjson wall_ms "$wall_ms" \
     --argjson jobs "$jobs_used" \
     --argjson cpus "$cpus_total" \
-    '{ok:$ok, not_ok:$not_ok, total:$total, tail:$tail, raw_exit:$exit, timings:$timings, wall_ms:$wall_ms, jobs:$jobs, cpus:$cpus}'
+    '{ok:$ok, not_ok:$not_ok, total:$total, tail:$tail, raw_exit:$exit, timings:$timings, failures:$failures, wall_ms:$wall_ms, jobs:$jobs, cpus:$cpus}'
 else
   cat "$tmp"
   echo "---"
@@ -349,7 +401,8 @@ jsonl_entry=$(jq -c -n \
   --argjson cpus "$cpus_total" \
   --argjson raw_exit "$bats_exit" \
   --argjson parallel "$parallel_bool" \
-  '{epoch:$epoch, wall_ms:$wall_ms, ok:$ok, not_ok:$not_ok, total:$total, jobs:$jobs, cpus:$cpus, raw_exit:$raw_exit, parallel:$parallel}')
+  --argjson failures "$failures_json" \
+  '{epoch:$epoch, wall_ms:$wall_ms, ok:$ok, not_ok:$not_ok, total:$total, jobs:$jobs, cpus:$cpus, raw_exit:$raw_exit, parallel:$parallel, failures:$failures}')
 # @side-effect: writes-bats-runs-jsonl
 if mkdir -p "$state_dir" 2>/dev/null && printf '%s\n' "$jsonl_entry" >> "$jsonl_path" 2>/dev/null; then
   :
