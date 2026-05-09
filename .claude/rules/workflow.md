@@ -33,7 +33,7 @@ manifest:
 
 **Feature lifecycle:** Spec → Activate → Plan → Implement → Complete → Merge → Land. Main is protected (PreToolUse hook blocks direct commits).
 
-**Session discipline:** one objective per session. End with summary → next-action → `/stasis` → `/compact`. Resume after reset via `/recall`.
+**Session discipline:** one objective per session. End with summary → next-action → `/stasis` → `/compact`. Resume after reset via `/recall`. Determinism review is mandatory in every stasis — see `self-review.md`.
 
 **Error recovery:** after 2 failed attempts, STOP. Run `/stasis` and surface alternatives instead of looping.
 

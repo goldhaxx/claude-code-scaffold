@@ -43,11 +43,12 @@ PROJECT_TREE_SUBCOMMANDS=(
   idea-add idea-list idea-count idea-count-local idea-update idea-sync
   idea-pending-replay idea-review-icebox idea-migrate-state idea-migrate
   idea-setup idea-upgrade provider-resolve-ids provider-heal-preflight provider-heal-auth provider-heal
+  provider-activate
   refresh-plan-hash archive-stasis sessions-list legacy-refs-scan stamp-spec
   evidence-scan-session lifecycle-state
   artifact-read artifact-write route-of ssot-migrate
   session-info assert-pr-title remote-presence
-  stasis-carry-forward ship-finalize validate-spec
+  stasis-carry-forward ship-finalize validate-spec rule-resolve
 )
 
 # ---------------------------------------------------------------------------
