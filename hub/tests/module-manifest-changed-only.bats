@@ -66,6 +66,19 @@ _make_proj() {
   echo "$output" | jq -e '.scanned_files[0] | endswith("file-a.sh")'
 }
 
+@test "AC-4: --changed-only completes in <5s on 1-file fixture diff" {
+  set -e
+  _make_proj
+  printf '\n# trailing\n' >> .ccanvil/scripts/file-a.sh
+  start_ms=$(perl -MTime::HiRes -e 'printf "%d", Time::HiRes::time()*1000')
+  run bash "$SCRIPT" validate --changed-only --since HEAD --json
+  end_ms=$(perl -MTime::HiRes -e 'printf "%d", Time::HiRes::time()*1000')
+  elapsed_ms=$((end_ms - start_ms))
+  echo "perf: ${elapsed_ms}ms (bound 5000)" >&2
+  [ "$status" -eq 0 ]
+  [ "$elapsed_ms" -lt 5000 ]
+}
+
 @test "AC-4: --changed-only without --since defaults to HEAD~1" {
   set -e
   _make_proj
