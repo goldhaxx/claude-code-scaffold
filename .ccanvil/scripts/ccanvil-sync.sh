@@ -349,6 +349,23 @@ is_excluded() {
   return 1
 }
 
+# _resolve_node_role — Read the node's role from <project_dir>/.claude/ccanvil.json.
+# Defaults to "substrate-consumer" when the file is missing or the key is absent.
+# BTS-384. Used by cmd_pull_plan's scope filter and exposed via the `node-role` verb.
+_resolve_node_role() {
+  local project_dir="${1:?project_dir required}"
+  local cfg="$project_dir/.claude/ccanvil.json"
+  [[ ! -f "$cfg" ]] && { echo "substrate-consumer"; return 0; }
+  jq -r '.role // "substrate-consumer"' "$cfg" 2>/dev/null || echo "substrate-consumer"
+}
+
+# cmd_node_role — Thin verb wrapper around _resolve_node_role for testability
+# and operator queries. BTS-384.
+cmd_node_role() {
+  local project_dir="${1:-$(pwd)}"
+  _resolve_node_role "$project_dir"
+}
+
 # is_distributable_path — Test if a path matches any TRACKED_PATTERN or
 # INIT_EXTRA_FILES entry. Returns 0 (true) on match, 1 otherwise. BTS-382.
 # Used by cmd_changelog to filter hub-internal commits/files that would
@@ -4396,6 +4413,7 @@ case "${1:-}" in
   lock-set-version) shift; cmd_lock_set_version "$@" ;;
   section-merge)    shift; cmd_section_merge "$@" ;;
   scan)             cmd_scan ;;
+  node-role)        shift; cmd_node_role "${1:-}" ;;
 
   # --- Classification commands ---
   node-only)        shift; cmd_node_only "$@" ;;

@@ -11,9 +11,20 @@ Project-specific overrides go in `.claude/ccanvil.local.json` (gitignored, never
 {
   "features": {
     "pr_review": false
-  }
+  },
+  "role": "substrate-consumer"
 }
 ```
+
+## Role field (BTS-384)
+
+The top-level `"role"` key controls which hub rules a node receives via `ccanvil-sync.sh`. Two values:
+
+- `"substrate-consumer"` — default for downstream nodes. Receives `scope: universal` rules only. `scope: substrate` and `scope: hub-only` rules are filtered out at distribution.
+- `"hub-substrate-developer"` — for the ccanvil hub itself (or forks developing substrate). Receives all `scope: universal` and `scope: substrate` rules. `scope: hub-only` is still filtered.
+
+When the key is absent, `ccanvil-sync.sh` treats the node as `substrate-consumer`.
+
 
 **Local override** (`ccanvil.local.json` — gitignored, node-only):
 ```json
