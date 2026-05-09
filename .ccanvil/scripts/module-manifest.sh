@@ -894,7 +894,19 @@ except yaml.YAMLError as e:
 if not isinstance(fm, dict):
     print(json.dumps({"_error": "frontmatter-not-mapping"}))
     sys.exit(0)
-print(json.dumps({"tier": fm.get("tier", 0)}))
+out = {"tier": fm.get("tier", 0)}
+# BTS-384: scope-vocabulary validation. Accepted: universal | substrate | hub-only.
+ACCEPTED_SCOPES = ("universal", "substrate", "hub-only")
+if "scope" in fm:
+    scope = fm["scope"]
+    if scope in ACCEPTED_SCOPES:
+        out["scope"] = scope
+    else:
+        out["_scope_invalid"] = True
+        out["scope_value"] = str(scope)
+else:
+    out["_scope_missing"] = True
+print(json.dumps(out))
 PY
 )
       _fm_err=$(echo "$_fm_check" | jq -r '._error // empty')
@@ -919,6 +931,20 @@ PY
         # escalates to exit 2 by inspecting info[] for warn entries.
         info_records+=("$(jq -nc --arg p "$_rule_file" --arg id "$_rule_id" --argjson v "$_rule_tokens" \
           '{path:$p, id:$id, reason:"rule-tier-budget-exceeded", value:$v, threshold:150}')")
+      fi
+      # BTS-384: scope-vocabulary signals. _scope_invalid → drift (block).
+      # _scope_missing → info (advisory). Both are no-ops when _fm_no is set
+      # because the python pre-exits before populating scope keys.
+      local _scope_invalid _scope_missing _scope_value
+      _scope_invalid=$(echo "$_fm_check" | jq -r '._scope_invalid // empty')
+      _scope_missing=$(echo "$_fm_check" | jq -r '._scope_missing // empty')
+      if [[ -n "$_scope_invalid" ]]; then
+        _scope_value=$(echo "$_fm_check" | jq -r '.scope_value // ""')
+        drift_records+=("$(jq -nc --arg p "$_rule_file" --arg id "$_rule_id" --arg v "$_scope_value" \
+          '{path:$p, id:$id, reason:"rule-scope-invalid", value:$v}')")
+      elif [[ -n "$_scope_missing" ]]; then
+        info_records+=("$(jq -nc --arg p "$_rule_file" --arg id "$_rule_id" \
+          '{path:$p, id:$id, reason:"rule-scope-missing"}')")
       fi
     done
   fi
