@@ -242,10 +242,17 @@ scan_tracked_files_emails() {
   echo "Scanning tracked files for email addresses..." >&2
   # Match email-like patterns, excluding noreply and example.com
   while IFS=: read -r file line content; do
-    # BTS-395: skip lines containing DB-protocol URI-scheme prefixes. The
-    # email regex matches `userinfo@host.tld` substrings inside connection
-    # strings (postgresql://USER:PASSWORD@HOST.REGION/db) — not real emails.
-    case "$content" in
+    # BTS-395: skip lines whose URI-scheme prefix precedes the first `@`.
+    # `${content%%@*}` is the substring BEFORE the first @ — if a DB
+    # protocol scheme appears in that prefix, the @ is URI userinfo,
+    # not an email separator. This avoids over-suppressing lines like
+    # `CONTACT=admin@company.com # see postgresql://...` (the comment
+    # would substring-match the scheme but the real email comes first).
+    # Lowercased via `tr` for case-insensitive scheme matching (RFC 3986
+    # schemes are case-insensitive; some tooling emits uppercase).
+    local _prefix_lower
+    _prefix_lower=$(printf '%s' "${content%%@*}" | tr '[:upper:]' '[:lower:]')
+    case "$_prefix_lower" in
       *postgresql://*|*postgres://*|*mongodb://*|*mongodb+srv://*|*redis://*|*rediss://*|*mysql://*|*mssql://*|*amqp://*|*amqps://*) continue ;;
     esac
     local detail="Email address found: $content"

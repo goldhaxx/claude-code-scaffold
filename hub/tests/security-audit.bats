@@ -326,6 +326,34 @@ EOF
   ! echo "$output" | grep -q "MEDIUM.*email"
 }
 
+@test "BTS-395 edge: real email is not suppressed when URI scheme appears in trailing comment" {
+  # Closes review WARN-1. The substring-anywhere match would suppress this;
+  # the position-aware ${content%%@*} match correctly identifies the @ as
+  # belonging to the real email (which appears BEFORE the URI scheme).
+  echo 'CONTACT=admin@company.com # see also postgresql://user:pass@host/db' > config.txt
+  git add -A && git commit -q -m "add email + trailing URI comment"
+
+  run bash "$SCRIPT" --files-only
+  [ "$status" -eq 1 ]
+  echo "$output" | grep -q "MEDIUM.*email"
+  echo "$output" | grep -q "admin@company.com"
+}
+
+@test "BTS-395 edge: uppercase URI scheme variants do not flag as email" {
+  # Closes review WARN-2. RFC 3986 schemes are case-insensitive; some
+  # tooling (Windows, certain ORM scaffolds) emits uppercase variants.
+  cat > .env.example <<'EOF'
+PG_URL=POSTGRESQL://U:P@db.host.com/x
+MONGO_URL=MongoDB://U:P@db.host.com/x
+REDIS_URL=Redis://U:P@cache.host.com:6379
+EOF
+  git add -A && git commit -q -m "add uppercase scheme variants"
+
+  run bash "$SCRIPT" --files-only
+  [ "$status" -eq 0 ]
+  ! echo "$output" | grep -qE "MEDIUM.*email"
+}
+
 
 # =========================================================================
 # Git history detection
