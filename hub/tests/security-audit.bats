@@ -235,6 +235,127 @@ EOF
 
 
 # =========================================================================
+# BTS-395: URI-scheme email-finding filter
+# =========================================================================
+# scan_tracked_files_emails used to flag connection-string URLs
+# (postgresql://USER:PASSWORD@HOST.REGION/db) as MEDIUM email findings —
+# the regex matched the URI's userinfo@host substring even though the line
+# is not an email. Filter: skip lines whose $content contains a known
+# DB-protocol URI-scheme prefix (postgres/postgresql/mongodb/redis/mysql/
+# mssql/amqp + their +srv/ssl variants).
+
+@test "BTS-395 AC-1: postgresql:// connection string does not flag as email" {
+  echo 'DATABASE_URL=postgresql://USER:PASSWORD@HOST.REGION.aws.neon.tech/db' > .env.example
+  git add -A && git commit -q -m "add postgres conn"
+
+  run bash "$SCRIPT" --files-only
+  [ "$status" -eq 0 ]
+  # Match finding rows specifically, not the "Scanning ... email addresses" banner.
+  ! echo "$output" | grep -qE "MEDIUM.*email"
+}
+
+@test "BTS-395 AC-2: 9 other DB connection-string schemes do not flag as email" {
+  cat > .env.example <<'EOF'
+PG_URL=postgres://u:p@db.host.com/x
+MONGO_URL=mongodb://u:p@db.host.com/x
+MONGO_SRV_URL=mongodb+srv://u:p@cluster.host.com/x
+REDIS_URL=redis://u:p@cache.host.com:6379
+REDISS_URL=rediss://u:p@cache.host.com:6379
+MYSQL_URL=mysql://u:p@db.host.com/x
+MSSQL_URL=mssql://u:p@db.host.com/x
+AMQP_URL=amqp://u:p@queue.host.com:5672
+AMQPS_URL=amqps://u:p@queue.host.com:5672
+EOF
+  git add -A && git commit -q -m "add 9 conn schemes"
+
+  run bash "$SCRIPT" --files-only
+  [ "$status" -eq 0 ]
+  ! echo "$output" | grep -qE "MEDIUM.*email"
+}
+
+@test "BTS-395 AC-3: real email on a non-URI line still flags MEDIUM email" {
+  echo 'CONTACT=admin@company.com' > config.txt
+  git add -A && git commit -q -m "add contact"
+
+  run bash "$SCRIPT" --files-only
+  [ "$status" -eq 1 ]
+  echo "$output" | grep -q "email"
+  echo "$output" | grep -q "admin@company.com"
+}
+
+@test "BTS-395 AC-4: mixed file — connection string skipped, real email on separate line still flags" {
+  cat > .env.example <<'EOF'
+DATABASE_URL=postgresql://u:p@db.host.com/x
+CONTACT=admin@company.com
+EOF
+  git add -A && git commit -q -m "add mixed content"
+
+  run bash "$SCRIPT" --files-only
+  [ "$status" -eq 1 ]
+  # Exactly one email finding — only the contact line.
+  [ "$(echo "$output" | grep -c "MEDIUM.*email")" -eq 1 ]
+  echo "$output" | grep -q "admin@company.com"
+  ! echo "$output" | grep -q "postgresql"
+}
+
+@test "BTS-395 AC-5: legacy .env.example::email:: allowlist entry parses without error" {
+  echo 'DATABASE_URL=postgresql://u:p@db.host.com/x' > .env.example
+  cat > .security-audit-allowlist <<'EOF'
+.env.example::email::
+EOF
+  git add -A && git commit -q -m "add postgres + legacy allowlist"
+
+  run --separate-stderr bash "$SCRIPT" --files-only
+  [ "$status" -eq 0 ]
+  [[ "$stderr" != *"malformed"* ]]
+  [[ "$stderr" != *"ERROR"* ]]
+}
+
+@test "BTS-395 AC-6: noreply@ and @example.com exclusions still silence email findings" {
+  cat > emails.txt <<'EOF'
+A=noreply@github.com
+B=bot@example.com
+C=alice@example.org
+D=charlie@example.net
+E=me@users.noreply.github.com
+EOF
+  git add -A && git commit -q -m "add excluded emails"
+
+  run bash "$SCRIPT" --files-only
+  [ "$status" -eq 0 ]
+  ! echo "$output" | grep -q "MEDIUM.*email"
+}
+
+@test "BTS-395 edge: real email is not suppressed when URI scheme appears in trailing comment" {
+  # Closes review WARN-1. The substring-anywhere match would suppress this;
+  # the position-aware ${content%%@*} match correctly identifies the @ as
+  # belonging to the real email (which appears BEFORE the URI scheme).
+  echo 'CONTACT=admin@company.com # see also postgresql://user:pass@host/db' > config.txt
+  git add -A && git commit -q -m "add email + trailing URI comment"
+
+  run bash "$SCRIPT" --files-only
+  [ "$status" -eq 1 ]
+  echo "$output" | grep -q "MEDIUM.*email"
+  echo "$output" | grep -q "admin@company.com"
+}
+
+@test "BTS-395 edge: uppercase URI scheme variants do not flag as email" {
+  # Closes review WARN-2. RFC 3986 schemes are case-insensitive; some
+  # tooling (Windows, certain ORM scaffolds) emits uppercase variants.
+  cat > .env.example <<'EOF'
+PG_URL=POSTGRESQL://U:P@db.host.com/x
+MONGO_URL=MongoDB://U:P@db.host.com/x
+REDIS_URL=Redis://U:P@cache.host.com:6379
+EOF
+  git add -A && git commit -q -m "add uppercase scheme variants"
+
+  run bash "$SCRIPT" --files-only
+  [ "$status" -eq 0 ]
+  ! echo "$output" | grep -qE "MEDIUM.*email"
+}
+
+
+# =========================================================================
 # Git history detection
 # =========================================================================
 

@@ -11,7 +11,7 @@
 #   security-audit.sh [--files-only] [--history-only] [--json]
 
 # @manifest
-# purpose: Deterministic PII + secrets scanner — grep tracked files (and optionally `git log -p`) for hard-coded patterns (GitHub PATs, OpenAI/Anthropic keys, AWS access-key IDs, Slack tokens, Bearer tokens), absolute home paths, real-looking emails, and dangerous file extensions (.env, .pem, *.key, id_rsa, *.credentials — basenames ending in `.example`/`.template`/`.sample` are exempt from the dangerous-file check per BTS-394; secret-content scanning still applies to those files). Supports a 2-shape allowlist (file-only legacy + per-finding triple). Used as the deterministic pre-flight in /review and as a CI gate; complements /review's reasoning-based pass.
+# purpose: Deterministic PII + secrets scanner — grep tracked files (and optionally `git log -p`) for hard-coded patterns (GitHub PATs, OpenAI/Anthropic keys, AWS access-key IDs, Slack tokens, Bearer tokens), absolute home paths, real-looking emails (lines containing DB-connection-string URI prefixes — postgresql://, postgres://, mongodb://, mongodb+srv://, redis://, rediss://, mysql://, mssql://, amqp://, amqps:// — are excluded per BTS-395), and dangerous file extensions (.env, .pem, *.key, id_rsa, *.credentials — basenames ending in `.example`/`.template`/`.sample` are exempt from the dangerous-file check per BTS-394; secret-content scanning still applies to those files). Supports a 2-shape allowlist (file-only legacy + per-finding triple). Used as the deterministic pre-flight in /review and as a CI gate; complements /review's reasoning-based pass.
 # input: --files-only (skip git history scan; faster pre-commit pre-flight)
 # input: --history-only (skip file scan; full forensic pass over history)
 # input: --json (emit `{findings:[{severity, category, location, detail}], total, pass}`)
@@ -242,6 +242,19 @@ scan_tracked_files_emails() {
   echo "Scanning tracked files for email addresses..." >&2
   # Match email-like patterns, excluding noreply and example.com
   while IFS=: read -r file line content; do
+    # BTS-395: skip lines whose URI-scheme prefix precedes the first `@`.
+    # `${content%%@*}` is the substring BEFORE the first @ — if a DB
+    # protocol scheme appears in that prefix, the @ is URI userinfo,
+    # not an email separator. This avoids over-suppressing lines like
+    # `CONTACT=admin@company.com # see postgresql://...` (the comment
+    # would substring-match the scheme but the real email comes first).
+    # Lowercased via `tr` for case-insensitive scheme matching (RFC 3986
+    # schemes are case-insensitive; some tooling emits uppercase).
+    local _prefix_lower
+    _prefix_lower=$(printf '%s' "${content%%@*}" | tr '[:upper:]' '[:lower:]')
+    case "$_prefix_lower" in
+      *postgresql://*|*postgres://*|*mongodb://*|*mongodb+srv://*|*redis://*|*rediss://*|*mysql://*|*mssql://*|*amqp://*|*amqps://*) continue ;;
+    esac
     local detail="Email address found: $content"
     if ! is_allowlisted "$file" "email" "$detail"; then
       # Skip noreply addresses and example domains
