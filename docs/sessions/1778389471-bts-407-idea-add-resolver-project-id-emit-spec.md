@@ -30,29 +30,29 @@ Each criterion is independently testable. Binary pass/fail.
 ## Affected Files
 
 | File | Change |
-|------|--------|
+| -- | -- |
 | `.ccanvil/scripts/operations.sh` | Modified — read `project_id` in `linear_mcp_adapter`; gate `--project` vs `--project-id` per verb |
 | `hub/tests/operations-resolve-http.bats` | Modified — extend fixtures + assertions for AC-1 through AC-6 |
-| `.ccanvil/manifest-allowlist.txt` | Unchanged (operations.sh already covered) |
+| `.ccanvil/manifest-allowlist.txt` | Unchanged ([operations.sh](<http://operations.sh>) already covered) |
 
 ## Dependencies
 
-- **Requires:** None — substrate is self-contained; `linear-query.sh save-issue` already accepts `--project-id` (verified line 739).
-- **Blocked by:** None.
+* **Requires:** None — substrate is self-contained; `linear-query.sh save-issue` already accepts `--project-id` (verified line 739).
+* **Blocked by:** None.
 
 ## Out of Scope
 
-- Renaming the legacy function `linear_mcp_adapter` (it dispatches http now, not MCP — but rename is unrelated cleanup).
-- Updating `init`/`provider-resolve-ids` to populate `project_id` more aggressively on downstream nodes — covered by BTS-314 onboarding cluster.
-- Changing `linear-query.sh save-issue`'s flag handling — wrapper is unchanged.
+* Renaming the legacy function `linear_mcp_adapter` (it dispatches http now, not MCP — but rename is unrelated cleanup).
+* Updating `init`/`provider-resolve-ids` to populate `project_id` more aggressively on downstream nodes — covered by BTS-314 onboarding cluster.
+* Changing `linear-query.sh save-issue`'s flag handling — wrapper is unchanged.
 
 ## Implementation Notes
 
-- Single-point fix in `linear_mcp_adapter()` at the top of the function: `project_id=$(echo "$provider_config" | jq -r '.project_id // ""')`.
-- Per-verb pattern in the `jq -n` invocation: pass both `--arg project` and `--arg project_id`, then in the command-string concat use `(if $project_id != "" then " --project-id " + ($project_id | @sh) elif $project != "" then " --project " + ($project | @sh) else "" end)`.
-- Keep the order project_id → project → omit so existing tests asserting `contains("ccanvil")` still pass (hub config has both set; UUID wins).
-- Existing `BTS-164 AC-4` hub test (`operations-resolve-http.bats:74-82`) asserts `contains("ccanvil")` — fixture has only `project: "ccanvil"`, no `project_id`. That test stays green via AC-3 fallback.
-- Keep `linear_mcp_adapter` function name unchanged (out of scope per above).
-<!-- NODE-SPECIFIC-START -->
-<!-- Add project-specific content below this line. -->
-<!-- Hub content above is updated via /ccanvil-pull. -->
+* Single-point fix in `linear_mcp_adapter()` at the top of the function: `project_id=$(echo "$provider_config" | jq -r '.project_id // ""')`.
+* Per-verb pattern in the `jq -n` invocation: pass both `--arg project` and `--arg project_id`, then in the command-string concat use `(if $project_id != "" then " --project-id " + ($project_id | @sh) elif $project != "" then " --project " + ($project | @sh) else "" end)`.
+* Keep the order project_id → project → omit so existing tests asserting `contains("ccanvil")` still pass (hub config has both set; UUID wins).
+* Existing `BTS-164 AC-4` hub test (`operations-resolve-http.bats:74-82`) asserts `contains("ccanvil")` — fixture has only `project: "ccanvil"`, no `project_id`. That test stays green via AC-3 fallback.
+* Keep `linear_mcp_adapter` function name unchanged (out of scope per above).
+  <!-- NODE-SPECIFIC-START -->
+  <!-- Add project-specific content below this line. -->
+  <!-- Hub content above is updated via /ccanvil-pull. -->

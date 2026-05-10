@@ -4,7 +4,7 @@
 > Work: linear:BTS-407
 > Created: 1778387840
 > Subject: idea.add resolver emits --project-id when configured
-> Status: In Progress
+> Status: Complete
 
 ## Summary
 
