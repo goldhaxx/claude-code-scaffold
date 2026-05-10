@@ -320,6 +320,47 @@ EOF
 
 
 # =========================================================================
+# History-scanner pathspec (regression for 7c474b2)
+# =========================================================================
+#
+# Pathspec construction was '**${fpat}*', which doesn't bridge to nested
+# paths because git's '**' only matches at path-component boundaries. A
+# file-form allowlist entry like 'fn-atlas/captures/' did not exclude
+# 'docs/fn-atlas/captures/...' from -S pickaxe-regex history scans.
+# Fix: '**/${fpat}**' matches at any path depth and works for both
+# top-level and nested entries.
+
+@test "regression: file-form allowlist excludes nested-path commits from history scan" {
+  mkdir -p docs/fn-atlas/captures
+  echo "token = ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefgh1234" \
+    > docs/fn-atlas/captures/snapshot.md
+  cat > .security-audit-allowlist <<'EOF'
+fn-atlas/captures/
+EOF
+  git add -A && git commit -q -m "add nested fixture"
+
+  run bash "$SCRIPT" --history-only
+  # Pre-fix: status would be 1 (CRITICAL on the nested commit because the
+  # broken '**fn-atlas/captures/*' glob fails to exclude the path).
+  # Post-fix: status is 0 — '**/fn-atlas/captures/**' bridges any depth.
+  [ "$status" -eq 0 ]
+}
+
+@test "regression: file-form allowlist still excludes top-level paths from history scan" {
+  echo "token = ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefgh1234" > leaky.txt
+  cat > .security-audit-allowlist <<'EOF'
+leaky.txt
+EOF
+  git add -A && git commit -q -m "add top-level fixture"
+
+  run bash "$SCRIPT" --history-only
+  # The new '**/${fpat}**' glob must continue to match top-level paths
+  # (no leading subdir). Guards against over-correcting the nested fix.
+  [ "$status" -eq 0 ]
+}
+
+
+# =========================================================================
 # Flag tests
 # =========================================================================
 
