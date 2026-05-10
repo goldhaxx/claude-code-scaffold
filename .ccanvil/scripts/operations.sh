@@ -70,8 +70,12 @@ EOF
 }
 
 # ---------------------------------------------------------------------------
-# Argument parsing
+# Argument parsing + dispatch (only when invoked as a script — bats fixtures
+# source this file to unit-test helpers like linear_assert_project_id_emitted
+# without triggering usage()/exit).
 # ---------------------------------------------------------------------------
+
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
 
 CMD=""
 OPERATION=""
@@ -109,6 +113,8 @@ done
 
 [[ -z "$CMD" ]] && usage
 [[ "$CMD" == "resolve" && -z "$OPERATION" ]] && usage
+
+fi  # end argv-parse guard
 
 # ---------------------------------------------------------------------------
 # Config reading
@@ -432,6 +438,31 @@ slug_from_work_id() {
   echo "$id" \
     | tr '[:upper:]' '[:lower:]' \
     | sed -e 's/[^a-z0-9-]\{1,\}/-/g' -e 's/--*/-/g' -e 's/^-//' -e 's/-$//'
+}
+
+# BTS-419 — substrate-staleness drift-guard. Round-trips the JSON envelope
+# emitted by each project-scoped Linear verb and asserts the contract:
+# "when project_id is configured, the resolved command MUST contain
+# --project-id". Empty project_id or commands that already carry the flag
+# pass through unchanged. Step 1 lands the no-fire contract; subsequent
+# steps add the fire path + ALLOW_STALE_SUBSTRATE=1 bypass + AC-7
+# operator-grade error shape.
+linear_assert_project_id_emitted() {
+  local verb="$1" project_id="$2" cmd_json="$3"
+  if [[ -z "$project_id" ]]; then
+    echo "$cmd_json"
+    return 0
+  fi
+  local cmd
+  cmd=$(echo "$cmd_json" | jq -r '.invocation.command // ""')
+  if [[ "$cmd" == *"--project-id "* ]]; then
+    echo "$cmd_json"
+    return 0
+  fi
+  # Fire path lands in Step 2. For now, pass through silently — Step 1
+  # only locks the no-fire contract.
+  echo "$cmd_json"
+  return 0
 }
 
 linear_mcp_adapter() {
@@ -1027,9 +1058,13 @@ cmd_exec() {
 # Dispatch
 # ---------------------------------------------------------------------------
 
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+
 case "$CMD" in
   resolve) cmd_resolve "$OPERATION" ;;
   exec) cmd_exec "$OPERATION" ;;
   merge-config) merge_config "$PROJECT_DIR" ;;
   *) usage ;;
 esac
+
+fi  # end dispatch guard
