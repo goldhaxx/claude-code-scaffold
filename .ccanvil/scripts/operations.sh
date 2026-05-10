@@ -437,8 +437,9 @@ slug_from_work_id() {
 linear_mcp_adapter() {
   local op="$1" provider_config="$2" op_args="$3"
   local tool="" output_contract="" field_map=""
-  local project team idea_label idea_status icebox_status workspace
+  local project project_id team idea_label idea_status icebox_status workspace
   project=$(echo "$provider_config" | jq -r '.project // ""')
+  project_id=$(echo "$provider_config" | jq -r '.project_id // ""')
   team=$(echo "$provider_config" | jq -r '.team // ""')
   idea_label=$(echo "$provider_config" | jq -r '.idea_label // "idea"')
   idea_status=$(echo "$provider_config" | jq -r '.idea_status // "Idea"')
@@ -495,14 +496,14 @@ linear_mcp_adapter() {
         exit 1
       fi
       output_contract='["id","title","status","priority","createdAt"]'
-      jq -n --arg project "$project" --arg team "$team" --arg state_id "$backlog_state_id" \
+      jq -n --arg project "$project" --arg project_id "$project_id" --arg team "$team" --arg state_id "$backlog_state_id" \
         --argjson output "$output_contract" \
         '{
           provider: "linear",
           mechanism: "http",
           invocation: {
             command: ("bash .ccanvil/scripts/linear-query.sh list-issues" +
-                      " --project " + ($project | @sh) +
+                      (if $project_id != "" then " --project-id " + ($project_id | @sh) elif $project != "" then " --project " + ($project | @sh) else "" end) +
                       " --team " + ($team | @sh) +
                       " --state " + ($state_id | @sh) +
                       " --limit 250"),
@@ -524,7 +525,7 @@ linear_mcp_adapter() {
       output_contract='["id","title","status"]'
       local triage_state_id
       triage_state_id=$(linear_state_id "$provider_config" "triage")
-      jq -n --arg project "$project" --arg team "$team" --arg label "$idea_label" \
+      jq -n --arg project "$project" --arg project_id "$project_id" --arg team "$team" --arg label "$idea_label" \
         --arg state_id "$triage_state_id" \
         --argjson output "$output_contract" \
         '{
@@ -533,7 +534,7 @@ linear_mcp_adapter() {
           invocation: {
             command: ("bash .ccanvil/scripts/linear-query.sh save-issue" +
                       " --team " + ($team | @sh) +
-                      " --project " + ($project | @sh) +
+                      (if $project_id != "" then " --project-id " + ($project_id | @sh) elif $project != "" then " --project " + ($project | @sh) else "" end) +
                       " --labels " + ($label | @sh) +
                       (if $state_id != "" then " --state " + ($state_id | @sh) else "" end)),
             endpoint: "https://api.linear.app/graphql",
@@ -544,14 +545,14 @@ linear_mcp_adapter() {
       ;;
     idea.list)
       output_contract='["id","title","status","createdAt"]'
-      jq -n --arg project "$project" --arg team "$team" --arg label "$idea_label" \
+      jq -n --arg project "$project" --arg project_id "$project_id" --arg team "$team" --arg label "$idea_label" \
         --argjson output "$output_contract" \
         '{
           provider: "linear",
           mechanism: "http",
           invocation: {
             command: ("bash .ccanvil/scripts/linear-query.sh list-issues" +
-                      " --project " + ($project | @sh) +
+                      (if $project_id != "" then " --project-id " + ($project_id | @sh) elif $project != "" then " --project " + ($project | @sh) else "" end) +
                       " --team " + ($team | @sh) +
                       " --label " + ($label | @sh) +
                       " --limit 250"),
@@ -570,14 +571,14 @@ linear_mcp_adapter() {
       # consumers no longer pre-flight against it (the substrate handles
       # the contract end-to-end).
       output_contract='["id","status","statusType"]'
-      jq -n --arg project "$project" --arg team "$team" --arg label "$idea_label" \
+      jq -n --arg project "$project" --arg project_id "$project_id" --arg team "$team" --arg label "$idea_label" \
         --argjson output "$output_contract" \
         '{
           provider: "linear",
           mechanism: "http",
           invocation: {
             command: ("bash .ccanvil/scripts/linear-query.sh list-issues" +
-                      " --project " + ($project | @sh) +
+                      (if $project_id != "" then " --project-id " + ($project_id | @sh) elif $project != "" then " --project " + ($project | @sh) else "" end) +
                       " --team " + ($team | @sh) +
                       " --label " + ($label | @sh) +
                       " --limit 250"),
@@ -598,7 +599,7 @@ linear_mcp_adapter() {
       else
         triage_state_arg="triage"
       fi
-      jq -n --arg project "$project" --arg team "$team" --arg label "$idea_label" \
+      jq -n --arg project "$project" --arg project_id "$project_id" --arg team "$team" --arg label "$idea_label" \
         --arg state "$triage_state_arg" \
         --argjson output "$output_contract" \
         '{
@@ -606,7 +607,7 @@ linear_mcp_adapter() {
           mechanism: "http",
           invocation: {
             command: ("bash .ccanvil/scripts/linear-query.sh list-issues" +
-                      " --project " + ($project | @sh) +
+                      (if $project_id != "" then " --project-id " + ($project_id | @sh) elif $project != "" then " --project " + ($project | @sh) else "" end) +
                       " --team " + ($team | @sh) +
                       " --label " + ($label | @sh) +
                       " --state " + ($state | @sh) +
@@ -645,7 +646,7 @@ linear_mcp_adapter() {
       else
         icebox_state_arg="icebox"
       fi
-      jq -n --arg project "$project" --arg team "$team" --arg label "$idea_label" \
+      jq -n --arg project "$project" --arg project_id "$project_id" --arg team "$team" --arg label "$idea_label" \
         --arg state "$icebox_state_arg" \
         --argjson output "$output_contract" \
         '{
@@ -653,7 +654,7 @@ linear_mcp_adapter() {
           mechanism: "http",
           invocation: {
             command: ("bash .ccanvil/scripts/linear-query.sh list-issues" +
-                      " --project " + ($project | @sh) +
+                      (if $project_id != "" then " --project-id " + ($project_id | @sh) elif $project != "" then " --project " + ($project | @sh) else "" end) +
                       " --team " + ($team | @sh) +
                       " --label " + ($label | @sh) +
                       " --state " + ($state | @sh) +

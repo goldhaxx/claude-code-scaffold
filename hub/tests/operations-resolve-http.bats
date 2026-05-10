@@ -224,3 +224,164 @@ JSON
   [ "$status" -eq 0 ]
   echo "$output" | jq -e 'has("provider") and has("mechanism") and has("invocation") and has("contract")'
 }
+
+# ===========================================================================
+# BTS-407: project_id preference — emit --project-id when configured, else
+# fall back to --project <name>, else omit the flag entirely.
+# ===========================================================================
+
+_with_linear_routing_uuid_only() {
+  cat > "$PROJECT/.claude/ccanvil.json" <<'JSON'
+{"integrations":{"providers":{"linear":{"mechanism":"mcp"}}}}
+JSON
+  cat > "$PROJECT/.claude/ccanvil.local.json" <<'JSON'
+{"integrations":{"routing":{"idea":"linear"},"providers":{"linear":{"project_id":"PROJ-UUID-1","team":"Blocktech Solutions","idea_label":"idea"}}}}
+JSON
+}
+
+_with_linear_routing_both_set() {
+  cat > "$PROJECT/.claude/ccanvil.json" <<'JSON'
+{"integrations":{"providers":{"linear":{"mechanism":"mcp"}}}}
+JSON
+  cat > "$PROJECT/.claude/ccanvil.local.json" <<'JSON'
+{"integrations":{"routing":{"idea":"linear"},"providers":{"linear":{"project":"ccanvil","project_id":"PROJ-UUID-1","team":"Blocktech Solutions","idea_label":"idea"}}}}
+JSON
+}
+
+_with_linear_routing_neither() {
+  cat > "$PROJECT/.claude/ccanvil.json" <<'JSON'
+{"integrations":{"providers":{"linear":{"mechanism":"mcp"}}}}
+JSON
+  cat > "$PROJECT/.claude/ccanvil.local.json" <<'JSON'
+{"integrations":{"routing":{"idea":"linear"},"providers":{"linear":{"team":"Blocktech Solutions","idea_label":"idea"}}}}
+JSON
+}
+
+@test "BTS-407 AC-1: idea.add with project_id only emits --project-id, never --project ''" {
+  set -e
+  _with_linear_routing_uuid_only
+  run bash "$OPS" resolve idea.add --project-dir "$PROJECT"
+  [ "$status" -eq 0 ]
+  local cmd
+  cmd=$(echo "$output" | jq -r '.invocation.command')
+  echo "$cmd" | grep -qF -- "--project-id 'PROJ-UUID-1'"
+  ! echo "$cmd" | grep -qF -- "--project ''"
+  ! echo "$cmd" | grep -qE -- "--project '[^-]"
+}
+
+@test "BTS-407 AC-2: idea.add with both project_id AND project prefers --project-id" {
+  set -e
+  _with_linear_routing_both_set
+  run bash "$OPS" resolve idea.add --project-dir "$PROJECT"
+  [ "$status" -eq 0 ]
+  local cmd
+  cmd=$(echo "$output" | jq -r '.invocation.command')
+  echo "$cmd" | grep -qF -- "--project-id 'PROJ-UUID-1'"
+  ! echo "$cmd" | grep -qF -- "--project 'ccanvil'"
+}
+
+@test "BTS-407 AC-3: idea.add with project name only still emits --project (existing behavior)" {
+  set -e
+  _with_linear_routing
+  run bash "$OPS" resolve idea.add --project-dir "$PROJECT"
+  [ "$status" -eq 0 ]
+  local cmd
+  cmd=$(echo "$output" | jq -r '.invocation.command')
+  echo "$cmd" | grep -qF -- "--project 'ccanvil'"
+  ! echo "$cmd" | grep -qF -- "--project-id"
+}
+
+@test "BTS-407 AC-4: idea.list with project_id only emits --project-id" {
+  set -e
+  _with_linear_routing_uuid_only
+  run bash "$OPS" resolve idea.list --project-dir "$PROJECT"
+  [ "$status" -eq 0 ]
+  local cmd
+  cmd=$(echo "$output" | jq -r '.invocation.command')
+  echo "$cmd" | grep -qF -- "--project-id 'PROJ-UUID-1'"
+  ! echo "$cmd" | grep -qF -- "--project ''"
+}
+
+@test "BTS-407 AC-4: idea.count with project_id only emits --project-id" {
+  set -e
+  _with_linear_routing_uuid_only
+  run bash "$OPS" resolve idea.count --project-dir "$PROJECT"
+  [ "$status" -eq 0 ]
+  local cmd
+  cmd=$(echo "$output" | jq -r '.invocation.command')
+  echo "$cmd" | grep -qF -- "--project-id 'PROJ-UUID-1'"
+  ! echo "$cmd" | grep -qF -- "--project ''"
+}
+
+@test "BTS-407 AC-4: idea.triage with project_id only emits --project-id" {
+  set -e
+  _with_linear_routing_uuid_only
+  run bash "$OPS" resolve idea.triage --project-dir "$PROJECT"
+  [ "$status" -eq 0 ]
+  local cmd
+  cmd=$(echo "$output" | jq -r '.invocation.command')
+  echo "$cmd" | grep -qF -- "--project-id 'PROJ-UUID-1'"
+  ! echo "$cmd" | grep -qF -- "--project ''"
+}
+
+@test "BTS-407 AC-4: idea.review-icebox with project_id only emits --project-id" {
+  set -e
+  _with_linear_routing_uuid_only
+  run bash "$OPS" resolve idea.review-icebox --project-dir "$PROJECT"
+  [ "$status" -eq 0 ]
+  local cmd
+  cmd=$(echo "$output" | jq -r '.invocation.command')
+  echo "$cmd" | grep -qF -- "--project-id 'PROJ-UUID-1'"
+  ! echo "$cmd" | grep -qF -- "--project ''"
+}
+
+@test "BTS-407 AC-4: backlog.list with project_id only emits --project-id" {
+  set -e
+  _with_linear_routing_uuid_only
+  cat > "$PROJECT/.claude/ccanvil.local.json" <<'JSON'
+{"integrations":{"routing":{"idea":"linear"},"providers":{"linear":{"project_id":"PROJ-UUID-1","team":"Blocktech Solutions","idea_label":"idea","state_ids":{"backlog":"BACKLOG-STATE-1"}}}}}
+JSON
+  run bash "$OPS" resolve backlog.list --project-dir "$PROJECT"
+  [ "$status" -eq 0 ]
+  local cmd
+  cmd=$(echo "$output" | jq -r '.invocation.command')
+  echo "$cmd" | grep -qF -- "--project-id 'PROJ-UUID-1'"
+  ! echo "$cmd" | grep -qF -- "--project ''"
+}
+
+@test "BTS-407 AC-5: when both project_id and project are empty, no --project flag is emitted" {
+  set -e
+  _with_linear_routing_neither
+  run bash "$OPS" resolve idea.add --project-dir "$PROJECT"
+  [ "$status" -eq 0 ]
+  local cmd
+  cmd=$(echo "$output" | jq -r '.invocation.command')
+  ! echo "$cmd" | grep -qE -- "--project[ -]"
+}
+
+@test "BTS-407 AC-6: project_id with shell-meta is @sh-quoted in resolved command" {
+  set -e
+  cat > "$PROJECT/.claude/ccanvil.json" <<'JSON'
+{"integrations":{"providers":{"linear":{"mechanism":"mcp"}}}}
+JSON
+  cat > "$PROJECT/.claude/ccanvil.local.json" <<'JSON'
+{"integrations":{"routing":{"idea":"linear"},"providers":{"linear":{"project_id":"uu'id","team":"Blocktech Solutions","idea_label":"idea"}}}}
+JSON
+  run bash "$OPS" resolve idea.add --project-dir "$PROJECT"
+  [ "$status" -eq 0 ]
+  local cmd
+  cmd=$(echo "$output" | jq -r '.invocation.command')
+  # @sh round-trip: uu'id  →  'uu'\''id'
+  echo "$cmd" | grep -qF -- "--project-id 'uu'\\''id'"
+  # Round-trip via eval to confirm the token parses back to the original string.
+  eval "set -- $cmd"
+  local found="false"
+  while [ $# -gt 0 ]; do
+    if [ "$1" = "--project-id" ]; then
+      [ "$2" = "uu'id" ] && found="true"
+      break
+    fi
+    shift
+  done
+  [ "$found" = "true" ]
+}
