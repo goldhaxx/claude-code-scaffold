@@ -4,7 +4,7 @@
 > Work: linear:BTS-395
 > Created: 1778384019
 > Subject: Filter URI-scheme prefixes out of the email-finding scan
-> Status: In Progress
+> Status: Complete
 
 ## Summary
 

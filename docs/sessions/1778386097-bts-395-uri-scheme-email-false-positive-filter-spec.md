@@ -28,24 +28,24 @@
 ## Affected Files
 
 | File | Change |
-|------|--------|
-| `.ccanvil/scripts/security-audit.sh` (`scan_tracked_files_emails` ~L241) | Modified — per-line URI-scheme prefix filter |
+| -- | -- |
+| `.ccanvil/scripts/security-audit.sh` (`scan_tracked_files_emails` \~L241) | Modified — per-line URI-scheme prefix filter |
 | `hub/tests/security-audit.bats` | Modified — add 6 ACs covering AC-1 through AC-6 |
 
 ## Dependencies
 
-- **Requires:** none — self-contained substrate fix.
-- **Blocked by:** none.
+* **Requires:** none — self-contained substrate fix.
+* **Blocked by:** none.
 
 ## Out of Scope
 
-- Filtering `http://` / `https://` userinfo URLs (`https://user:pass@host.com/path`). The ticket's evidence is DB-connection-string-shaped; broader URL-userinfo filtering is a known additional false-positive surface that can be a follow-up if downstream sessions surface it. Stay narrow to the documented bug.
-- Tightening the email regex itself (negative-lookbehind on `:` etc.) — `grep -E` doesn't support lookaround, and the cost-of-coverage analysis matches the BTS-394 shape: per-line filter is simpler and easier to test.
-- Removing existing downstream `.env.example::email::` allowlist entries — out-of-scope coordination work; entries are harmless after the fix.
+* Filtering `http://` / `https://` userinfo URLs (`https://user:pass@host.com/path`). The ticket's evidence is DB-connection-string-shaped; broader URL-userinfo filtering is a known additional false-positive surface that can be a follow-up if downstream sessions surface it. Stay narrow to the documented bug.
+* Tightening the email regex itself (negative-lookbehind on `:` etc.) — `grep -E` doesn't support lookaround, and the cost-of-coverage analysis matches the BTS-394 shape: per-line filter is simpler and easier to test.
+* Removing existing downstream `.env.example::email::` allowlist entries — out-of-scope coordination work; entries are harmless after the fix.
 
 ## Implementation Notes
 
-- Pattern: per-line `case "$content" in` filter at the loop level (lines 244-251 of `security-audit.sh`), mirroring the BTS-394 carve-out shape. Place the case statement before the existing exclusion check (line 248) so URI-scheme lines short-circuit `continue` BEFORE both the `is_allowlisted` and `noreply@` filters fire.
-- Suggested shape: `case "$content" in *postgresql://*|*postgres://*|*mongodb://*|*mongodb+srv://*|*redis://*|*rediss://*|*mysql://*|*mssql://*|*amqp://*|*amqps://*) continue ;; esac`. Single line, deterministic, readable.
-- Manifest impact: script-level `# @manifest` block at line 14 already lists "real-looking emails" as a scanner target. After this fix, a brief qualifier in the `purpose:` line is appropriate (e.g., "(connection-string URL substrings excluded per BTS-395)") — same rationale as the BTS-394 manifest update. No new entry-point or side-effect.
-- Test design: mirror the BTS-394 test patterns. Each test creates a fixture with the URL/email pattern, commits it (the email scanner reads `git ls-files`), runs `--files-only`, asserts on `$status` and grep on `$output`. RED-then-GREEN: AC-1/2/4 should FAIL pre-impl (the connection-string lines fire `email`); AC-3/5/6 are regression guards.
+* Pattern: per-line `case "$content" in` filter at the loop level (lines 244-251 of `security-audit.sh`), mirroring the BTS-394 carve-out shape. Place the case statement before the existing exclusion check (line 248) so URI-scheme lines short-circuit `continue` BEFORE both the `is_allowlisted` and `noreply@` filters fire.
+* Suggested shape: `case "$content" in *postgresql://*|*postgres://*|*mongodb://*|*mongodb+srv://*|*redis://*|*rediss://*|*mysql://*|*mssql://*|*amqp://*|*amqps://*) continue ;; esac`. Single line, deterministic, readable.
+* Manifest impact: script-level `# @manifest` block at line 14 already lists "real-looking emails" as a scanner target. After this fix, a brief qualifier in the `purpose:` line is appropriate (e.g., "(connection-string URL substrings excluded per BTS-395)") — same rationale as the BTS-394 manifest update. No new entry-point or side-effect.
+* Test design: mirror the BTS-394 test patterns. Each test creates a fixture with the URL/email pattern, commits it (the email scanner reads `git ls-files`), runs `--files-only`, asserts on `$status` and grep on `$output`. RED-then-GREEN: AC-1/2/4 should FAIL pre-impl (the connection-string lines fire `email`); AC-3/5/6 are regression guards.
