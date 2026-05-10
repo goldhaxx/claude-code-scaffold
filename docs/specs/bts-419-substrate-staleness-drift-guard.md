@@ -4,7 +4,7 @@
 > Work: linear:BTS-419
 > Created: 1778444817
 > Subject: substrate-staleness drift-guard
-> Status: In Progress
+> Status: Complete
 
 ## Summary
 

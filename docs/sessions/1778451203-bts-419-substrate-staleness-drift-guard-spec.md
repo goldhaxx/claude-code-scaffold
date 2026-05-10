@@ -8,7 +8,7 @@
 
 ## Summary
 
-When a Linear-routed node has `integrations.providers.linear.project_id` configured, `operations.sh resolve` for any project-scoped verb (backlog.list, idea.add, idea.list, idea.count, idea.triage, idea.review-icebox) MUST emit `--project-id` in the resolved command. Today the hub honors this contract (BTS-407, PR #176), but stale downstream nodes silently violate it — their pre-BTS-407 resolver dereferences `.project // ""` only, emits `--project ''`, and Linear falls back to team-only matching, returning workspace-wide results across all projects. Session 41 anchor: tour-scheduler `/recall` reported 23 untriaged ideas (workspace count) when the project's actual is 1-2. Twelve downstream nodes silently leaked cross-project data for ~14 hours before an operator-observed symptom triggered the fleet remediation.
+When a Linear-routed node has `integrations.providers.linear.project_id` configured, `operations.sh resolve` for any project-scoped verb (backlog.list, idea.add, idea.list, idea.count, idea.triage, idea.review-icebox) MUST emit `--project-id` in the resolved command. Today the hub honors this contract (BTS-407, PR #176), but stale downstream nodes silently violate it — their pre-BTS-407 resolver dereferences `.project // ""` only, emits `--project ''`, and Linear falls back to team-only matching, returning workspace-wide results across all projects. Session 41 anchor: tour-scheduler `/recall` reported 23 untriaged ideas (workspace count) when the project's actual is 1-2. Twelve downstream nodes silently leaked cross-project data for \~14 hours before an operator-observed symptom triggered the fleet remediation.
 
 This spec hardens the resolver-correctness surface in two complementary places: (1) a hub-side bats drift-guard that prevents future regressions of the BTS-407 contract from ever merging, and (2) a runtime self-consistency check in `operations.sh resolve` that hard-fails when `project_id` is configured but the emitted command lacks `--project-id` — making stale-substrate symptoms LOUD instead of silent-wrong on every downstream node that ships this fix.
 
@@ -33,7 +33,7 @@ Each criterion is independently testable. Binary pass/fail.
 ## Affected Files
 
 | File | Change |
-|------|--------|
+| -- | -- |
 | `.ccanvil/scripts/operations.sh` | Modified — add runtime self-consistency check in `linear_mcp_adapter` post-emit (AC-3, AC-4, AC-5); update `# @manifest` block for new exit path (AC-6) |
 | `hub/tests/operations-drift-guard.bats` | New — verb × config matrix asserting AC-1, AC-2, AC-3, AC-4, AC-5 |
 | `hub/tests/operations-resolve-http.bats` | Possibly modified — share fixture setup; verify existing BTS-407 ACs still green |
@@ -41,28 +41,26 @@ Each criterion is independently testable. Binary pass/fail.
 
 ## Dependencies
 
-- **Requires:** BTS-407 (PR #176) shipped — establishes the `--project-id` emission contract this spec defends. Already merged.
-- **Requires:** BTS-239 manifest substrate — for AC-6 manifest declaration discipline.
-- **Composes-with:** BTS-418 (resolver-wrapper-flag-contract drift-guard). Both live in the same `operations-drift-guard.bats` fixture file (or are split into sibling fixtures sharing common setup). Resolved order: BTS-419 may ship before, after, or with BTS-418 — no hard blocking. The two guards harden adjacent contracts (resolver→wrapper flag set vs resolver-self-consistency on project-scoping).
-- **Blocked by:** Nothing.
+* **Requires:** BTS-407 (PR #176) shipped — establishes the `--project-id` emission contract this spec defends. Already merged.
+* **Requires:** BTS-239 manifest substrate — for AC-6 manifest declaration discipline.
+* **Composes-with:** BTS-418 (resolver-wrapper-flag-contract drift-guard). Both live in the same `operations-drift-guard.bats` fixture file (or are split into sibling fixtures sharing common setup). Resolved order: BTS-419 may ship before, after, or with BTS-418 — no hard blocking. The two guards harden adjacent contracts (resolver→wrapper flag set vs resolver-self-consistency on project-scoping).
+* **Blocked by:** Nothing.
 
 ## Out of Scope
 
-- **Pull-cadence enforcement.** This spec does not introduce automatic-pull, scheduled-pull, or hub-side push. Operator-driven pull cadence remains the model; the drift-guard makes staleness LOUD when it next runs, not pre-emptively-fixed.
-- **Substrate-version lockfile expansion.** Adding a `min_substrate_version` field to `.ccanvil/ccanvil.lock` and gating ALL resolver calls on hub-version-match is a strictly larger intervention; deferred to a separate ticket if pull-cadence drift recurs across other substrate classes.
-- **Retroactive cleanup.** The session-41 fleet remediation already happened. This spec defends against the NEXT staleness window, not the previous one.
-- **Cross-project query DELETION on legacy nodes.** If a node deliberately runs against the older shape, the runtime check should refuse — but this spec does not migrate stale node configs.
-- **Other resolver classes.** GitHub, local, and other future providers are out of scope; the guard fires only on the Linear adapter's project-scoped surface.
+* **Pull-cadence enforcement.** This spec does not introduce automatic-pull, scheduled-pull, or hub-side push. Operator-driven pull cadence remains the model; the drift-guard makes staleness LOUD when it next runs, not pre-emptively-fixed.
+* **Substrate-version lockfile expansion.** Adding a `min_substrate_version` field to `.ccanvil/ccanvil.lock` and gating ALL resolver calls on hub-version-match is a strictly larger intervention; deferred to a separate ticket if pull-cadence drift recurs across other substrate classes.
+* **Retroactive cleanup.** The session-41 fleet remediation already happened. This spec defends against the NEXT staleness window, not the previous one.
+* **Cross-project query DELETION on legacy nodes.** If a node deliberately runs against the older shape, the runtime check should refuse — but this spec does not migrate stale node configs.
+* **Other resolver classes.** GitHub, local, and other future providers are out of scope; the guard fires only on the Linear adapter's project-scoped surface.
 
 ## Implementation Notes
 
-**Three architectural shapes for the runtime guard (AC-3) — pick ONE in `/plan`:**
+**Three architectural shapes for the runtime guard (AC-3) — pick ONE in** `/plan`:
 
-1. **Inline post-emit check inside `linear_mcp_adapter` (per-verb).** After each verb's `jq -n` invocation produces the command string, run a shell-level check: if `project_id` is non-empty AND the emitted command lacks `--project-id`, emit ERROR + exit. Pros: simple, localized, no new helper function. Cons: six call-sites to update; risk of forgetting one when adding verbs in future.
-
+1. **Inline post-emit check inside** `linear_mcp_adapter` (per-verb). After each verb's `jq -n` invocation produces the command string, run a shell-level check: if `project_id` is non-empty AND the emitted command lacks `--project-id`, emit ERROR + exit. Pros: simple, localized, no new helper function. Cons: six call-sites to update; risk of forgetting one when adding verbs in future.
 2. **Centralized post-emit wrapper.** Refactor the six `jq -n` invocations to flow through a small helper (e.g., `emit_with_staleness_guard <verb> <config> <command>`) that performs the self-check and stdouts the command (or exits with ERROR). Pros: one place to enforce the contract for all current AND future project-scoped verbs. Cons: small refactor surface; needs to know which verbs are project-scoped.
-
-3. **Resolver-output filter at `resolve` dispatch.** Add the check as a post-pass in the `resolve` command's outer layer (not inside `linear_mcp_adapter`), inspecting the JSON output after the adapter returns. Pros: provider-agnostic (could extend to GitHub/etc. later); fully decoupled from adapter internals. Cons: needs to know the contract surface (which verb × which config requires which flag) at a higher layer; risks duplicating adapter knowledge.
+3. **Resolver-output filter at** `resolve` dispatch. Add the check as a post-pass in the `resolve` command's outer layer (not inside `linear_mcp_adapter`), inspecting the JSON output after the adapter returns. Pros: provider-agnostic (could extend to GitHub/etc. later); fully decoupled from adapter internals. Cons: needs to know the contract surface (which verb × which config requires which flag) at a higher layer; risks duplicating adapter knowledge.
 
 **Pattern to follow for AC-1 / AC-2:** mirror existing BTS-407 ACs in `hub/tests/operations-resolve-http.bats` (lines 229–387) — same fixture setup pattern, same `run bash .ccanvil/scripts/operations.sh resolve <verb> --project-dir .` shape, same `[[ "$output" =~ "--project-id" ]]` assertion form. New fixture is the loop-over-verbs variant of those.
 
@@ -71,6 +69,7 @@ Each criterion is independently testable. Binary pass/fail.
 **Manifest update (AC-6):** the `linear_mcp_adapter` function in `operations.sh` carries a `# @manifest` block. New `failure-mode: stale-substrate-emit | exit=N | visible=stderr-ERROR-staleness-guard | mitigation=run-ccanvil-sync.sh-pull` entry needed.
 
 **Operator-facing message shape (AC-7):**
+
 ```
 ERROR: stale substrate — project_id=<UUID> is configured but resolve(<verb>) did not emit --project-id.
 This typically means .ccanvil/scripts/operations.sh is out-of-date relative to the hub.
@@ -79,9 +78,9 @@ Run: cd <project-dir> && bash .ccanvil/scripts/ccanvil-sync.sh pull
 
 ## Open Questions
 
-- **Which of the three architectural shapes (Implementation Notes #1/#2/#3)?** Decide in `/plan`. Recommendation hint: option 2 (centralized wrapper) — minimizes future-drift risk, small refactor, single-source-of-truth for the "project-scoped verb" set.
-- **Does AC-3 hard-fail (exit non-zero) or warn-then-continue?** Hard-fail is the LOUDER signal the operator's session 41 quote asks for. Warn-then-continue avoids breaking downstream nodes mid-session if their config is intentionally legacy. Recommendation hint: hard-fail with `ALLOW_STALE_SUBSTRATE=1` env override for emergency escape — fail-LOUD with operator-controlled bypass.
-- **Pair-ship with BTS-418 (resolver-wrapper-flag-contract drift-guard) or independent?** Both fixtures are tiny; pairing them into one PR creates a coherent "resolver-correctness substrate" ship. Independent allows faster turnaround on whichever is ready first. Recommendation hint: independent specs but ship adjacent; let `/plan` size decide.
+* **Which of the three architectural shapes (Implementation Notes #1/#2/#3)?** Decide in `/plan`. Recommendation hint: option 2 (centralized wrapper) — minimizes future-drift risk, small refactor, single-source-of-truth for the "project-scoped verb" set.
+* **Does AC-3 hard-fail (exit non-zero) or warn-then-continue?** Hard-fail is the LOUDER signal the operator's session 41 quote asks for. Warn-then-continue avoids breaking downstream nodes mid-session if their config is intentionally legacy. Recommendation hint: hard-fail with `ALLOW_STALE_SUBSTRATE=1` env override for emergency escape — fail-LOUD with operator-controlled bypass.
+* **Pair-ship with BTS-418 (resolver-wrapper-flag-contract drift-guard) or independent?** Both fixtures are tiny; pairing them into one PR creates a coherent "resolver-correctness substrate" ship. Independent allows faster turnaround on whichever is ready first. Recommendation hint: independent specs but ship adjacent; let `/plan` size decide.
 
 <!-- NODE-SPECIFIC-START -->
 <!-- Add project-specific content below this line. -->
