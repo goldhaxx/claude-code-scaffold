@@ -385,6 +385,34 @@ When adding a new rule, command, agent, skill, or template to the hub, **always*
 <!-- Hub content above is updated via /ccanvil-pull. -->
 ```
 
+## Rule scope and node role (BTS-384)
+
+Hub rules carry a `scope:` frontmatter field that controls which downstream nodes receive them. Three values:
+
+| `scope:` | Distributed to | Use for |
+|----------|----------------|---------|
+| `universal` (default) | All nodes | Stack-neutral methodology — TDD, code quality, evidence-required-for-captures |
+| `substrate` | Only `role: hub-substrate-developer` nodes | Rules about ccanvil's internal substrate (provider integration patterns, http-vs-MCP) |
+| `hub-only` | Never distributed | Hub-internal-only documentation |
+
+Each downstream `.claude/ccanvil.json` carries a top-level `role:` key:
+
+- `substrate-consumer` (default when key absent) — receives `universal` rules only
+- `hub-substrate-developer` — receives `universal` + `substrate` rules
+
+Filter wiring lives in `ccanvil-sync.sh`'s `cmd_pull_plan`. Skipped files appear in pull-plan output as a `scope-skipped` action with `scope` and `reason` fields. Files lacking a `scope:` frontmatter field (scripts, hooks, settings, rule files yet to adopt the field) pass through unchanged — back-compat preserved.
+
+### Vocabulary discipline for `scope: universal` rules
+
+Universal rules ship to nodes whose stack and tooling differ from the hub's. Their bodies must read in stack-neutral vocabulary so every sentence is relevant to the consuming node. `module-manifest.sh validate` scans `scope: universal` rule bodies for hub-specific tokens (e.g., concrete script names, `BTS-N` references) appearing OUTSIDE an `## Anchored on (...)` block, and emits an advisory `rule-vocabulary-leak` info entry per file. Tokens inside an anchor block are exempt — that's the documented site for hub-internal pointers.
+
+To remediate a flagged rule:
+
+1. **Re-tag** to `scope: substrate` if the rule is genuinely substrate-only (e.g., `provider-integration.md`).
+2. Or **rewrite** the rule body to be stack-neutral and push hub-specific references into a closing `## Anchored on (ccanvil hub)` block.
+
+The drift-guard is advisory in v1 (lives in `info[]`, never blocks); a future PR may escalate to blocking after a soak window confirms the heuristic.
+
 <!-- NODE-SPECIFIC-START -->
 <!-- Add project-specific content below this line. -->
 <!-- Hub content above is updated via /ccanvil-pull. -->

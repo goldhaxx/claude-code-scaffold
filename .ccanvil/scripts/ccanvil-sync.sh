@@ -349,6 +349,93 @@ is_excluded() {
   return 1
 }
 
+# _resolve_node_role — Read the node's role from <project_dir>/.claude/ccanvil.json.
+# Defaults to "substrate-consumer" when the file is missing or the key is absent.
+# BTS-384. Used by cmd_pull_plan's scope filter and exposed via the `node-role` verb.
+_resolve_node_role() {
+  local project_dir="${1:?project_dir required}"
+  local cfg="$project_dir/.claude/ccanvil.json"
+  [[ ! -f "$cfg" ]] && { echo "substrate-consumer"; return 0; }
+  jq -r '.role // "substrate-consumer"' "$cfg" 2>/dev/null || echo "substrate-consumer"
+}
+
+# @manifest
+# purpose: Operator-facing verb wrapping _resolve_node_role — prints the resolved node role for the given project_dir (defaults to cwd). BTS-384 substrate observable; consumed by tests and ad-hoc operator queries.
+# input: positional project_dir (optional; defaults to cwd)
+# output: stdout one-line role string ("hub-substrate-developer" | "substrate-consumer")
+# output: exit-codes 0 always
+# caller: hub/tests/ccanvil-role-field.bats
+# depends-on: _resolve_node_role
+# side-effect: reads-ccanvil-json
+# contract: defaults-to-substrate-consumer-when-key-or-file-absent
+# anchor: BTS-384 (origin)
+cmd_node_role() {
+  local project_dir="${1:-$(pwd)}"
+  _resolve_node_role "$project_dir"
+}
+
+# extract_rule_scope — Read the `scope:` value from a rule file's YAML
+# frontmatter. Emits the value (e.g. "universal") on stdout, or empty if no
+# frontmatter or no scope key. Used by is_scope_allowed_for_role. BTS-384.
+extract_rule_scope() {
+  local file="$1"
+  [[ -f "$file" ]] || { echo ""; return 0; }
+  awk '
+    NR == 1 && /^---$/ { in_fm = 1; next }
+    in_fm && /^---$/ { exit }
+    in_fm && /^scope:[[:space:]]*/ {
+      sub(/^scope:[[:space:]]*/, "")
+      sub(/[[:space:]]+$/, "")
+      print
+      exit
+    }
+  ' "$file"
+}
+
+# @manifest
+# purpose: Apply the BTS-384 scope-filter rules per file × node role. Returns "allowed" / exit 0 for non-rule-files, scope:universal, missing-scope, or scope:substrate × role=hub-substrate-developer. Returns "skipped:substrate" / exit 1 for scope:substrate × role=substrate-consumer. Returns "skipped:hub-only" / exit 1 for scope:hub-only regardless of role (hub-only never distributes; lives at the hub source by definition). Invalid scope values fail open (allowed); rule-scope-invalid is surfaced separately by module-manifest.sh validate.
+# input: positional file (path), positional role (hub-substrate-developer | substrate-consumer)
+# output: stdout one-line decision string
+# output: exit-codes 0 allowed, 1 skipped
+# caller: cmd_pull_plan
+# caller: cmd_scope_check
+# depends-on: extract_rule_scope
+# side-effect: reads-rule-frontmatter
+# contract: fail-open-on-invalid-scope
+# anchor: BTS-384 (origin)
+is_scope_allowed_for_role() {
+  local file="$1" role="$2"
+  local scope
+  scope=$(extract_rule_scope "$file")
+  case "$scope" in
+    ""|universal) echo "allowed"; return 0 ;;
+    substrate)
+      if [[ "$role" == "hub-substrate-developer" ]]; then
+        echo "allowed"; return 0
+      else
+        echo "skipped:substrate"; return 1
+      fi ;;
+    hub-only) echo "skipped:hub-only"; return 1 ;;
+    *) echo "allowed"; return 0 ;;
+  esac
+}
+
+# @manifest
+# purpose: Operator-facing verb wrapping is_scope_allowed_for_role — prints "allowed" or "skipped:<scope>" for a file × role pair. BTS-384 substrate observable; consumed by tests and ad-hoc operator queries.
+# input: positional file (path), positional role
+# output: stdout one-line decision string
+# output: exit-codes 0 allowed, 1 skipped
+# caller: hub/tests/rule-distribution-scope.bats
+# depends-on: is_scope_allowed_for_role
+# side-effect: reads-rule-frontmatter
+# contract: matches-cmd_pull_plan-filter-semantics
+# anchor: BTS-384 (origin)
+cmd_scope_check() {
+  local file="${1:?file required}"
+  local role="${2:?role required}"
+  is_scope_allowed_for_role "$file" "$role"
+}
+
 # is_distributable_path — Test if a path matches any TRACKED_PATTERN or
 # INIT_EXTRA_FILES entry. Returns 0 (true) on match, 1 otherwise. BTS-382.
 # Used by cmd_changelog to filter hub-internal commits/files that would
@@ -1847,6 +1934,9 @@ cmd_pull_plan() {
   hub_source=$(get_hub_source)
 
   local plan="[]"
+  # BTS-384: resolve node role once for the scope filter applied per file below.
+  local _node_role
+  _node_role=$(_resolve_node_role .)
 
   # Check each tracked file in the lockfile
   while IFS= read -r file; do
@@ -1904,6 +1994,18 @@ cmd_pull_plan() {
       continue
     fi
 
+    # BTS-384: scope filter — substrate/hub-only rules emit scope-skipped
+    # instead of any pull action. Non-rule paths and universal rules pass through.
+    local _scope_decision
+    if _scope_decision=$(is_scope_allowed_for_role "$hub_file" "$_node_role"); then
+      :
+    else
+      local _scope_value="${_scope_decision#skipped:}"
+      plan=$(echo "$plan" | jq --arg f "$file" --arg s "$_scope_value" --arg r "$_node_role" \
+        '. + [{"file": $f, "action": "scope-skipped", "reason": ("scope=" + $s + " not allowed for role=" + $r), "scope": $s}]')
+      continue
+    fi
+
     if [[ "$current_local_h" == "MISSING" ]]; then
       # File exists in lockfile but not locally (deleted locally)
       plan=$(echo "$plan" | jq --arg f "$file" \
@@ -1940,6 +2042,14 @@ cmd_pull_plan() {
   # Check for new files in hub not in lockfile
   while IFS= read -r file; do
     if ! jq -e --arg f "$file" '.files[$f]' "$LOCKFILE" >/dev/null 2>&1; then
+      # BTS-384: scope filter applies to new-in-hub files too.
+      local _scope_decision_new
+      if ! _scope_decision_new=$(is_scope_allowed_for_role "$hub_source/$file" "$_node_role"); then
+        local _scope_value_new="${_scope_decision_new#skipped:}"
+        plan=$(echo "$plan" | jq --arg f "$file" --arg s "$_scope_value_new" --arg r "$_node_role" \
+          '. + [{"file": $f, "action": "scope-skipped", "reason": ("scope=" + $s + " not allowed for role=" + $r), "scope": $s}]')
+        continue
+      fi
       if [[ -f "$file" ]]; then
         # File exists locally but isn't in lockfile (e.g., manual copy)
         local hub_h local_h
@@ -4396,6 +4506,8 @@ case "${1:-}" in
   lock-set-version) shift; cmd_lock_set_version "$@" ;;
   section-merge)    shift; cmd_section_merge "$@" ;;
   scan)             cmd_scan ;;
+  node-role)        shift; cmd_node_role "${1:-}" ;;
+  scope-check)      shift; cmd_scope_check "$@" ;;
 
   # --- Classification commands ---
   node-only)        shift; cmd_node_only "$@" ;;

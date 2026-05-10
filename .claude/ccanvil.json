@@ -2,6 +2,7 @@
   "features": {
     "pr_review": false
   },
+  "role": "hub-substrate-developer",
   "stacks": ["bats"],
   "integrations": {
     "providers": {

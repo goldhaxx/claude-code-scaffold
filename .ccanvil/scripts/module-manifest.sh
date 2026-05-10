@@ -894,7 +894,42 @@ except yaml.YAMLError as e:
 if not isinstance(fm, dict):
     print(json.dumps({"_error": "frontmatter-not-mapping"}))
     sys.exit(0)
-print(json.dumps({"tier": fm.get("tier", 0)}))
+out = {"tier": fm.get("tier", 0)}
+# BTS-384: scope-vocabulary validation. Accepted: universal | substrate | hub-only.
+ACCEPTED_SCOPES = ("universal", "substrate", "hub-only")
+if "scope" in fm:
+    scope = fm["scope"]
+    if scope in ACCEPTED_SCOPES:
+        out["scope"] = scope
+    else:
+        out["_scope_invalid"] = True
+        out["scope_value"] = str(scope)
+else:
+    out["_scope_missing"] = True
+# BTS-384: vocabulary-leak scan. Runs on rules treated as universal — both
+# explicit `scope: universal` and missing-scope (which AC-1 specifies defaults
+# to universal). Body = lines after closing `---`, truncated at first
+# `## Anchored on` heading (anchor block exempt). Flags hub-specific tokens
+# whose presence in stack-neutral rule prose would poison downstream node
+# agent context.
+if out.get("scope") == "universal" or out.get("_scope_missing"):
+    import re
+    body_lines = lines[end+1:]
+    anchor_idx = None
+    for i, ln in enumerate(body_lines):
+        if ln.lstrip().startswith("## Anchored on"):
+            anchor_idx = i
+            break
+    body = "\n".join(body_lines if anchor_idx is None else body_lines[:anchor_idx])
+    LEAK_LITERALS = ("bats-report.sh", "module-manifest.sh", "ccanvil-sync.sh", "linear-query.sh", "docs-check.sh")
+    BTS_RE = re.compile(r"\bBTS-\d+\b")
+    found = [tok for tok in LEAK_LITERALS if tok in body]
+    if BTS_RE.search(body):
+        found.append("BTS-NNN")
+    if found:
+        out["_vocab_leak"] = True
+        out["leak_tokens"] = found
+print(json.dumps(out))
 PY
 )
       _fm_err=$(echo "$_fm_check" | jq -r '._error // empty')
@@ -919,6 +954,29 @@ PY
         # escalates to exit 2 by inspecting info[] for warn entries.
         info_records+=("$(jq -nc --arg p "$_rule_file" --arg id "$_rule_id" --argjson v "$_rule_tokens" \
           '{path:$p, id:$id, reason:"rule-tier-budget-exceeded", value:$v, threshold:150}')")
+      fi
+      # BTS-384: scope-vocabulary signals. _scope_invalid → drift (block).
+      # _scope_missing → info (advisory). Both are no-ops when _fm_no is set
+      # because the python pre-exits before populating scope keys.
+      local _scope_invalid _scope_missing _scope_value
+      _scope_invalid=$(echo "$_fm_check" | jq -r '._scope_invalid // empty')
+      _scope_missing=$(echo "$_fm_check" | jq -r '._scope_missing // empty')
+      if [[ -n "$_scope_invalid" ]]; then
+        _scope_value=$(echo "$_fm_check" | jq -r '.scope_value // ""')
+        drift_records+=("$(jq -nc --arg p "$_rule_file" --arg id "$_rule_id" --arg v "$_scope_value" \
+          '{path:$p, id:$id, reason:"rule-scope-invalid", value:$v}')")
+      elif [[ -n "$_scope_missing" ]]; then
+        info_records+=("$(jq -nc --arg p "$_rule_file" --arg id "$_rule_id" \
+          '{path:$p, id:$id, reason:"rule-scope-missing"}')")
+      fi
+      # BTS-384: vocabulary-leak signal (only set by python when scope=universal
+      # and tokens found outside the `## Anchored on` block).
+      local _vocab_leak _leak_tokens
+      _vocab_leak=$(echo "$_fm_check" | jq -r '._vocab_leak // empty')
+      if [[ -n "$_vocab_leak" ]]; then
+        _leak_tokens=$(echo "$_fm_check" | jq -c '.leak_tokens // []')
+        info_records+=("$(jq -nc --arg p "$_rule_file" --arg id "$_rule_id" --argjson t "$_leak_tokens" \
+          '{path:$p, id:$id, reason:"rule-vocabulary-leak", tokens:$t}')")
       fi
     done
   fi
