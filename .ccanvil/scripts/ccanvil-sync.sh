@@ -3833,12 +3833,15 @@ cmd_broadcast_resolve_auto() {
 # ---------------------------------------------------------------------------
 
 # @manifest
-# purpose: Sync hub's global-commands/ccanvil-*.md files into the operator's user-level ~/.claude/commands/ directory — copies new files, skips byte-identical, surfaces conflicts (or overwrites with --force) so global slash commands stay aligned with the hub without polluting the user namespace
+# purpose: Sync hub's global-commands/ccanvil-*.md files into the operator's user-level ~/.claude/commands/ directory — copies new files, skips byte-identical, surfaces conflicts (or overwrites with --force); --check is a non-mutating probe emitting a staleness envelope so /ccanvil-init can surface drift at init time without touching the user namespace
 # input: --force (optional; overwrite conflicts instead of reporting)
-# output: stdout per-conflict diff lines + final JSON {copied, skipped, conflicts}
-# output: writes ~/.claude/commands/ccanvil-*.md files
+# input: --check (optional; probe-only, no writes; emits {stale_count, stale[], missing_count, missing[], up_to_date_count})
+# output: stdout per-conflict diff lines + final JSON {copied, skipped, conflicts} (mutate mode)
+# output: stdout staleness envelope JSON when --check is set
+# output: writes ~/.claude/commands/ccanvil-*.md files (mutate mode only)
 # output: exit-codes 0 ok, 1 missing-lockfile-or-no-HOME
 # caller: skill:/ccanvil-pull-globals
+# caller: global-commands/ccanvil-init.md
 # depends-on: jq
 # depends-on: require_lockfile
 # depends-on: get_hub_source
@@ -3853,12 +3856,15 @@ cmd_broadcast_resolve_auto() {
 # failure-mode: missing-lockfile | exit=1 | visible=stderr-die-from-require_lockfile | mitigation=run-init-first
 # contract: only-touches-ccanvil-prefixed-files
 # contract: skips-byte-identical-without-warning
+# contract: --check-is-read-only
 # anchor: BTS-244 (manifest seed)
+# anchor: BTS-315 (--check probe mode)
 cmd_pull_globals() {
-  local force=false
+  local force=false check=false
   while [[ $# -gt 0 ]]; do
     case "$1" in
       --force) force=true; shift ;;
+      --check) check=true; shift ;;
       *) shift ;;
     esac
   done
@@ -3873,6 +3879,54 @@ cmd_pull_globals() {
   local src_dir="$hub_path/global-commands"
   local dst_dir="$HOME/.claude/commands"
 
+  if $check; then
+    # BTS-315: non-mutating staleness probe. Emit envelope shape
+    # {stale_count, stale[{name,hub_hash,local_hash}], missing_count, missing[{name}], up_to_date_count}.
+    local stale_jsonl="" missing_jsonl="" up_to_date_count=0
+    shopt -s nullglob
+    local src
+    for src in "$src_dir"/ccanvil-*.md; do
+      [[ -f "$src" ]] || continue
+      local name dst
+      name=$(basename "$src")
+      dst="$dst_dir/$name"
+
+      if [[ ! -f "$dst" ]]; then
+        missing_jsonl+="$(jq -nc --arg n "$name" '{name:$n}')"$'\n'
+        continue
+      fi
+
+      local hub_h local_h
+      hub_h=$(file_hash "$src")
+      local_h=$(file_hash "$dst")
+
+      if [[ "$hub_h" == "$local_h" ]]; then
+        up_to_date_count=$((up_to_date_count + 1))
+      else
+        stale_jsonl+="$(jq -nc --arg n "$name" --arg h "$hub_h" --arg l "$local_h" \
+          '{name:$n, hub_hash:$h, local_hash:$l}')"$'\n'
+      fi
+    done
+    shopt -u nullglob
+
+    local stale_arr missing_arr stale_count missing_count
+    stale_arr=$(printf '%s' "$stale_jsonl" | jq -sc '.')
+    missing_arr=$(printf '%s' "$missing_jsonl" | jq -sc '.')
+    stale_count=$(printf '%s' "$stale_arr" | jq 'length')
+    missing_count=$(printf '%s' "$missing_arr" | jq 'length')
+
+    jq -n \
+      --argjson stale "$stale_arr" \
+      --argjson missing "$missing_arr" \
+      --argjson sc "$stale_count" \
+      --argjson mc "$missing_count" \
+      --argjson uc "$up_to_date_count" \
+      '{stale_count:$sc, stale:$stale, missing_count:$mc, missing:$missing, up_to_date_count:$uc}'
+    return 0
+  fi
+
+  # Mutate path: ensure dst_dir exists before any write.
+  # BTS-315: kept out of the --check branch so the probe is read-only.
   mkdir -p "$dst_dir"
 
   local copied=0 skipped=0 conflicts=0

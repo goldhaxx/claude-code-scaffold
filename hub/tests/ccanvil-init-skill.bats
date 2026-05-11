@@ -145,3 +145,33 @@ SKILL_FILE="$BATS_TEST_DIRNAME/../../global-commands/ccanvil-init.md"
 @test "BTS-316 AC-15: skill references operator-config team fallback" {
   grep -q 'operator-config' "$SKILL_FILE"
 }
+
+
+# =========================================================================
+# BTS-315 AC-4: skill prose invokes pull-globals --check as Step 0 preflight
+# =========================================================================
+
+@test "BTS-315 AC-4: skill invokes pull-globals --check" {
+  grep -q 'pull-globals --check' "$SKILL_FILE"
+}
+
+@test "BTS-315 AC-4: skill emits the canonical recommendation line" {
+  grep -qF 'Run /ccanvil-pull-globals to refresh, then re-run /ccanvil-init.' "$SKILL_FILE"
+}
+
+@test "BTS-315 AC-4: probe appears in Bootstrap and preflight section before init-preflight call" {
+  # The probe must be Step 0 — i.e., the `pull-globals --check` invocation
+  # appears in the file BEFORE the first `init-preflight` reference.
+  probe_line=$(grep -n 'pull-globals --check' "$SKILL_FILE" | head -1 | cut -d: -f1)
+  preflight_line=$(grep -n 'init-preflight' "$SKILL_FILE" | head -1 | cut -d: -f1)
+  [ -n "$probe_line" ]
+  [ -n "$preflight_line" ]
+  [ "$probe_line" -lt "$preflight_line" ]
+}
+
+@test "BTS-315 AC-4: probe emits stderr (not stdout) per spec" {
+  # The probe block uses '>&2' to direct warnings to stderr.
+  grep -q '>&2' "$SKILL_FILE"
+  # And specifically the BTS-315 WARN line should redirect to stderr.
+  grep -E 'WARN:.*drifted' "$SKILL_FILE" | grep -q '>&2'
+}

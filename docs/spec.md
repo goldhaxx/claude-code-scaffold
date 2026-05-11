@@ -42,7 +42,7 @@ Each criterion is independently testable. Binary pass/fail.
 |------|--------|
 | `.ccanvil/scripts/ccanvil-sync.sh` | Modified — extend `cmd_pull_globals` to accept `--check` flag; new read-only branch emitting the staleness envelope. |
 | `global-commands/ccanvil-init.md` | Modified — add entry-time staleness probe step before the existing bootstrap-and-preflight section. This is the canonical (and only) `/ccanvil-init` skill location. |
-| `hub/tests/ccanvil-sync.bats` | Modified — add tests for AC-1, AC-2, AC-3, AC-5, AC-6, AC-7, AC-8 (substrate behavior + degenerate empty-hub case). |
+| `hub/tests/pull-globals.bats` | Modified — add tests for AC-1, AC-2, AC-3, AC-5, AC-6, AC-7, AC-8 (substrate behavior + degenerate empty-hub case); existing pull-globals fixtures already provide the `FAKE_HOME` + temp-hub pattern to reuse. |
 | `hub/tests/ccanvil-init-skill.bats` | Modified — add test for AC-4 (skill prose invokes the probe at the first action of Step 1 and emits the warning literal when drift > 0). |
 
 ## Dependencies

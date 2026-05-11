@@ -2,6 +2,26 @@ Initialize a new project using the ccanvil preset located at ~/projects/ccanvil,
 
 ## Bootstrap and preflight
 
+### Step 0 — User-level skill staleness probe (BTS-315)
+
+ALWAYS run, before any project_mode branching. The probe is non-mutating, never blocks, never prompts — purely informational. Fires on every `/ccanvil-init` invocation regardless of which branch (already-initialized / fresh / mature-repo / partial-ccanvil) follows.
+
+```bash
+staleness=$(bash ~/projects/ccanvil/.ccanvil/scripts/ccanvil-sync.sh pull-globals --check 2>/dev/null)
+if [[ -n "$staleness" ]]; then
+  drift=$(echo "$staleness" | jq -r '.stale_count + .missing_count')
+  if [[ "$drift" -gt 0 ]]; then
+    echo "WARN: $drift user-level ccanvil-* skill file(s) have drifted from hub canonical:" >&2
+    echo "$staleness" | jq -r '(.stale[].name, .missing[].name)' | head -5 | sed 's/^/  - /' >&2
+    [[ "$drift" -gt 5 ]] && echo "  + $((drift - 5)) more" >&2
+    echo "" >&2
+    echo "Run /ccanvil-pull-globals to refresh, then re-run /ccanvil-init." >&2
+  fi
+fi
+```
+
+Proceed regardless of the probe's outcome.
+
 1. Read ~/projects/ccanvil/README.md — it contains the complete file manifest and setup instructions.
 2. Read ~/projects/ccanvil/hub/meta/SYSTEM_PROMPT.md for the full specification of constraints and formatting rules.
 3. Bootstrap the sync script so preflight can run:

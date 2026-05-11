@@ -190,3 +190,130 @@ teardown() {
   [ -f "$FAKE_HOME/.claude/commands/ccanvil-init.md" ]
   [ ! -f "$FAKE_HOME/.claude/commands/random.md" ]
 }
+
+
+# =========================================================================
+# BTS-315: --check (staleness probe, non-mutating)
+# =========================================================================
+
+# AC-1: envelope shape + idempotency
+@test "pull-globals --check: emits envelope keys (stale, missing, up_to_date_count); no writes; idempotent" {
+  set -e
+  cd "$NODE"
+
+  # Seed a second hub file so the envelope shape is exercised with >1 entry.
+  echo "second hub command" > "$HUB/global-commands/ccanvil-other.md"
+
+  # First run — no local files yet, so all two are missing.
+  local out1
+  out1=$(HOME="$FAKE_HOME" bash "$NODE/.ccanvil/scripts/ccanvil-sync.sh" pull-globals --check)
+
+  # Envelope contains the required top-level keys.
+  echo "$out1" | jq -e 'has("stale_count")'
+  echo "$out1" | jq -e 'has("stale")'
+  echo "$out1" | jq -e 'has("missing_count")'
+  echo "$out1" | jq -e 'has("missing")'
+  echo "$out1" | jq -e 'has("up_to_date_count")'
+
+  # No writes — FAKE_HOME/.claude/commands/ is not even created when it
+  # didn't exist (BTS-315: --check must be strictly read-only).
+  [ ! -d "$FAKE_HOME/.claude/commands" ]
+  [ ! -f "$FAKE_HOME/.claude/commands/ccanvil-init.md" ]
+  [ ! -f "$FAKE_HOME/.claude/commands/ccanvil-other.md" ]
+
+  # Idempotent: a second run produces byte-identical stdout.
+  local out2
+  out2=$(HOME="$FAKE_HOME" bash "$NODE/.ccanvil/scripts/ccanvil-sync.sh" pull-globals --check)
+  [ "$out1" = "$out2" ]
+}
+
+# AC-2: hash mismatch → stale[] with both hashes populated
+@test "pull-globals --check: hash mismatch surfaces file in stale[] with hub_hash + local_hash" {
+  set -e
+  cd "$NODE"
+
+  # Seed a divergent local copy.
+  mkdir -p "$FAKE_HOME/.claude/commands"
+  echo "local divergent content" > "$FAKE_HOME/.claude/commands/ccanvil-init.md"
+
+  local out
+  out=$(HOME="$FAKE_HOME" bash "$NODE/.ccanvil/scripts/ccanvil-sync.sh" pull-globals --check)
+
+  echo "$out" | jq -e '.stale_count == 1'
+  echo "$out" | jq -e '.missing_count == 0'
+  echo "$out" | jq -e '.up_to_date_count == 0'
+  echo "$out" | jq -e '.stale | length == 1'
+  echo "$out" | jq -e '.stale[0].name == "ccanvil-init.md"'
+  echo "$out" | jq -e '.stale[0].hub_hash | type == "string" and length > 0'
+  echo "$out" | jq -e '.stale[0].local_hash | type == "string" and length > 0'
+  echo "$out" | jq -e '.stale[0].hub_hash != .stale[0].local_hash'
+}
+
+# AC-3: hub file with no local → missing[]
+@test "pull-globals --check: hub file with no local file surfaces in missing[]" {
+  set -e
+  cd "$NODE"
+
+  local out
+  out=$(HOME="$FAKE_HOME" bash "$NODE/.ccanvil/scripts/ccanvil-sync.sh" pull-globals --check)
+
+  echo "$out" | jq -e '.missing_count == 1'
+  echo "$out" | jq -e '.missing | length == 1'
+  echo "$out" | jq -e '.missing[0].name == "ccanvil-init.md"'
+  echo "$out" | jq -e '.stale_count == 0'
+  echo "$out" | jq -e '.up_to_date_count == 0'
+}
+
+# AC-8: degenerate empty-hub case → zero counts, empty arrays
+@test "pull-globals --check: empty hub global-commands emits zero envelope with [] arrays (not null)" {
+  set -e
+  cd "$NODE"
+  rm -f "$HUB"/global-commands/*.md
+
+  local out
+  out=$(HOME="$FAKE_HOME" bash "$NODE/.ccanvil/scripts/ccanvil-sync.sh" pull-globals --check)
+
+  echo "$out" | jq -e '.stale_count == 0'
+  echo "$out" | jq -e '.missing_count == 0'
+  echo "$out" | jq -e '.up_to_date_count == 0'
+  echo "$out" | jq -e '.stale == []'
+  echo "$out" | jq -e '.missing == []'
+}
+
+# AC-5: error paths preserved under --check
+@test "pull-globals --check: \$HOME unset → non-zero exit" {
+  cd "$NODE"
+  HOME="" run bash "$NODE/.ccanvil/scripts/ccanvil-sync.sh" pull-globals --check
+  [ "$status" -ne 0 ]
+  echo "$output" | grep -qi "HOME"
+}
+
+# AC-6: namespace scope — non-ccanvil-* files never reported
+@test "pull-globals --check: non-ccanvil-* files in ~/.claude/commands are never reported" {
+  set -e
+  cd "$NODE"
+  mkdir -p "$FAKE_HOME/.claude/commands"
+  echo "user owned tool" > "$FAKE_HOME/.claude/commands/user-owned-tool.md"
+  echo "another personal" > "$FAKE_HOME/.claude/commands/my-helper.md"
+
+  local out
+  out=$(HOME="$FAKE_HOME" bash "$NODE/.ccanvil/scripts/ccanvil-sync.sh" pull-globals --check)
+
+  # Envelope mentions neither user-owned file.
+  ! echo "$out" | jq -r '..|strings' | grep -q "user-owned-tool"
+  ! echo "$out" | jq -r '..|strings' | grep -q "my-helper"
+}
+
+# AC-7: pull-globals (no --check) envelope unchanged
+@test "pull-globals (no --check): existing copy/skip/conflict envelope unchanged; no staleness keys" {
+  set -e
+  cd "$NODE"
+  local out
+  out=$(HOME="$FAKE_HOME" bash "$NODE/.ccanvil/scripts/ccanvil-sync.sh" pull-globals)
+
+  echo "$out" | jq -e 'has("copied")'
+  echo "$out" | jq -e 'has("skipped")'
+  echo "$out" | jq -e 'has("conflicts")'
+  echo "$out" | jq -e 'has("stale_count") | not'
+  echo "$out" | jq -e 'has("missing_count") | not'
+}
