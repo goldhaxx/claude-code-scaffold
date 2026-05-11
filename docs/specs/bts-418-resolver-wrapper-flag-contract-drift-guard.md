@@ -4,7 +4,7 @@
 > Work: linear:BTS-418
 > Created: 1778472647
 > Subject: resolver-wrapper-flag-contract drift-guard
-> Status: In Progress
+> Status: Complete
 
 ## Summary
 

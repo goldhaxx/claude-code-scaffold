@@ -35,36 +35,34 @@ Each criterion is independently testable. Binary pass/fail.
 ## Affected Files
 
 | File | Change |
-|------|--------|
+| -- | -- |
 | `hub/tests/operations-drift-guard.bats` | Modified — append the resolver↔wrapper flag-contract test block; share setup with the BTS-419 verb fixture (`_with_linear_routing_and_project_id`, `_with_project_id_only`, etc.) |
 | `.ccanvil/scripts/operations.sh` | Probably unmodified — the helper extraction is bats-local. If `/plan` chooses a shared shell helper (Implementation Notes #2), that script is created |
 | `.ccanvil/manifest-allowlist.txt` | Possibly modified — only if a new shared helper script is introduced (Implementation Notes #2/#3 paths) |
 
 ## Dependencies
 
-- **Requires:** BTS-407 (PR #176) shipped — establishes the contract shape this spec defends. Merged.
-- **Composes-with:** BTS-419 (substrate-staleness drift-guard). Shipped session 42 (PR #178). Both fixtures live in `hub/tests/operations-drift-guard.bats` and share fixture setup (`OPS=`, `setup()`/`teardown()`, `_with_linear_routing_and_project_id`, etc.). No hard ordering needed — BTS-418 lands on top of BTS-419's file.
-- **Requires:** BTS-239 manifest substrate — only if a new shared helper is introduced (AC-5 path-2/3).
-- **Blocked by:** Nothing.
+* **Requires:** BTS-407 (PR #176) shipped — establishes the contract shape this spec defends. Merged.
+* **Composes-with:** BTS-419 (substrate-staleness drift-guard). Shipped session 42 (PR #178). Both fixtures live in `hub/tests/operations-drift-guard.bats` and share fixture setup (`OPS=`, `setup()`/`teardown()`, `_with_linear_routing_and_project_id`, etc.). No hard ordering needed — BTS-418 lands on top of BTS-419's file.
+* **Requires:** BTS-239 manifest substrate — only if a new shared helper is introduced (AC-5 path-2/3).
+* **Blocked by:** Nothing.
 
 ## Out of Scope
 
-- **`--flag=value` form.** The resolver exclusively emits space-separated `--flag value` pairs (all six idea verbs + transition + reads/writes audited). Supporting `=` form would add parser complexity for zero current callers. If a future resolver emits `=` form, that's a separate ticket.
-- **Short-flag forms (`-f`, `-t`).** The resolver never emits short flags; the wrapper never accepts them. No coverage needed.
-- **Reverse drift (wrapper accepts a flag no resolver emits).** That's "dead wrapper flag" — a docs/cleanup concern, not a regression-causing one. Out of scope; capture separately if it grows.
-- **Flag VALUE shape validation.** The fixture checks flag NAMES only. UUID-shape on `--project-id`, integer-shape on `--limit`, etc. is the wrapper's runtime responsibility.
-- **Non-http mechanism verbs (`idea.sync`, `work.resolve`, local-routed verbs).** These don't emit `linear-query.sh` invocations. The fixture filters by `.mechanism == "http"` and target-wrapper-name.
-- **Linear MCP path / claude.ai connectors.** Wrapper-side validation only covers the `linear-query.sh` shell substrate.
-- **GitHub / future-provider adapters.** Same pattern would compose; this ticket scopes to the Linear surface.
+* `--flag=value` form. The resolver exclusively emits space-separated `--flag value` pairs (all six idea verbs + transition + reads/writes audited). Supporting `=` form would add parser complexity for zero current callers. If a future resolver emits `=` form, that's a separate ticket.
+* **Short-flag forms (**`-f`, `-t`). The resolver never emits short flags; the wrapper never accepts them. No coverage needed.
+* **Reverse drift (wrapper accepts a flag no resolver emits).** That's "dead wrapper flag" — a docs/cleanup concern, not a regression-causing one. Out of scope; capture separately if it grows.
+* **Flag VALUE shape validation.** The fixture checks flag NAMES only. UUID-shape on `--project-id`, integer-shape on `--limit`, etc. is the wrapper's runtime responsibility.
+* **Non-http mechanism verbs (**`idea.sync`, `work.resolve`, local-routed verbs). These don't emit `linear-query.sh` invocations. The fixture filters by `.mechanism == "http"` and target-wrapper-name.
+* **Linear MCP path / **[**claude.ai**](<http://claude.ai>)** connectors.** Wrapper-side validation only covers the `linear-query.sh` shell substrate.
+* **GitHub / future-provider adapters.** Same pattern would compose; this ticket scopes to the Linear surface.
 
 ## Implementation Notes
 
-**Three architectural shapes — pick ONE in `/plan`:**
+**Three architectural shapes — pick ONE in** `/plan`:
 
 1. **Inline bats helpers.** Two bash functions (e.g., `_emitted_flags()` parses resolver output, `_wrapper_accepted_flags()` parses the wrapper script's case block) defined inside the bats file. Fixture iterates verbs in a `@test` per verb or in a single loop-test. Pros: no new substrate, zero coupling, lightest-weight. Cons: helpers are not reusable from other test files.
-
 2. **Shared helper script.** Extract `.ccanvil/scripts/flag-contract-check.sh` with subcommands `emitted-flags <json>` and `accepted-flags <wrapper-cmd>`. Bats fixture shells out per verb. Pros: reusable from `/review` or `/ccanvil-audit` if the operator ever wants ad-hoc audits. Cons: new substrate + manifest entry + drift-guard surface.
-
 3. **Build-time pre-compute.** Generate `hub/tests/fixtures/flag-contract.json` at hub-CI time via a one-shot extractor; bats fixture diffs against the live state. Pros: zero parse cost per test. Cons: cache-invalidation concern, generator script becomes another moving piece.
 
 **Recommendation hint:** Option 1 (inline bats). The surface is small (≤15 verbs × ≤6 wrapper subcommands), the parse helpers are <20 lines each, and the fixture is single-purpose. Promote to Option 2 ONLY if `/review` or `/ccanvil-audit` calls for the same check from outside bats.
@@ -74,24 +72,28 @@ Each criterion is independently testable. Binary pass/fail.
 **Maximal-Config Fixture (definition for AC-3):** the contract-check uses ONE fixture — `_with_linear_routing_and_project_id` from the BTS-419 file — for ALL listed verbs. It populates `integrations.routing=linear`, `integrations.providers.linear.{project_id, project, team, idea_label, state_ids.{triage,backlog,icebox,canceled,duplicate,done,todo,in_progress}}`. The "maximal" claim holds because: (a) the six idea-class verbs (`backlog.list`, `idea.add`, `idea.list`, `idea.count`, `idea.triage`, `idea.review-icebox`) emit ALL their conditional `--<flag>` arms when `project_id` + `team` + `idea_label` + the relevant `state_ids` entry are populated; (b) the transition class (`ticket.transition`, `ticket.get`) emits a fixed positional + `--id` + `--state` (no further conditional flags); (c) the document class (`spec.read`/`plan.read`/`stasis.read` → `get-document <doc-id>`; `spec.write`/`plan.write`/`stasis.write` → `save-document --id <doc-id> --title <t> --content -`) emits NO conditional flags at the resolver — all argument variation is positional or stdin-fed. Therefore one fixture × all verbs covers the contract surface. If a future verb is added with conditional `--<flag>` emissions that this fixture does NOT populate, extend the helper there — not here.
 
 **Resolver-side parse heuristic.** From `jq -r '.invocation.command'`, extract flags via:
+
 ```bash
 grep -oE -- '--[a-z][a-z0-9-]*' <<<"$cmd" | sort -u
 ```
+
 The resolver emits no `--flag=value` form (verified across all http branches), so this regex is sound.
 
 **Wrapper-side parse heuristic.** Within `linear-query.sh`, locate the target `cmd_<verb>()` function body (e.g., `cmd_list_issues`), then extract `case` arms via:
+
 ```bash
 awk '/^cmd_'<wrapper-cmd>'\(\) \{/,/^}/' linear-query.sh \
   | grep -oE '\-\-[a-z][a-z0-9-]*\)' \
   | tr -d ')' | sort -u
 ```
+
 Note: the awk range works because every wrapper subcommand body terminates at column-0 `}`.
 
 ## Open Questions
 
-- **Architectural shape (#1/#2/#3 above)?** Decide in `/plan`. Recommendation: option 1, inline bats helpers.
-- **Test granularity: one `@test` per verb, or one matrix test?** One-per-verb gives better failure isolation in bats output; one matrix test is terser. Recommendation: one-per-verb (mirrors BTS-419 Step 7 / Step 8 shape).
-- **Hub-only or also-downstream?** The drift surface lives in hub scripts; downstream nodes pull the substrate as-is. Recommendation: hub-only fixture (mirrors BTS-419 — the runtime self-consistency check defends downstream nodes; this static contract-check defends the hub at merge time).
+* **Architectural shape (#1/#2/#3 above)?** Decide in `/plan`. Recommendation: option 1, inline bats helpers.
+* **Test granularity: one** `@test` per verb, or one matrix test? One-per-verb gives better failure isolation in bats output; one matrix test is terser. Recommendation: one-per-verb (mirrors BTS-419 Step 7 / Step 8 shape).
+* **Hub-only or also-downstream?** The drift surface lives in hub scripts; downstream nodes pull the substrate as-is. Recommendation: hub-only fixture (mirrors BTS-419 — the runtime self-consistency check defends downstream nodes; this static contract-check defends the hub at merge time).
 
 <!-- NODE-SPECIFIC-START -->
 <!-- Add project-specific content below this line. -->
