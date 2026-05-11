@@ -278,3 +278,297 @@ JSON
   [[ "$cmd" != *"--project ''"* ]]
   [[ "$cmd" != *"--project-id ''"* ]]
 }
+
+# ===========================================================================
+# BTS-418 — resolver-wrapper-flag-contract drift-guard
+#
+# Static-analysis fixture: for each http-mechanism resolver verb in
+# linear_mcp_adapter, every emitted --<flag> MUST be accepted by the target
+# linear-query.sh subcommand's case-arm parser. Catches BTS-407-shape
+# regressions at merge time.
+# ===========================================================================
+
+LQ="$BATS_TEST_DIRNAME/../../.ccanvil/scripts/linear-query.sh"
+
+_emitted_flags() {
+  # Extracts long-flag names (`--<name>`) from a resolver-output envelope's
+  # invocation.command. Resolver convention is space-separated `--flag value`
+  # only — `--flag=value` form is out of scope (no current resolver emits
+  # it; see spec Out of Scope). Stdin sentinels like `-` (e.g.
+  # `--input-json -`) are correctly non-matched by the regex.
+  local envelope="$1"
+  local cmd
+  cmd=$(echo "$envelope" | jq -r '.invocation.command // ""')
+  grep -oE -- '--[a-z][a-z0-9-]*' <<<"$cmd" | sort -u
+}
+
+_wrapper_accepted_flags() {
+  # Extracts long-flag case-arms from a wrapper subcommand's argv parser.
+  # Relies on `linear-query.sh` convention: each `cmd_<name>() {` body
+  # opens at column 0 and closes with a column-0 `}`. If a future cmd_
+  # function adds a nested helper definition or here-doc that closes at
+  # column 0, the awk range would truncate. Audit before adding such a
+  # construct; `declare -f` after sourcing the script is the structurally
+  # robust alternative if this becomes a real risk.
+  local subcmd="$1"
+  local fn_name="cmd_$(echo "$subcmd" | tr -- '-' '_')"
+  local opener="${fn_name}() {"
+  awk -v opener="$opener" '
+    $0 == opener { p = 1 }
+    p == 1 { print }
+    p == 1 && $0 == "}" { p = 0 }
+  ' "$LQ" \
+    | grep -oE '\-\-[a-z][a-z0-9-]*\)' \
+    | tr -d ')' \
+    | sort -u
+}
+
+_target_wrapper_subcmd() {
+  local envelope="$1"
+  local cmd
+  cmd=$(echo "$envelope" | jq -r '.invocation.command // ""')
+  awk '
+    {
+      for (i = 1; i <= NF; i++) {
+        if ($i ~ /linear-query\.sh$/) { print $(i+1); exit }
+      }
+    }
+  ' <<<"$cmd"
+}
+
+_check_flag_contract_envelope() {
+  local verb="$1" envelope="$2"
+  local target emitted accepted drift
+  target=$(_target_wrapper_subcmd "$envelope")
+  if [[ -z "$target" ]]; then
+    return 0  # not a linear-query.sh invocation; nothing to check
+  fi
+  emitted=$(_emitted_flags "$envelope")
+  accepted=$(_wrapper_accepted_flags "$target")
+  drift=$(comm -23 <(echo "$emitted") <(echo "$accepted"))
+  if [[ -z "$drift" ]]; then
+    return 0
+  fi
+  while IFS= read -r flag; do
+    [[ -z "$flag" ]] && continue
+    echo "DRIFT: $verb emits $flag not accepted by linear-query.sh $target"
+  done <<<"$drift"
+  return 1
+}
+
+_check_flag_contract() {
+  local verb="$1"; shift
+  local envelope
+  envelope=$(bash "$OPS" resolve "$verb" "$@" --project-dir "$PROJECT")
+  _check_flag_contract_envelope "$verb" "$envelope"
+}
+
+# ---------------------------------------------------------------------------
+# Step 1 — AC-1: resolver-side flag extraction
+# ---------------------------------------------------------------------------
+
+@test "BTS-418 Step 1a: _emitted_flags returns empty for command with no flags" {
+  envelope='{"invocation":{"command":"bash .ccanvil/scripts/linear-query.sh list-issues"}}'
+  result=$(_emitted_flags "$envelope")
+  [ -z "$result" ]
+}
+
+@test "BTS-418 Step 1b: _emitted_flags extracts a single --flag" {
+  envelope='{"invocation":{"command":"bash .ccanvil/scripts/linear-query.sh list-issues --team T"}}'
+  result=$(_emitted_flags "$envelope")
+  [ "$result" = "--team" ]
+}
+
+@test "BTS-418 Step 1c: _emitted_flags extracts the full sorted set from live backlog.list" {
+  _with_linear_routing_and_project_id
+  envelope=$(bash "$OPS" resolve backlog.list --project-dir "$PROJECT")
+  result=$(_emitted_flags "$envelope")
+  expected=$'--limit\n--project-id\n--state\n--team'
+  [ "$result" = "$expected" ]
+}
+
+# ---------------------------------------------------------------------------
+# Step 2 — AC-2: wrapper-side flag extraction
+# ---------------------------------------------------------------------------
+
+@test "BTS-418 Step 2a: linear-query.sh exists at expected path" {
+  [ -f "$LQ" ]
+}
+
+@test "BTS-418 Step 2b: _wrapper_accepted_flags list-issues returns the cmd_list_issues case-arm set" {
+  result=$(_wrapper_accepted_flags list-issues)
+  expected=$'--label\n--limit\n--project\n--project-id\n--state\n--team'
+  [ "$result" = "$expected" ]
+}
+
+@test "BTS-418 Step 2c: _wrapper_accepted_flags save-issue is non-empty and includes --id and --state" {
+  result=$(_wrapper_accepted_flags save-issue)
+  [[ "$result" == *"--id"* ]]
+  [[ "$result" == *"--state"* ]]
+}
+
+# ---------------------------------------------------------------------------
+# Step 3 — AC-5: target-wrapper-subcommand derivation
+# ---------------------------------------------------------------------------
+
+@test "BTS-418 Step 3a: _target_wrapper_subcmd returns 'list-issues' for backlog.list envelope" {
+  envelope='{"invocation":{"command":"bash .ccanvil/scripts/linear-query.sh list-issues --team T"}}'
+  result=$(_target_wrapper_subcmd "$envelope")
+  [ "$result" = "list-issues" ]
+}
+
+@test "BTS-418 Step 3b: _target_wrapper_subcmd returns 'save-issue' for ticket.transition envelope" {
+  envelope='{"invocation":{"command":"bash .ccanvil/scripts/linear-query.sh save-issue --id BTS-1 --state X"}}'
+  result=$(_target_wrapper_subcmd "$envelope")
+  [ "$result" = "save-issue" ]
+}
+
+@test "BTS-418 Step 3c: _target_wrapper_subcmd returns empty for non-wrapper command" {
+  envelope='{"invocation":{"command":"echo hello"}}'
+  result=$(_target_wrapper_subcmd "$envelope")
+  [ -z "$result" ]
+}
+
+# ---------------------------------------------------------------------------
+# Step 4 — AC-3 seed: contract-check clean state on backlog.list
+# ---------------------------------------------------------------------------
+
+@test "BTS-418 Step 4a: _check_flag_contract on backlog.list under full config exits 0 with empty stdout" {
+  _with_linear_routing_and_project_id
+  run _check_flag_contract backlog.list
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+}
+
+# ---------------------------------------------------------------------------
+# Step 5 — AC-3: per-verb positive sweep, idea-class (6 verbs)
+# ---------------------------------------------------------------------------
+
+@test "BTS-418 Step 5a: backlog.list — emitted flags ⊆ list-issues accepted" {
+  _with_linear_routing_and_project_id
+  run _check_flag_contract backlog.list
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+}
+
+@test "BTS-418 Step 5b: idea.add — emitted flags ⊆ save-issue accepted" {
+  _with_linear_routing_and_project_id
+  run _check_flag_contract idea.add
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+}
+
+@test "BTS-418 Step 5c: idea.list — emitted flags ⊆ list-issues accepted" {
+  _with_linear_routing_and_project_id
+  run _check_flag_contract idea.list
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+}
+
+@test "BTS-418 Step 5d: idea.count — emitted flags ⊆ list-issues accepted" {
+  _with_linear_routing_and_project_id
+  run _check_flag_contract idea.count
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+}
+
+@test "BTS-418 Step 5e: idea.triage — emitted flags ⊆ list-issues accepted" {
+  _with_linear_routing_and_project_id
+  run _check_flag_contract idea.triage
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+}
+
+@test "BTS-418 Step 5f: idea.review-icebox — emitted flags ⊆ list-issues accepted" {
+  _with_linear_routing_and_project_id
+  run _check_flag_contract idea.review-icebox
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+}
+
+# ---------------------------------------------------------------------------
+# Step 6 — AC-3: per-verb positive sweep, transition + reads/writes (8 verbs)
+# ---------------------------------------------------------------------------
+
+@test "BTS-418 Step 6a: ticket.transition BTS-418 todo — emitted flags ⊆ save-issue accepted" {
+  _with_linear_routing_and_project_id
+  run _check_flag_contract ticket.transition BTS-418 todo
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+}
+
+@test "BTS-418 Step 6b: ticket.get BTS-418 — get-issue invocation, no flags emitted" {
+  _with_linear_routing_and_project_id
+  run _check_flag_contract ticket.get BTS-418
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+}
+
+@test "BTS-418 Step 6c: spec.read BTS-418 — emitted flags ⊆ get-document accepted" {
+  _with_linear_routing_and_project_id
+  run _check_flag_contract spec.read BTS-418
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+}
+
+@test "BTS-418 Step 6d: spec.write BTS-418 — emitted flags ⊆ save-document accepted" {
+  _with_linear_routing_and_project_id
+  run _check_flag_contract spec.write BTS-418
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+}
+
+@test "BTS-418 Step 6e: plan.read BTS-418 — emitted flags ⊆ get-document accepted" {
+  _with_linear_routing_and_project_id
+  run _check_flag_contract plan.read BTS-418
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+}
+
+@test "BTS-418 Step 6f: plan.write BTS-418 — emitted flags ⊆ save-document accepted" {
+  _with_linear_routing_and_project_id
+  run _check_flag_contract plan.write BTS-418
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+}
+
+@test "BTS-418 Step 6g: stasis.read feature BTS-418 — emitted flags ⊆ get-document accepted" {
+  _with_linear_routing_and_project_id
+  run _check_flag_contract stasis.read feature BTS-418
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+}
+
+@test "BTS-418 Step 6h: stasis.write feature BTS-418 — emitted flags ⊆ save-document accepted" {
+  _with_linear_routing_and_project_id
+  run _check_flag_contract stasis.write feature BTS-418
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+}
+
+# ---------------------------------------------------------------------------
+# Step 7 — AC-4 + AC-7: synthetic drift detection + operator-grade message
+# ---------------------------------------------------------------------------
+
+@test "BTS-418 Step 7a: synthetic --bogus-flag-xyz triggers DRIFT exit non-zero" {
+  envelope='{"invocation":{"command":"bash .ccanvil/scripts/linear-query.sh list-issues --team T --bogus-flag-xyz V"}}'
+  run _check_flag_contract_envelope backlog.list "$envelope"
+  [ "$status" -ne 0 ]
+}
+
+@test "BTS-418 Step 7b: synthetic drift stdout matches DRIFT: <verb> emits <flag> not accepted by linear-query.sh <subcmd>" {
+  envelope='{"invocation":{"command":"bash .ccanvil/scripts/linear-query.sh list-issues --team T --bogus-flag-xyz V"}}'
+  run _check_flag_contract_envelope backlog.list "$envelope"
+  [[ "$output" == *"DRIFT: backlog.list emits --bogus-flag-xyz not accepted by linear-query.sh list-issues"* ]]
+}
+
+# ---------------------------------------------------------------------------
+# Step 8 — AC-6: empty-config strict subset still passes
+# ---------------------------------------------------------------------------
+
+@test "BTS-418 Step 8a: idea.list under _with_neither_project (no --project-id emitted) still passes contract-check" {
+  _with_neither_project
+  run _check_flag_contract idea.list
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+}
