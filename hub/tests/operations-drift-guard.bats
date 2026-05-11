@@ -291,6 +291,11 @@ JSON
 LQ="$BATS_TEST_DIRNAME/../../.ccanvil/scripts/linear-query.sh"
 
 _emitted_flags() {
+  # Extracts long-flag names (`--<name>`) from a resolver-output envelope's
+  # invocation.command. Resolver convention is space-separated `--flag value`
+  # only — `--flag=value` form is out of scope (no current resolver emits
+  # it; see spec Out of Scope). Stdin sentinels like `-` (e.g.
+  # `--input-json -`) are correctly non-matched by the regex.
   local envelope="$1"
   local cmd
   cmd=$(echo "$envelope" | jq -r '.invocation.command // ""')
@@ -298,6 +303,13 @@ _emitted_flags() {
 }
 
 _wrapper_accepted_flags() {
+  # Extracts long-flag case-arms from a wrapper subcommand's argv parser.
+  # Relies on `linear-query.sh` convention: each `cmd_<name>() {` body
+  # opens at column 0 and closes with a column-0 `}`. If a future cmd_
+  # function adds a nested helper definition or here-doc that closes at
+  # column 0, the awk range would truncate. Audit before adding such a
+  # construct; `declare -f` after sourcing the script is the structurally
+  # robust alternative if this becomes a real risk.
   local subcmd="$1"
   local fn_name="cmd_$(echo "$subcmd" | tr -- '-' '_')"
   local opener="${fn_name}() {"
