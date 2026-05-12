@@ -43,7 +43,7 @@ PROJECT_TREE_SUBCOMMANDS=(
   idea-add idea-list idea-count idea-count-local idea-update idea-sync
   idea-pending-replay idea-review-icebox idea-migrate-state idea-migrate
   idea-setup idea-upgrade provider-resolve-ids provider-heal-preflight provider-heal-auth provider-heal
-  provider-activate
+  provider-activate provider-heal-routing-rename
   refresh-plan-hash archive-stasis sessions-list legacy-refs-scan stamp-spec
   evidence-scan-session lifecycle-state
   artifact-read artifact-write route-of ssot-migrate
@@ -4142,6 +4142,7 @@ _idea_pending_replay_one_log() {
 # output: stdout JSON {synced, failed, pending, emergency_pending, entries:[]}
 # output: exit-codes 0 when failed==0; 1 when any entry failed; 2 usage
 # caller: skill:/idea
+# caller: cmd_provider_heal_routing_rename
 # depends-on: _idea_pending_replay_one_log
 # depends-on: jq
 # side-effect: rewrites-pending-log
@@ -4153,6 +4154,7 @@ _idea_pending_replay_one_log() {
 # contract: preserves-failed-entries-for-retry
 # anchor: BTS-179 (origin)
 # anchor: BTS-233 (emergency-log drainage)
+# anchor: BTS-324 (drain step in routing-key rename heal)
 cmd_idea_pending_replay() {
   local project_dir="."
   while [[ $# -gt 0 ]]; do
@@ -5171,6 +5173,194 @@ cmd_provider_activate() {
     echo "PROVIDER-ACTIVATED: provider=$provider team=$team project=$project routes=$routes"
     echo "  flipped routing.{$routes} → $provider in $cfg"
   fi
+  return 0
+}
+
+# ---------------------------------------------------------------------------
+# cmd_provider_heal_routing_rename — BTS-324: detect legacy
+# `integrations.routing.ticket` keys (stochastic-init divergence) and rename
+# to canonical routing.{idea|spec|plan|stasis|backlog}. After rename, drain
+# `.ccanvil/ideas-pending.log` via cmd_idea_pending_replay so stuck Linear
+# transitions land. Sibling under BTS-316 provider-heal umbrella.
+# ---------------------------------------------------------------------------
+# @manifest
+# purpose: Heal verb that detects legacy `integrations.routing.ticket` keys in `.claude/ccanvil.local.json` (stochastic-init divergence from /ccanvil-init) and renames to canonical routing.{idea|spec|plan|stasis|backlog}; after rename, drains `.ccanvil/ideas-pending.log` via cmd_idea_pending_replay so stuck Linear transitions land. Two modes: --check (read-only probe, default) and --apply (mutating rename + drain). Target set defaults to [idea] (most semantically-direct mapping from ticket); --routes <comma-list> selects SSOT-Linear shape or arbitrary subset. Conflict refusal is scoped to the target set, not the full canonical key space.
+# input: --check (default; read-only probe emitting envelope, no writes)
+# input: --apply (mutating mode; performs rename + drain when no conflict)
+# input: --routes <comma-list> (optional; target kinds, default [idea]; valid: spec, plan, stasis, idea, backlog)
+# input: --project-dir <path>
+# input: --json (accepted for parity; output is always JSON)
+# output: stdout JSON envelope per mode: {status:"legacy-detected", legacy_key_present, legacy_value, canonical_keys_present, proposed_target} on --check, {status:"renamed", from:"ticket", to:[...], drained:{synced, failed, pending}} on --apply success, {status:"conflict", existing_canonical, legacy_value, target_routes} on collision, {status:"no-op", reason} on absent legacy/routing config
+# output: writes-ccanvil-local-json (only when --apply succeeds AND legacy key present AND no conflict)
+# output: exit-codes 0 ok (including --check conflict envelope), 1 missing-config-file or --apply conflict, 2 unknown-flag-or-route
+# depends-on: jq
+# depends-on: cmd_idea_pending_replay
+# side-effect: read-only-on-check
+# side-effect: writes-ccanvil-local-json-on-apply-only
+# failure-mode: missing-config | exit=1 | visible=stderr-ERROR-no-.claude/ccanvil.local.json | mitigation=run-/ccanvil-init-or-verify-project-dir
+# failure-mode: unknown-route | exit=2 | visible=stderr-ERROR-unknown-route-kind | mitigation=use-canonical-kinds-spec-plan-stasis-idea-backlog
+# failure-mode: conflict | exit=1 | visible=conflict-envelope-on-stdout | mitigation=widen-or-narrow-routes-or-resolve-collision-manually
+# contract: idempotent-on-rerun
+# contract: read-only-on-check
+# contract: target-set-scoped-conflict
+# contract: rename-is-durable-even-if-drain-fails
+# anchor: BTS-324 (routing-key rename heal, sibling under BTS-316)
+cmd_provider_heal_routing_rename() {
+  local project_dir="."
+  local mode="check"  # check | apply
+  local routes_arg=""
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --check)       mode="check"; shift ;;
+      --apply)       mode="apply"; shift ;;
+      --routes)      routes_arg="$2"; shift 2 ;;
+      --project-dir) project_dir="${2:-.}"; shift 2 ;;
+      --json)        shift ;;  # default; accepted for parity with other heal verbs
+      --) shift; break ;;
+      --*) echo "Usage: docs-check.sh provider-heal-routing-rename [--check|--apply] [--routes <comma-list>] [--project-dir <path>] [--json]" >&2; return 2 ;;
+      *) shift ;;
+    esac
+  done
+
+  local cfg="$project_dir/.claude/ccanvil.local.json"
+
+  # AC-7: missing config file → exit 1.
+  if [[ ! -f "$cfg" ]]; then
+    echo "ERROR: no .claude/ccanvil.local.json at $project_dir" >&2
+    return 1
+  fi
+
+  # AC-7: config exists but no integrations.routing key → no-op exit 0.
+  if ! jq -e '.integrations.routing' "$cfg" >/dev/null 2>&1; then
+    jq -nc '{status:"no-op", reason:"no-routing-config"}'
+    return 0
+  fi
+
+  # Parse target route set (default [idea]).
+  local target_routes=("idea")
+  if [[ -n "$routes_arg" ]]; then
+    IFS=',' read -ra target_routes <<< "$routes_arg"
+    local k
+    for k in "${target_routes[@]}"; do
+      case "$k" in
+        spec|plan|stasis|idea|backlog) ;;
+        *) echo "ERROR: unknown route kind '$k' (valid: spec, plan, stasis, idea, backlog)" >&2; return 2 ;;
+      esac
+    done
+  fi
+  local target_json
+  target_json=$(printf '%s\n' "${target_routes[@]}" | jq -R . | jq -sc .)
+
+  # Read routing map (or empty).
+  local routing_obj='{}'
+  if [[ -f "$cfg" ]]; then
+    routing_obj=$(jq -c '.integrations.routing // {}' "$cfg" 2>/dev/null || echo '{}')
+  fi
+  local legacy_value
+  legacy_value=$(echo "$routing_obj" | jq -r '.ticket // ""')
+  local legacy_present="false"
+  [[ -n "$legacy_value" ]] && legacy_present="true"
+
+  # Canonical keys already present in the config.
+  local canonical_present_json
+  canonical_present_json=$(echo "$routing_obj" | jq -c '
+    . as $r
+    | ["idea","spec","plan","stasis","backlog"]
+    | map(select($r[.] != null))
+  ')
+
+  # AC-6: target-set-scoped conflict check. Intersection of canonical-present
+  # with target-routes is the load-bearing collision set.
+  local conflict_json
+  conflict_json=$(jq -nc \
+    --argjson present "$canonical_present_json" \
+    --argjson target "$target_json" \
+    '$present | map(select(. as $k | $target | index($k)))')
+  local has_conflict="false"
+  [[ "$legacy_present" == "true" && "$(echo "$conflict_json" | jq 'length')" -gt 0 ]] && has_conflict="true"
+
+  if [[ "$mode" == "check" ]]; then
+    # @side-effect: read-only
+    if [[ "$has_conflict" == "true" ]]; then
+      jq -nc \
+        --arg status "conflict" \
+        --argjson existing_canonical "$conflict_json" \
+        --arg legacy_value "$legacy_value" \
+        --argjson target_routes "$target_json" \
+        '{status:$status, existing_canonical:$existing_canonical, legacy_value:$legacy_value, target_routes:$target_routes}'
+      return 0
+    fi
+    # Status splits into two distinct shapes for fleet-script clarity:
+    # legacy-detected (rename needed) vs already-canonical (no-op). A status
+    # filter at fleet scale (BTS-330) shouldn't have to inspect a secondary
+    # field to distinguish needs-healing from healthy.
+    local check_status="legacy-detected"
+    [[ "$legacy_present" != "true" ]] && check_status="already-canonical"
+    jq -nc \
+      --arg status "$check_status" \
+      --argjson legacy_present "$legacy_present" \
+      --arg legacy_value "$legacy_value" \
+      --argjson canonical_present "$canonical_present_json" \
+      --argjson target "$target_json" \
+      '{
+        status: $status,
+        legacy_key_present: $legacy_present,
+        legacy_value: $legacy_value,
+        canonical_keys_present: $canonical_present,
+        proposed_target: $target
+      }'
+    return 0
+  fi
+
+  # apply mode.
+  if [[ "$legacy_present" != "true" ]]; then
+    # AC-5: no legacy key to rename.
+    jq -nc '{status:"no-op", reason:"no-legacy-key-found"}'
+    return 0
+  fi
+
+  # AC-6: conflict refusal — emit envelope and return 1 BEFORE any write.
+  if [[ "$has_conflict" == "true" ]]; then
+    jq -nc \
+      --arg status "conflict" \
+      --argjson existing_canonical "$conflict_json" \
+      --arg legacy_value "$legacy_value" \
+      --argjson target_routes "$target_json" \
+      '{status:$status, existing_canonical:$existing_canonical, legacy_value:$legacy_value, target_routes:$target_routes}'
+    return 1
+  fi
+
+  # AC-2 / AC-3: atomic rewrite — drop routing.ticket, set each target kind
+  # to the legacy value. Mirror cmd_provider_activate's temp+mv + jq -S
+  # pattern for stable key ordering (idempotency).
+  local existing
+  existing=$(cat "$cfg")
+  local slice
+  slice=$(jq -nc --argjson kinds "$target_json" --arg value "$legacy_value" \
+    '{integrations: {routing: ($kinds | map({(.): $value}) | add // {})}}')
+  local tmp="$cfg.tmp"
+  # @side-effect: writes-ccanvil-local-json-on-apply-only
+  echo "$existing" | jq --argjson slice "$slice" -S '
+    (. * $slice)
+    | del(.integrations.routing.ticket)
+  ' > "$tmp"
+  mv "$tmp" "$cfg"
+
+  # AC-4: drain step — invoke cmd_idea_pending_replay; embed its envelope
+  # under `drained`. Replay failure is surfaced via drained.failed > 0 and
+  # does NOT roll back the rename (canonical key is the durable state).
+  local drained
+  drained=$(cmd_idea_pending_replay --project-dir "$project_dir" 2>/dev/null || true)
+  if [[ -z "$drained" ]] || ! echo "$drained" | jq -e . >/dev/null 2>&1; then
+    drained='{"synced":0,"failed":0,"pending":0}'
+  fi
+
+  jq -nc \
+    --arg status "renamed" \
+    --arg from "ticket" \
+    --argjson to "$target_json" \
+    --argjson drained "$drained" \
+    '{status:$status, from:$from, to:$to, drained:$drained}'
   return 0
 }
 
@@ -8024,6 +8214,7 @@ case "$cmd" in
   provider-heal-auth) cmd_provider_heal_auth "$@" ;;
   provider-heal) cmd_provider_heal "$@" ;;
   provider-activate) cmd_provider_activate "$@" ;;
+  provider-heal-routing-rename) cmd_provider_heal_routing_rename "$@" ;;
   operator-config) cmd_operator_config "$@" ;;
   idea-upgrade)      cmd_idea_upgrade "$@" ;;
   title-from-body)   cmd_title_from_body "$@" ;;
