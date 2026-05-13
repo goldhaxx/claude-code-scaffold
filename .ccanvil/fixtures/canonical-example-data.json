@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "notes": "Canonical example data for ccanvil downstream node test fixtures. Reserved-namespace values (RFC 2606) are auto-allowlisted by .ccanvil/scripts/security-audit.sh's email scanner regex (lines matching @example\\.(com|org|net) or @users\\.noreply, plus the noreply@ prefix). Test fixtures across ccanvil downstream nodes SHOULD source fake user data from this file (or use exactly these values inline) so security-audit treats them as known-fake. Adding more entries is non-breaking — security-audit allowlists the entire @example.{com,org,net} namespace, not a specific list.",
+  "emails": [
+    {"address": "alice@example.com", "context": "primary user fixture"},
+    {"address": "bob@example.org", "context": "secondary user fixture"},
+    {"address": "charlie@example.net", "context": "tertiary user fixture"},
+    {"address": "noreply@example.com", "context": "system-sender fixture — use the address verbatim; safe because @example.com is in the RFC 2606 reserved namespace, not because of the noreply@ prefix alone"}
+  ],
+  "names": [
+    {"first": "Alice", "last": "Example"},
+    {"first": "Bob", "last": "Sample"},
+    {"first": "Charlie", "last": "Test"}
+  ],
+  "user_ids": [10001, 10002, 10003],
+  "domains": ["example.com", "example.org", "example.net", "test", "invalid", "localhost"]
+}

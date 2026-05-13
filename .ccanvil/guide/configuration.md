@@ -122,6 +122,30 @@ Dispatcher (`cmd_test_suite_run` in `docs-check.sh`) resolves the provider and e
 
 Other axes that may want the same dispatcher pattern (when friction surfaces, not before): linter, formatter, package manager, build tool.
 
+### Canonical example-data SSOT (BTS-482)
+
+`.ccanvil/fixtures/canonical-example-data.json` is the hub-shipped source of truth for fake user data used in downstream-node test fixtures. The substrate's design principle: keep CI alerts loud by ensuring every CI red is a real signal, and silence false positives at the data level (not by relaxing detector thresholds).
+
+`security-audit.sh`'s email scanner already auto-allowlists addresses matching the RFC 2606 reserved namespace (`@example.com`, `@example.org`, `@example.net`) and the `noreply@` prefix. Test fixtures that use ad-hoc fakes (`a@b.com`, `z@z.com`, `x@y.com`) match the email-shaped pattern but NOT the reserved namespace, so they flag as MEDIUM PII findings and fail CI. The SSOT documents the canonical addresses, names, and IDs every downstream node should use; following it keeps fixtures auto-allowlisted with no per-node `.security-audit-allowlist` configuration.
+
+```jsonc
+{
+  "version": 1,
+  "emails": [
+    {"address": "alice@example.com", "context": "primary user fixture"},
+    {"address": "bob@example.org",   "context": "secondary user fixture"},
+    {"address": "charlie@example.net", "context": "tertiary user fixture"}
+  ],
+  "names":    [{"first": "Alice", "last": "Example"}, ...],
+  "user_ids": [10001, 10002, 10003],
+  "domains":  ["example.com", "example.org", "example.net", "test", "invalid"]
+}
+```
+
+**Resolution at the substrate layer.** No code reads the SSOT at audit time today — the security-audit script's existing regex (`@example\.(com|org|net)`) is the enforcement point. The SSOT is the *declarative* counterpart: it tells fixture authors which exact values to use. A drift-guard that scans test files for non-canonical example data (failing CI when a fixture uses `a@b.com` instead of `alice@example.com`) is the Phase B follow-up (BTS-483) — keeps alerts loud by surfacing fixture-hygiene drift as a real CI failure.
+
+**The pattern this enables.** Every false-alert surface in ccanvil (workspace-fence heredoc, guard-workspace slash-prefix, shape-gate narrative cascade) has the same shape: a guard fires on a string that *looks* like the dangerous pattern but is *known-safe*. The right answer is never "lower the threshold"; it's "declare the known-safe shape in an SSOT both the guard and the author reference." Phase B unifies that pattern across guards.
+
 <!-- NODE-SPECIFIC-START -->
 <!-- Add project-specific content below this line. -->
 <!-- Hub content above is updated via /ccanvil-pull. -->

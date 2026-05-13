@@ -5,6 +5,11 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+    # BTS-482: include `ready_for_review` so the lifecycle-docs job runs when a
+    # draft PR is converted to ready (the default activity types — opened,
+    # synchronize, reopened — exclude this transition). Without it, draft→ready
+    # without a subsequent push would let stale lifecycle docs slip past the gate.
+    types: [opened, synchronize, reopened, ready_for_review]
 
 permissions:
   contents: read
@@ -24,7 +29,11 @@ jobs:
 
   lifecycle-docs:
     runs-on: ubuntu-latest
-    if: github.event_name == 'pull_request'
+    # BTS-482: skip on draft PRs. Active feature branches carry docs/spec.md +
+    # docs/plan.md + docs/stasis.md by design (only removed at /pr pr-cleanup);
+    # firing this check on every implementation push generates false-positive
+    # CI failure emails. Ready (non-draft) PRs still gate on stale docs.
+    if: github.event_name == 'pull_request' && github.event.pull_request.draft == false
     steps:
       - uses: actions/checkout@v4
 
