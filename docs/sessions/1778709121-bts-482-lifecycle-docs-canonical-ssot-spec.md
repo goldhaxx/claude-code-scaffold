@@ -19,11 +19,11 @@ Hub's CI workflow template (`.ccanvil/templates/github/workflows/ci.yml`) ships 
 ## Acceptance Criteria
 
 - [ ] **AC-1:** `lifecycle-docs` job in `.ccanvil/templates/github/workflows/ci.yml` skips execution when the triggering PR has `draft == true`. Verified by a workflow-syntax assertion in a bats test (`if:` condition includes `github.event.pull_request.draft == false`).
-- [ ] **AC-2:** `lifecycle-docs` job continues to fire on `pull_request` events where draft is false AND on push-to-main events (regression coverage). Verified by bats assertions on the workflow yaml.
+- [ ] **AC-2:** `lifecycle-docs` job continues to fire on `pull_request` events where draft is false, including the `ready_for_review` transition (draft→ready). The `pull_request` trigger's `types:` must include `ready_for_review` (the default set — `opened`, `synchronize`, `reopened` — excludes it, which would otherwise create a bypass path when a draft is converted to ready without a subsequent push). Push-to-main is NOT in this gate's scope: those events have `event_name == 'push'`, so the `if:` excludes them by design — main shouldn't have lifecycle docs anyway (enforced by `protect-main.sh`). Verified by bats assertions on the workflow yaml.
 - [ ] **AC-3:** New file `.ccanvil/fixtures/canonical-example-data.json` exists with structure documented in Implementation Notes — emails, names, IDs, domains. Loads as valid JSON.
 - [ ] **AC-4:** `.ccanvil/fixtures/canonical-example-data.json` declares at minimum 3 canonical email addresses, all matching the `@example\.(com|org|net)$` namespace already auto-allowlisted by `security-audit.sh` (no script change required for AC-4).
 - [ ] **AC-5:** New documentation in `.ccanvil/guide/configuration.md` (or new `.ccanvil/guide/fixtures.md`) cites the SSOT location, structure, and the connection to `security-audit.sh`'s built-in exclusion regex.
-- [ ] **AC-6:** Module-manifest declares `cmd_broadcast`'s use of the updated template (regression — broadcast distribution path remains green).
+- [ ] **AC-6:** Module-manifest validate stays green (`covered == total`, `drift == []`) after the workflow + SSOT additions — JSON fixture file is not manifest-tracked; no @manifest blocks added or modified. Subsumed by AC-7 (which runs `module-manifest.sh validate` as part of the full suite); listed here only to make the regression contract explicit.
 - [ ] **AC-7 (regression):** Hub's full bats suite (`docs-check.sh test-suite-run --parallel`) passes 100%. No existing test breaks.
 - [ ] **AC-8 (post-merge):** Operator runs `bash .ccanvil/scripts/ccanvil-sync.sh broadcast` from hub; broadcast summary reports 14 nodes synced (or surfaces per-node conflicts cleanly). NOT automated in the spec — this is a manual post-merge step verified by the operator.
 - [ ] **AC-9 (error path):** When `.ccanvil/fixtures/canonical-example-data.json` is malformed JSON, fixture-aware tooling that loads it (if any added in this PR) surfaces a clear error. Phase B's drift-guard depends on this file shape; Phase A only verifies the file parses.
@@ -31,7 +31,7 @@ Hub's CI workflow template (`.ccanvil/templates/github/workflows/ci.yml`) ships 
 ## Affected Files
 
 | File | Change |
-|------|--------|
+| -- | -- |
 | `.ccanvil/templates/github/workflows/ci.yml` | Modified — `lifecycle-docs` job gains `if: github.event.pull_request.draft == false` guard |
 | `.ccanvil/fixtures/canonical-example-data.json` | New — SSOT for canonical fixture data |
 | `.ccanvil/guide/configuration.md` | Modified — new section documenting the canonical fixtures SSOT and its connection to security-audit |
@@ -41,22 +41,22 @@ Hub's CI workflow template (`.ccanvil/templates/github/workflows/ci.yml`) ships 
 
 ## Dependencies
 
-- **Requires:** existing `ccanvil-sync.sh broadcast` substrate (already exists; AC-8 is a manual invocation post-merge)
-- **Requires:** `security-audit.sh`'s existing `@example.(com|org|net)` exclusion regex (line 261; no change needed)
-- **Blocked by:** nothing
+* **Requires:** existing `ccanvil-sync.sh broadcast` substrate (already exists; AC-8 is a manual invocation post-merge)
+* **Requires:** `security-audit.sh`'s existing `@example.(com|org|net)` exclusion regex (line 261; no change needed)
+* **Blocked by:** nothing
 
 ## Out of Scope
 
-- Downstream node fixture migration (whoop-toolbox `z@z.com` → `alice@example.com` etc.). That's per-node operator work post-broadcast, not in this PR.
-- `validate-fixtures` drift-guard for enforcement (Phase B / BTS-483).
-- Unifying false-positive suppression across other guards (Phase B / BTS-483).
-- CI consumption meta-loop / `ci-pull` substrate (Phase B / BTS-483).
-- Cleaning the 9 `tmp.*` artifacts from the registry (separate ticket / BTS-484).
-- Tightening `security-audit.sh` email regex beyond what already exists.
+* Downstream node fixture migration (whoop-toolbox `z@z.com` → `alice@example.com` etc.). That's per-node operator work post-broadcast, not in this PR.
+* `validate-fixtures` drift-guard for enforcement (Phase B / BTS-483).
+* Unifying false-positive suppression across other guards (Phase B / BTS-483).
+* CI consumption meta-loop / `ci-pull` substrate (Phase B / BTS-483).
+* Cleaning the 9 `tmp.*` artifacts from the registry (separate ticket / BTS-484).
+* Tightening `security-audit.sh` email regex beyond what already exists.
 
 ## Implementation Notes
 
-**SSOT shape (`.ccanvil/fixtures/canonical-example-data.json`):**
+**SSOT shape (**`.ccanvil/fixtures/canonical-example-data.json`**):**
 
 ```jsonc
 {
@@ -89,13 +89,13 @@ This preserves the existing intent (fire on PR events) while skipping the in-fli
 
 **Test patterns to follow:**
 
-- `hub/tests/bats-report.bats` for shell-script testing
-- `hub/tests/ccanvil-init-skill.bats` for asserting yaml/markdown file contents via grep
-- `hub/tests/test-suite-run.bats` (BTS-460) for module-manifest registration pattern
+* `hub/tests/bats-report.bats` for shell-script testing
+* `hub/tests/ccanvil-init-skill.bats` for asserting yaml/markdown file contents via grep
+* `hub/tests/test-suite-run.bats` (BTS-460) for module-manifest registration pattern
 
 **Manifest discipline:**
 
-- New scripts/modules get `# @manifest` blocks per `.ccanvil/templates/manifest.md`. If we don't add a new script in this PR (just a JSON file + workflow edit), no manifest block needed — JSON files are not manifest-tracked.
+* New scripts/modules get `# @manifest` blocks per `.ccanvil/templates/manifest.md`. If we don't add a new script in this PR (just a JSON file + workflow edit), no manifest block needed — JSON files are not manifest-tracked.
 
 <!-- NODE-SPECIFIC-START -->
 <!-- Add project-specific content below this line. -->

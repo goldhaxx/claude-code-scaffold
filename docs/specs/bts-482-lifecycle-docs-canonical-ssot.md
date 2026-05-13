@@ -4,7 +4,7 @@
 > Work: linear:BTS-482
 > Created: 1778706369
 > Subject: CI fire drill — lifecycle-docs design bug fix + canonical example-data
-> Status: In Progress
+> Status: Complete
 
 ## Summary
 
