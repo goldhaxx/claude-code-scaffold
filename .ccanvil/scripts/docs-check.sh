@@ -49,6 +49,7 @@ PROJECT_TREE_SUBCOMMANDS=(
   artifact-read artifact-write route-of ssot-migrate
   session-info assert-pr-title remote-presence
   stasis-carry-forward ship-finalize validate-spec rule-resolve
+  test-suite-run
 )
 
 # ---------------------------------------------------------------------------
@@ -8171,6 +8172,78 @@ PY
     }'
 }
 
+# @manifest
+# id: cmd_test_suite_run
+# purpose: Provider-aware test-suite dispatcher. Reads `.test-provider` (or `.stacks[0]` fallback, default `bats`) from `<project-dir>/.claude/ccanvil.json` and exec's the matching runner. First concrete instance of the BTS-460 "hub describes behavior, node describes implementation" pattern — lets `/pr` invoke a generic verb instead of hardcoding `bats-report.sh`, so the same skill works on bats/pytest/vitest nodes once each provider's dispatcher lands.
+# input: --project-dir <path> (optional, defaults to .)
+# input: --parallel | --json | --timings | --progress | --slow-top N | --help | -h (forwarded to the active runner; bats-only flags today)
+# input: -- <bats-args>... (passthrough boundary)
+# input: env BATS_REPORT_OVERRIDE (test-injection point; mirrors LINEAR_QUERY_OVERRIDE — BTS-203 pattern)
+# output: stdout: runner's stdout (e.g. bats-report.sh's pass/fail tail)
+# output: stderr: runner's stderr OR substrate Usage/ERROR on dispatch-time failure
+# output: exit: runner's exit (bats path) | 2 (unimplemented provider | unknown flag | no-args trap)
+# caller: skill:/pr
+# depends-on: jq
+# depends-on: bats-report.sh
+# side-effect: spawns-test-runner
+# failure-mode: unimplemented-provider | exit=2 | visible=stderr-error | mitigation=author-the-provider-dispatcher-and-route-here
+# failure-mode: unknown-flag | exit=2 | visible=stderr-Usage | mitigation=use-double-dash-separator-for-arbitrary-passthrough
+# failure-mode: missing-slow-top-arg | exit=2 | visible=stderr-Usage | mitigation=pass-non-negative-integer-after-slow-top
+# failure-mode: no-args | exit=2 | visible=stderr-Usage | mitigation=pass-at-least-one-forwarding-flag-or-target-also-prevents-silent-full-suite-recursion-and-applies-to-future-pytest-vitest-dispatchers
+# contract: provider-resolution-order-test-provider-then-stacks-zero-then-bats-default
+# contract: bats-path-execs-bats-report-sh-via-BATS_REPORT_OVERRIDE-or-script-dir-resolution
+# anchor: BTS-460
+cmd_test_suite_run() {
+  local project_dir="."
+  local -a forward_args=()
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --project-dir) project_dir="${2:-.}"; shift 2 ;;
+      --parallel|--json|--timings|--progress|--help|-h) forward_args+=("$1"); shift ;;
+      --slow-top)
+        # @failure-mode: missing-slow-top-arg
+        if [[ -z "${2:-}" ]]; then
+          echo "Usage: docs-check.sh test-suite-run [--project-dir <path>] [--parallel|--json|--timings|--progress|--slow-top N|--help] [-- <bats-args>...]" >&2
+          return 2
+        fi
+        forward_args+=("$1" "$2"); shift 2 ;;
+      --) shift; while [[ $# -gt 0 ]]; do forward_args+=("$1"); shift; done; break ;;
+      # @failure-mode: unknown-flag
+      --*) echo "Usage: docs-check.sh test-suite-run [--project-dir <path>] [--parallel|--json|--timings|--progress|--slow-top N|--help] [-- <bats-args>...]" >&2; return 2 ;;
+      *) forward_args+=("$1"); shift ;;
+    esac
+  done
+
+  local config="$project_dir/.claude/ccanvil.json"
+  local provider="bats"
+  if [[ -f "$config" ]]; then
+    provider=$(jq -r '.["test-provider"] // .stacks[0] // "bats"' "$config" 2>/dev/null || echo bats)
+    [[ -z "$provider" || "$provider" == "null" ]] && provider="bats"
+  fi
+
+  case "$provider" in
+    bats)
+      # @failure-mode: no-args
+      # Require at least one forwarded arg (flag or target) to avoid silent
+      # full-suite invocation. /pr always passes --parallel --progress.
+      if [[ "${#forward_args[@]:-0}" -eq 0 ]]; then
+        echo "Usage: docs-check.sh test-suite-run [--project-dir <path>] [--parallel|--json|--timings|--progress|--slow-top N|--help] [-- <bats-args>...]" >&2
+        return 2
+      fi
+      local script_dir
+      script_dir="$(dirname "${BASH_SOURCE[0]}")"
+      local runner="${BATS_REPORT_OVERRIDE:-$script_dir/bats-report.sh}"
+      # @side-effect: spawns-test-runner
+      exec bash "$runner" "${forward_args[@]}"
+      ;;
+    *)
+      # @failure-mode: unimplemented-provider
+      echo "ERROR: test-provider '$provider' dispatcher not yet implemented — see BTS-460-followup" >&2
+      return 2
+      ;;
+  esac
+}
+
 cmd="${1:-}"
 shift || true
 
@@ -8235,6 +8308,7 @@ case "$cmd" in
   session-info)      cmd_session_info "$@" ;;
   validate-spec)     cmd_validate_spec "$@" ;;
   rule-resolve)      cmd_rule_resolve "$@" ;;
+  test-suite-run)    cmd_test_suite_run "$@" ;;
   *)
     _print_usage
     exit 1
