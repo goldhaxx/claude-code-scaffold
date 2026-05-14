@@ -1,0 +1,49 @@
+name: ccanvil-checks
+
+# BTS-488: hub-managed CI gates split out of ci.yml so hub can ship gate
+# updates (draft-guard, security threshold, fixture allowlist) via broadcast
+# without colliding with per-node test:-job customizations in ci.yml.
+# This file is fully hub-owned — nodes never edit it.
+
+on:
+  pull_request:
+    branches: [main]
+    # BTS-482: include `ready_for_review` so lifecycle-docs runs when a draft
+    # PR is converted to ready (the default activity types — opened,
+    # synchronize, reopened — exclude that transition).
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+
+jobs:
+  lifecycle-docs:
+    runs-on: ubuntu-latest
+    # BTS-482: skip on draft PRs. Active feature branches carry docs/spec.md
+    # + docs/plan.md + docs/stasis.md by design (only removed at /pr
+    # pr-cleanup); firing this check on every implementation push generates
+    # false-positive CI failure emails. Ready (non-draft) PRs still gate on
+    # stale docs.
+    if: github.event_name == 'pull_request' && github.event.pull_request.draft == false
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check for stale lifecycle docs
+        run: |
+          stale=""
+          [ -f docs/spec.md ] && stale="$stale docs/spec.md"
+          [ -f docs/plan.md ] && stale="$stale docs/plan.md"
+          [ -f docs/stasis.md ] && stale="$stale docs/stasis.md"
+          if [ -n "$stale" ]; then
+            echo "::error::Lifecycle docs must be cleaned up before merge:$stale"
+            echo "Run: docs-check.sh complete <feature-id>"
+            exit 1
+          fi
+
+  security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Security audit
+        run: bash .ccanvil/scripts/security-audit.sh

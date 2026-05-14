@@ -23,6 +23,11 @@
 # historical checkpoint/catchup concepts verbatim; not part of shipping code.
 ^\.ccanvil/ideas\.log:
 ^\.ccanvil/ideas-pending\.log:
+# Operational state — past-bats-run JSONL records may include error_excerpt
+# strings from test failures whose names happen to contain legacy vocab
+# (e.g. "ci.yml template: greps docs/stasis.md (not docs/checkpoint.md)").
+# Not shipping code; gitignored.
+^\.ccanvil/state/bats-runs\.jsonl:
 
 # --- Tests that exercise the legacy vocabulary ---
 # The scanner, migration, and allowlist tests contain the strings by design.
