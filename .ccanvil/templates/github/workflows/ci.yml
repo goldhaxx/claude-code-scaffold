@@ -1,15 +1,15 @@
 name: CI
 
+# BTS-488: this workflow runs node-customized checks only (test runner).
+# Hub-managed gates (lifecycle-docs, security audit) live in their own
+# workflow file `.github/workflows/ccanvil-checks.yml` so hub can broadcast
+# gate updates without colliding with per-node `test:` job customization.
+
 on:
   push:
     branches: [main]
   pull_request:
     branches: [main]
-    # BTS-482: include `ready_for_review` so the lifecycle-docs job runs when a
-    # draft PR is converted to ready (the default activity types — opened,
-    # synchronize, reopened — exclude this transition). Without it, draft→ready
-    # without a subsequent push would let stale lifecycle docs slip past the gate.
-    types: [opened, synchronize, reopened, ready_for_review]
 
 permissions:
   contents: read
@@ -26,33 +26,3 @@ jobs:
       # Example (Go): go test ./...
       - name: Run tests
         run: "echo TODO: Replace with your project test command"
-
-  lifecycle-docs:
-    runs-on: ubuntu-latest
-    # BTS-482: skip on draft PRs. Active feature branches carry docs/spec.md +
-    # docs/plan.md + docs/stasis.md by design (only removed at /pr pr-cleanup);
-    # firing this check on every implementation push generates false-positive
-    # CI failure emails. Ready (non-draft) PRs still gate on stale docs.
-    if: github.event_name == 'pull_request' && github.event.pull_request.draft == false
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Check for stale lifecycle docs
-        run: |
-          stale=""
-          [ -f docs/spec.md ] && stale="$stale docs/spec.md"
-          [ -f docs/plan.md ] && stale="$stale docs/plan.md"
-          [ -f docs/stasis.md ] && stale="$stale docs/stasis.md"
-          if [ -n "$stale" ]; then
-            echo "::error::Lifecycle docs must be cleaned up before merge:$stale"
-            echo "Run: docs-check.sh complete <feature-id>"
-            exit 1
-          fi
-
-  security:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Security audit
-        run: bash .ccanvil/scripts/security-audit.sh

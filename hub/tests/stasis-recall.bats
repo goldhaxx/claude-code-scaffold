@@ -201,10 +201,14 @@ OPERATIONS="$REPO_ROOT/.ccanvil/scripts/operations.sh"
 
 # --- Step 4: CI workflow template + manifest.lock ---
 
-@test "ci.yml template: greps docs/stasis.md (not docs/checkpoint.md)" {
-  local ci="$REPO_ROOT/.ccanvil/templates/github/workflows/ci.yml"
-  grep -q 'docs/stasis\.md' "$ci"
-  ! grep -q 'docs/checkpoint\.md' "$ci"
+@test "ccanvil-checks.yml template: greps docs/stasis.md (not docs/checkpoint.md)" {
+  # BTS-488: lifecycle-docs job moved out of ci.yml into ccanvil-checks.yml
+  # so hub can ship gate updates without colliding with per-node ci.yml
+  # customization. The docs/stasis.md reference (post-BTS-130 rename from
+  # docs/checkpoint.md) now lives in the split-out workflow file.
+  local checks="$REPO_ROOT/.ccanvil/templates/github/workflows/ccanvil-checks.yml"
+  grep -q 'docs/stasis\.md' "$checks"
+  ! grep -q 'docs/checkpoint\.md' "$checks"
 }
 
 @test "manifest.lock: no 'docs/checkpoint.md' path entries" {

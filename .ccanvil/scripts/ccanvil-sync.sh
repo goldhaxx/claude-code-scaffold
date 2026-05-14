@@ -64,6 +64,7 @@ INIT_GITHUB_TEMPLATES=(
   "CONTRIBUTING.md:CONTRIBUTING.md"
   "PULL_REQUEST_TEMPLATE.md:.github/PULL_REQUEST_TEMPLATE.md"
   "workflows/ci.yml:.github/workflows/ci.yml"
+  "workflows/ccanvil-checks.yml:.github/workflows/ccanvil-checks.yml"
 )
 
 # ---------------------------------------------------------------------------
@@ -3382,6 +3383,221 @@ cmd_events() {
   jq -c "$jq_filter" "$log_file" 2>/dev/null
 }
 
+# heal-ci-workflows: One-shot fleet heal for BTS-488 — distributes the
+# hub-managed gate workflow (.github/workflows/ccanvil-checks.yml) to every
+# registered downstream node, registers it in each node's lockfile, and
+# strips the now-duplicate lifecycle-docs + security jobs from each node's
+# existing .github/workflows/ci.yml. Operator runs this once post-merge;
+# subsequent broadcasts maintain ccanvil-checks.yml via the lockfile entry.
+# Usage: heal-ci-workflows [--dry-run]
+# @manifest
+# id: cmd_heal_ci_workflows
+# purpose: One-shot fleet heal that distributes hub's ccanvil-checks.yml gate workflow to every registered downstream node (copy file + upsert lockfile entry with origin=hub) and strips the duplicate lifecycle-docs + security job blocks from each node's existing .github/workflows/ci.yml — closes the BTS-482 distribution gap where the workflow file was never in any node's lockfile so broadcast couldn't reach it. Per-node failures (dirty tree, commit error) are isolated so the fleet loop never aborts.
+# input: --dry-run (optional; preview-only mode, no file writes or commits)
+# input: env $HOME (drives expand_path for registry portable_path tilde-expansion)
+# output: stdout per-node section banner + per-action log lines (WRITE / REGISTER / STRIP / HEALED / UNCHANGED / STALE / ERROR) + final Heal Summary (Healed / Unchanged / Unreachable / Errors)
+# output: writes per-node .github/workflows/ccanvil-checks.yml (copy from hub)
+# output: writes per-node .ccanvil/ccanvil.lock (jq-upsert via atomic tmp+mv)
+# output: writes per-node .github/workflows/ci.yml (awk-strip lifecycle-docs + security blocks when present)
+# output: commits-on-node-main one chore(ccanvil-checks) commit per healed node (never pushes — operator pushes after review)
+# output: exit-codes 0 ok-or-no-registered-nodes / 2 hub-source-missing
+# depends-on: jq
+# depends-on: git
+# depends-on: shasum
+# depends-on: awk
+# depends-on: expand_path
+# side-effect: writes-target-files
+# side-effect: writes-target-lockfiles
+# side-effect: commits-on-node-main
+# failure-mode: hub-source-missing | exit=2 | visible=stderr-error | mitigation=run-from-hub-root-with-template-present
+# failure-mode: no-registry | exit=0 | visible=stdout-No-registered-nodes | mitigation=register-first-downstream-node
+# failure-mode: per-node-stale-path | exit=0 | visible=stdout-STALE | mitigation=prune-stale-registry-entry-BTS-484
+# failure-mode: per-node-commit-failure | exit=0 | visible=stdout-ERROR | mitigation=clean-the-failing-node-tree-and-retry
+# contract: dry-run-makes-no-mutations
+# contract: idempotent-on-rerun
+# contract: per-node-failure-isolated-from-fleet-loop
+# anchor: BTS-488
+cmd_heal_ci_workflows() {
+  local dry_run=false
+  if [[ "${1:-}" == "--dry-run" ]]; then
+    dry_run=true
+  fi
+
+  local hub_root
+  if [[ -f "$LOCKFILE" ]]; then
+    hub_root=$(get_hub_source_raw)
+  else
+    hub_root=$(pwd)
+  fi
+
+  local hub_checks="$hub_root/.ccanvil/templates/github/workflows/ccanvil-checks.yml"
+  if [[ ! -f "$hub_checks" ]]; then
+    # @failure-mode: hub-source-missing
+    echo "ERROR: Hub source not found: $hub_checks" >&2
+    return 2
+  fi
+
+  local registry="$hub_root/.ccanvil/registry.json"
+  if [[ ! -f "$registry" ]]; then
+    # @failure-mode: no-registry
+    echo "No registered nodes."
+    return 0
+  fi
+
+  local hub_hash
+  hub_hash=$(shasum -a 256 "$hub_checks" | awk '{print $1}')
+
+  local healed=0 unchanged=0 unreachable=0 errors=0
+
+  while IFS= read -r entry_key; do
+    local node_uuid="" node_name portable_path node_path
+    if [[ "$entry_key" =~ $UUID_V4_REGEX ]]; then
+      node_uuid="$entry_key"
+      node_name=$(jq -r --arg u "$node_uuid" '.nodes[$u].name // "unknown"' "$registry")
+      portable_path=$(jq -r --arg u "$node_uuid" '.nodes[$u].path // empty' "$registry")
+    else
+      node_name=$(jq -r --arg p "$entry_key" '.nodes[$p].name // "unknown"' "$registry")
+      portable_path="$entry_key"
+    fi
+    node_path=$(expand_path "$portable_path")
+
+    echo ""
+    echo "=== $node_name ($node_path) ==="
+
+    if [[ -z "$portable_path" || ! -d "$node_path" ]]; then
+      # @failure-mode: per-node-stale-path
+      echo "  STALE: path not present"
+      unreachable=$((unreachable + 1))
+      continue
+    fi
+
+    local node_checks="$node_path/.github/workflows/ccanvil-checks.yml"
+    local node_lockfile="$node_path/.ccanvil/ccanvil.lock"
+    local node_ci="$node_path/.github/workflows/ci.yml"
+    local needs_commit=false
+
+    # Step A: copy ccanvil-checks.yml when hash differs
+    local local_hash=""
+    [[ -f "$node_checks" ]] && local_hash=$(shasum -a 256 "$node_checks" | awk '{print $1}')
+
+    if [[ "$local_hash" != "$hub_hash" ]]; then
+      if $dry_run; then
+        echo "  WOULD WRITE: $node_checks"
+      else
+        # @side-effect: writes-target-files
+        mkdir -p "$(dirname "$node_checks")"
+        cp "$hub_checks" "$node_checks"
+        echo "  WRITE: ccanvil-checks.yml"
+      fi
+      needs_commit=true
+    else
+      echo "  CLEAN: ccanvil-checks.yml already at hub version"
+    fi
+
+    # Step B: upsert lockfile entry when missing or origin != hub
+    if [[ -f "$node_lockfile" ]]; then
+      local existing_origin
+      existing_origin=$(jq -r '.files[".github/workflows/ccanvil-checks.yml"].origin // empty' "$node_lockfile")
+      if [[ "$existing_origin" != "hub" ]]; then
+        if $dry_run; then
+          echo "  WOULD REGISTER lockfile entry"
+        else
+          # @side-effect: writes-target-lockfiles
+          local tmp
+          tmp=$(mktemp)
+          jq --arg h "$hub_hash" '
+            .files[".github/workflows/ccanvil-checks.yml"] = {
+              "origin": "hub",
+              "hub_hash": $h,
+              "local_hash": $h,
+              "status": "clean",
+              "sync": "tracked"
+            }
+          ' "$node_lockfile" > "$tmp" && mv "$tmp" "$node_lockfile"
+          echo "  REGISTER: lockfile entry"
+        fi
+        needs_commit=true
+      fi
+    fi
+
+    # Step C: strip lifecycle-docs + security blocks from node's ci.yml (when present)
+    # Grep anchor matches the awk anchor exactly — both require 2-space indent
+    # so detection and removal agree. Non-2-space-indented yaml is treated as
+    # "not the hub template shape" and skipped with a WARN.
+    if [[ -f "$node_ci" ]]; then
+      if grep -qE '^  (lifecycle-docs|security):' "$node_ci"; then
+        if $dry_run; then
+          echo "  WOULD STRIP: lifecycle-docs + security from ci.yml"
+        else
+          local tmp
+          tmp=$(mktemp)
+          awk '
+            /^  lifecycle-docs:/ || /^  security:/ { skip = 1; next }
+            skip && /^  [a-zA-Z]/ { skip = 0 }
+            !skip { print }
+          ' "$node_ci" > "$tmp" && mv "$tmp" "$node_ci"
+          echo "  STRIP: lifecycle-docs + security from ci.yml"
+        fi
+        needs_commit=true
+      elif grep -qE '^[[:space:]]+(lifecycle-docs|security):' "$node_ci"; then
+        # Non-2-space-indented occurrence — pattern mismatch, surface explicitly
+        echo "  WARN: lifecycle-docs/security in ci.yml has non-2-space indent — manual strip required"
+      fi
+    fi
+
+    # B-2 mitigation: detect orphaned heal-target writes from a prior failed
+    # commit. If any of the three files has uncommitted changes (modified OR
+    # untracked), force needs_commit=true so this run retries the commit
+    # instead of silently marking the node as "already healed." Use
+    # `git status --porcelain` (not `git diff`) to catch untracked files —
+    # ccanvil-checks.yml on a fresh node is new-untracked after the first
+    # rejected commit.
+    if [[ -d "$node_path/.git" ]] && ! $dry_run; then
+      for orphan_check in .github/workflows/ccanvil-checks.yml .ccanvil/ccanvil.lock .github/workflows/ci.yml; do
+        if [[ -f "$node_path/$orphan_check" ]] \
+           && [[ -n "$(cd "$node_path" && git status --porcelain -- "$orphan_check" 2>/dev/null)" ]]; then
+          needs_commit=true
+        fi
+      done
+    fi
+
+    # Step D: commit when anything changed
+    if $needs_commit && ! $dry_run; then
+      # Stage the three candidate files (silent if any are missing)
+      (cd "$node_path" && git add .github/workflows/ccanvil-checks.yml 2>/dev/null || true)
+      (cd "$node_path" && git add .ccanvil/ccanvil.lock 2>/dev/null || true)
+      [[ -f "$node_ci" ]] && (cd "$node_path" && git add .github/workflows/ci.yml 2>/dev/null || true)
+      if ! (cd "$node_path" && git diff --cached --quiet) 2>/dev/null; then
+        # @side-effect: commits-on-node-main
+        if (cd "$node_path" && git -c commit.gpgsign=false commit -m "chore(ccanvil-checks): split hub-managed CI gates (BTS-488)") > /dev/null 2>&1; then
+          echo "  HEALED"
+          healed=$((healed + 1))
+        else
+          # @failure-mode: per-node-commit-failure
+          echo "  ERROR: commit failed (dirty tree or hook reject)"
+          errors=$((errors + 1))
+        fi
+      else
+        echo "  UNCHANGED: nothing staged"
+        unchanged=$((unchanged + 1))
+      fi
+    elif $needs_commit && $dry_run; then
+      echo "  WOULD HEAL"
+      healed=$((healed + 1))
+    else
+      echo "  UNCHANGED: node already healed"
+      unchanged=$((unchanged + 1))
+    fi
+  done < <(jq -r '.nodes | keys[]' "$registry")
+
+  echo ""
+  echo "=== Heal Summary ==="
+  echo "  Healed: $healed"
+  echo "  Unchanged: $unchanged"
+  echo "  Unreachable: $unreachable"
+  echo "  Errors: $errors"
+}
+
 # broadcast: Push hub updates to all registered downstream nodes.
 # Runs deterministic phases only (auto-update, section-merge, finalize).
 # Conflicts are collected and reported, not resolved.
@@ -4623,6 +4839,7 @@ case "${1:-}" in
   registry)         cmd_registry ;;
   events)           shift; cmd_events "$@" ;;
   broadcast)        shift; cmd_broadcast "$@" ;;
+  heal-ci-workflows) shift; cmd_heal_ci_workflows "$@" ;;
   broadcast-resolve-auto) shift; cmd_broadcast_resolve_auto "$@" ;;
 
   # --- Drift watchdog (BTS-21) ---
