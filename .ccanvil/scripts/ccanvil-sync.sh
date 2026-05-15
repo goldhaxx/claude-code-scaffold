@@ -75,12 +75,15 @@ INIT_GITHUB_TEMPLATES=(
 # caller: cmd_pull_plan
 # caller: cmd_pull_auto
 # caller: cmd_pull_apply
+# caller: cmd_diff
+# caller: cmd_push_candidates
 # depends-on: INIT_GITHUB_TEMPLATES
 # side-effect: pure-no-mutations
 # failure-mode: passthrough-for-non-template-key | exit=0 | visible=stdout-original-key | mitigation=none-by-design
 # contract: bash-3.2-safe
 # contract: pure-no-side-effects
 # anchor: BTS-493
+# anchor: BTS-494 (cmd_diff + cmd_push_candidates callers added)
 _resolve_hub_relpath_for_lockfile_key() {
   # @side-effect: pure-no-mutations
   # @failure-mode: passthrough-for-non-template-key
@@ -1424,6 +1427,7 @@ cmd_changelog() {
 # depends-on: require_lockfile
 # depends-on: get_hub_source
 # depends-on: file_hash
+# depends-on: _resolve_hub_relpath_for_lockfile_key
 # depends-on: diff
 # side-effect: reads-lockfile-and-hub-files
 # failure-mode: missing-lockfile | exit=1 | visible=stderr-die-from-require_lockfile | mitigation=run-init-first
@@ -1431,7 +1435,9 @@ cmd_changelog() {
 # failure-mode: local-file-missing | exit=0 | visible=stdout-File-not-in-project | mitigation=informational-only
 # contract: read-only-diff-rendering
 # contract: skips-clean-and-unchanged-files-when-iterating
+# contract: resolves-init-github-templates-via-helper
 # anchor: BTS-243 (manifest seed)
+# anchor: BTS-494 (helper resolution)
 cmd_diff() {
   # @failure-mode: missing-lockfile
   # @side-effect: reads-lockfile-and-hub-files
@@ -1441,8 +1447,10 @@ cmd_diff() {
   hub_source=$(get_hub_source)
 
   if [[ -n "$file" ]]; then
-    # Diff a specific file
-    local hub_file="$hub_source/$file"
+    # Diff a specific file. BTS-494: INIT_GITHUB_TEMPLATES-mapped entries
+    # have lockfile keys that don't match the hub-relative path; resolve via
+    # the inverse map helper.
+    local hub_file="$hub_source/$(_resolve_hub_relpath_for_lockfile_key "$file")"
     if [[ ! -f "$hub_file" ]]; then
       # @failure-mode: hub-file-missing
       echo "File not in hub: $file"
@@ -1457,7 +1465,7 @@ cmd_diff() {
     fi
     echo "--- hub: $file"
     echo "+++ local: $file"
-    diff --unified "$hub_source/$file" "$file" || true
+    diff --unified "$hub_file" "$file" || true
   else
     # Diff all modified files
     while IFS= read -r f; do
@@ -1468,9 +1476,13 @@ cmd_diff() {
         current_hash=$(file_hash "$f")
         local hub_hash
         hub_hash=$(jq -r --arg f "$f" '.files[$f].hub_hash // "null"' "$LOCKFILE")
-        if [[ "$current_hash" != "$hub_hash" && -f "$hub_source/$f" ]]; then
+        # BTS-494: INIT_GITHUB_TEMPLATES-mapped entries have lockfile keys
+        # that don't match the hub-relative path; resolve via the inverse
+        # map helper for both the existence check and the diff invocation.
+        local hub_file_for_f="$hub_source/$(_resolve_hub_relpath_for_lockfile_key "$f")"
+        if [[ "$current_hash" != "$hub_hash" && -f "$hub_file_for_f" ]]; then
           echo "=== $f ==="
-          diff --unified "$hub_source/$f" "$f" || true
+          diff --unified "$hub_file_for_f" "$f" || true
           echo ""
         fi
       fi
@@ -2570,12 +2582,15 @@ cmd_pull_finalize() {
 # depends-on: require_lockfile
 # depends-on: get_hub_source
 # depends-on: is_node_only
+# depends-on: _resolve_hub_relpath_for_lockfile_key
 # depends-on: diff
 # side-effect: reads-lockfile-and-hub-files
 # failure-mode: missing-lockfile | exit=1 | visible=stderr-die-from-require_lockfile | mitigation=run-init-first
 # contract: emits-empty-array-when-no-candidates
 # contract: skips-node-only-and-clean-entries
+# contract: resolves-init-github-templates-via-helper
 # anchor: BTS-243 (manifest seed)
+# anchor: BTS-494 (helper resolution)
 cmd_push_candidates() {
   # @failure-mode: missing-lockfile
   # @side-effect: reads-lockfile-and-hub-files
@@ -2608,7 +2623,9 @@ cmd_push_candidates() {
     [[ -f "$file" ]] || continue
 
     local has_diff="false"
-    local hub_file="$hub_source/$file"
+    # BTS-494: INIT_GITHUB_TEMPLATES-mapped entries have lockfile keys that
+    # don't match the hub-relative path; resolve via the inverse map helper.
+    local hub_file="$hub_source/$(_resolve_hub_relpath_for_lockfile_key "$file")"
     if [[ -f "$hub_file" ]]; then
       if ! diff -q "$hub_file" "$file" >/dev/null 2>&1; then
         has_diff="true"
