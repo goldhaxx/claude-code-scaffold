@@ -67,6 +67,34 @@ INIT_GITHUB_TEMPLATES=(
   "workflows/ccanvil-checks.yml:.github/workflows/ccanvil-checks.yml"
 )
 
+# @manifest
+# purpose: Resolve a lockfile entry key to its hub-relative source path by consulting the inverse of INIT_GITHUB_TEMPLATES so callers that look up files in the hub root find template-mapped entries (dest path lockfile key) at their actual template path (.ccanvil/templates/github/<source>)
+# input: positional <lockfile-key>
+# output: stdout hub-relative path (template-mapped) or the original key unchanged
+# output: exit-codes 0 always
+# caller: cmd_pull_plan
+# caller: cmd_pull_auto
+# caller: cmd_pull_apply
+# depends-on: INIT_GITHUB_TEMPLATES
+# side-effect: pure-no-mutations
+# failure-mode: passthrough-for-non-template-key | exit=0 | visible=stdout-original-key | mitigation=none-by-design
+# contract: bash-3.2-safe
+# contract: pure-no-side-effects
+# anchor: BTS-493
+_resolve_hub_relpath_for_lockfile_key() {
+  # @side-effect: pure-no-mutations
+  # @failure-mode: passthrough-for-non-template-key
+  local key="$1"
+  local mapping
+  for mapping in "${INIT_GITHUB_TEMPLATES[@]}"; do
+    if [[ "${mapping##*:}" == "$key" ]]; then
+      echo ".ccanvil/templates/github/${mapping%%:*}"
+      return 0
+    fi
+  done
+  echo "$key"
+}
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -1954,12 +1982,15 @@ cmd_pre_check() {
 # depends-on: file_hash
 # depends-on: is_node_only
 # depends-on: scan_hub_files
+# depends-on: _resolve_hub_relpath_for_lockfile_key
 # depends-on: grep
 # side-effect: reads-lockfile-and-hub-files
 # failure-mode: missing-lockfile | exit=1 | visible=stderr-die-from-require_lockfile | mitigation=run-init-first
 # contract: read-only-classification
 # contract: skips-node-only-and-local-only-and-non-hub-origins
+# contract: resolves-init-github-templates-via-helper
 # anchor: BTS-243 (manifest seed)
+# anchor: BTS-493 (helper resolution)
 cmd_pull_plan() {
   # @failure-mode: missing-lockfile
   # @side-effect: reads-lockfile-and-hub-files
@@ -1995,7 +2026,9 @@ cmd_pull_plan() {
       continue
     fi
 
-    local hub_file="$hub_source/$file"
+    # BTS-493: INIT_GITHUB_TEMPLATES-mapped entries have lockfile keys that
+    # don't match the hub-relative path; resolve via the inverse map helper.
+    local hub_file="$hub_source/$(_resolve_hub_relpath_for_lockfile_key "$file")"
 
     # Check if file was removed from hub
     if [[ ! -f "$hub_file" ]]; then
@@ -2122,6 +2155,7 @@ cmd_pull_plan() {
 # depends-on: cmd_pull_plan
 # depends-on: file_hash
 # depends-on: safe_lock_mv
+# depends-on: _resolve_hub_relpath_for_lockfile_key
 # depends-on: mktemp
 # depends-on: mkdir
 # depends-on: cp
@@ -2130,7 +2164,9 @@ cmd_pull_plan() {
 # failure-mode: missing-lockfile | exit=1 | visible=stderr-die-from-require_lockfile | mitigation=run-init-first
 # contract: dry-run-makes-no-mutations
 # contract: skips-non-auto-actions
+# contract: resolves-init-github-templates-via-helper
 # anchor: BTS-243 (manifest seed)
+# anchor: BTS-493 (helper resolution)
 cmd_pull_auto() {
   local dry_run=false
   if [[ "${1:-}" == "--dry-run" ]]; then
@@ -2154,7 +2190,9 @@ cmd_pull_auto() {
       continue
     fi
 
-    local hub_file="$hub_source/$file"
+    # BTS-493: INIT_GITHUB_TEMPLATES-mapped entries have lockfile keys that
+    # don't match the hub-relative path; resolve via the inverse map helper.
+    local hub_file="$hub_source/$(_resolve_hub_relpath_for_lockfile_key "$file")"
     local new_hash
     new_hash=$(file_hash "$hub_file")
 
@@ -2210,6 +2248,7 @@ cmd_pull_auto() {
 # depends-on: file_hash
 # depends-on: safe_lock_mv
 # depends-on: guard_fail
+# depends-on: _resolve_hub_relpath_for_lockfile_key
 # depends-on: mktemp
 # depends-on: mkdir
 # depends-on: cp
@@ -2228,7 +2267,9 @@ cmd_pull_auto() {
 # failure-mode: unknown-action | exit=1 | visible=stderr-die-Unknown-action | mitigation=use-documented-action-name
 # contract: dry-run-makes-no-mutations
 # contract: stack-reapply-runs-after-take-hub-on-settings-json
+# contract: resolves-init-github-templates-via-helper
 # anchor: BTS-243 (manifest seed)
+# anchor: BTS-493 (helper resolution)
 cmd_pull_apply() {
   # @failure-mode: missing-lockfile
   require_lockfile
@@ -2250,7 +2291,9 @@ cmd_pull_apply() {
 
   local hub_source
   hub_source=$(get_hub_source)
-  local hub_file="$hub_source/$file"
+  # BTS-493: INIT_GITHUB_TEMPLATES-mapped entries have lockfile keys that
+  # don't match the hub-relative path; resolve via the inverse map helper.
+  local hub_file="$hub_source/$(_resolve_hub_relpath_for_lockfile_key "$file")"
 
   # Guard: if PLAN_LOCAL_HASH is set, verify file hasn't changed since plan
   if [[ -n "${PLAN_LOCAL_HASH:-}" && -f "$file" ]]; then

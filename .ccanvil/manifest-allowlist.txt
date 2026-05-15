@@ -117,6 +117,8 @@
 .ccanvil/scripts/ccanvil-sync.sh:cmd_pull_auto
 .ccanvil/scripts/ccanvil-sync.sh:cmd_pull_apply
 .ccanvil/scripts/ccanvil-sync.sh:cmd_pull_finalize
+# BTS-493 — INIT_GITHUB_TEMPLATES inverse-map helper consumed by pull-{plan,auto,apply}.
+.ccanvil/scripts/ccanvil-sync.sh:_resolve_hub_relpath_for_lockfile_key
 # Batch 5 — push + promote/demote.
 .ccanvil/scripts/ccanvil-sync.sh:cmd_push_candidates
 .ccanvil/scripts/ccanvil-sync.sh:cmd_push_apply
