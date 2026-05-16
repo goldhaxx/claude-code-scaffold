@@ -261,3 +261,4 @@
 .claude/commands/plan.md
 .claude/commands/review.md
 .claude/commands/security-audit.md
+.ccanvil/observability/otel-flatten.sh
