@@ -77,3 +77,83 @@ setup() {
   CCANVIL_TELEMETRY_DISABLED=1 run bash -c "source '$HELPER' && telemetry_teardown_file"
   [ "$status" -eq 0 ]
 }
+
+# =========================================================================
+# Step 12 — attribute resolution (no live deps)
+# =========================================================================
+
+@test "AC-6: single-file mode (PARALLEL_JOBSLOT unset) → worker.id=0" {
+  source "$HELPER"
+  unset PARALLEL_JOBSLOT
+  _telemetry_cache_invariants
+  [ "$BTS_TELEMETRY_WORKER_ID" = "0" ]
+}
+
+@test "AC-1: parallel mode → worker.id reflects PARALLEL_JOBSLOT" {
+  source "$HELPER"
+  PARALLEL_JOBSLOT=7 _telemetry_cache_invariants
+  [ "$BTS_TELEMETRY_WORKER_ID" = "7" ]
+}
+
+@test "AC-1: run.id format is <epoch>-<pid> when BTS_RUN_ID unset" {
+  source "$HELPER"
+  unset BTS_RUN_ID
+  _telemetry_cache_invariants
+  echo "$BTS_TELEMETRY_RUN_ID" | grep -qE '^[0-9]+-[0-9]+$'
+}
+
+@test "AC-1: BTS_RUN_ID inheritance — shared run.id across files" {
+  source "$HELPER"
+  BTS_RUN_ID="custom-suite-id" _telemetry_cache_invariants
+  [ "$BTS_TELEMETRY_RUN_ID" = "custom-suite-id" ]
+}
+
+@test "AC-1: git.sha resolves to current HEAD (or 'unknown' outside git tree)" {
+  source "$HELPER"
+  _telemetry_cache_invariants
+  echo "$BTS_TELEMETRY_GIT_SHA" | grep -qE '^([0-9a-f]{40}|unknown)$'
+}
+
+# =========================================================================
+# Step 12 — attribute composition shape (AC-1 + AC-10 schema mirror)
+# =========================================================================
+
+@test "AC-1: compose_attrs builds the full 8-attribute set on pass (no error_excerpt)" {
+  source "$HELPER"
+  _telemetry_cache_invariants
+  export BATS_TEST_DESCRIPTION="my test name"
+  export BATS_TEST_FILENAME="$PWD/hub/tests/example.bats"
+  local attrs
+  attrs=$(_telemetry_compose_attrs "pass" "47" "")
+  echo "$attrs" | grep -qE 'test\.name=my test name'
+  echo "$attrs" | grep -qE 'test\.file=hub/tests/example\.bats'
+  echo "$attrs" | grep -qE 'test\.outcome=pass'
+  echo "$attrs" | grep -qE 'worker\.id=[0-9]+'
+  echo "$attrs" | grep -qE 'runner\.kind=bats'
+  echo "$attrs" | grep -qE 'run\.id='
+  echo "$attrs" | grep -qE 'git\.sha='
+  echo "$attrs" | grep -qE 'test\.duration_ms=47'
+  # No error_excerpt on pass
+  ! echo "$attrs" | grep -qE 'test\.error_excerpt='
+}
+
+@test "AC-1: compose_attrs includes test.error_excerpt on fail (truncated, commas→semicolons)" {
+  source "$HELPER"
+  _telemetry_cache_invariants
+  export BATS_TEST_DESCRIPTION="fail test"
+  export BATS_TEST_FILENAME="$PWD/hub/tests/example.bats"
+  local attrs
+  attrs=$(_telemetry_compose_attrs "fail" "100" "boom: expected 1, got 2")
+  echo "$attrs" | grep -qE 'test\.outcome=fail'
+  echo "$attrs" | grep -qE 'test\.error_excerpt=boom: expected 1; got 2'
+}
+
+@test "AC-1: compose_attrs preserves test.outcome=skip" {
+  source "$HELPER"
+  _telemetry_cache_invariants
+  export BATS_TEST_DESCRIPTION="skipped test"
+  export BATS_TEST_FILENAME="$PWD/hub/tests/example.bats"
+  local attrs
+  attrs=$(_telemetry_compose_attrs "skip" "5" "")
+  echo "$attrs" | grep -qE 'test\.outcome=skip'
+}
