@@ -160,6 +160,13 @@ if (( parallel_mode )); then
 fi
 bats_cmd+=("${passthrough[@]+"${passthrough[@]}"}")
 
+# BTS-497: anchor a stable BTS_RUN_ID for the suite run. The telemetry helper
+# (hub/tests/_helpers/telemetry.bash) reads this to tag every span; the
+# AC-12d flatten step below passes the same value to otel-flatten.sh so it
+# filters to spans from THIS run. Honors an externally-set value (CI may
+# want a deterministic id).
+export BTS_RUN_ID="${BTS_RUN_ID:-$(date +%s)-$$}"
+
 # BTS-281: pre-warm module-manifest validate JSON ONCE before the suite runs,
 # expose via env var. The 4 bats files that need this read the cached path
 # instead of re-running validate. Skip when caller already set the env var
@@ -433,4 +440,31 @@ else
   echo "WARN: bats-runs.jsonl append skipped — could not write $jsonl_path" >&2
 fi
 
-exit "$bats_exit"
+# BTS-497 AC-12d: invoke otel-flatten.sh after every --parallel run.
+# Exit-code precedence rule: when flatten fails, propagate 78 regardless
+# of bats_exit (flatten failure is the "running blind" signal that AC-2
+# guards against and must always surface). When flatten succeeds, exit
+# with bats_exit so test failures propagate normally for CI consumers.
+# The bats_exit is preserved in bats-runs.jsonl's raw_exit field
+# regardless of which code is propagated, so JSON consumers can still
+# distinguish test-failure runs even when 78 is the exit code.
+final_exit="$bats_exit"
+if (( parallel_mode == 1 )); then
+  # @side-effect: invokes-otel-flatten
+  # Step 14 adds the --no-telemetry flag to gate this; for now flatten runs
+  # unconditionally in parallel mode. CCANVIL_TELEMETRY_DISABLED is reserved
+  # for the bats HELPER (per-test emission); it does NOT gate the post-run
+  # flatten because the flatten step reads OTEL_FLATTEN_INPUT directly and
+  # may operate on data emitted by an earlier run / external system.
+  flatten_script=".ccanvil/observability/otel-flatten.sh"
+  if [[ -x "$flatten_script" ]]; then
+    if ! bash "$flatten_script" "$BTS_RUN_ID" >&2; then
+      # @failure-mode: flatten-failed
+      final_exit=78
+    fi
+  else
+    echo "WARN: $flatten_script missing — flatten step skipped" >&2
+  fi
+fi
+
+exit "$final_exit"

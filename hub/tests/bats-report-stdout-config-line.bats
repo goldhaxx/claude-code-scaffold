@@ -18,6 +18,21 @@ setup() {
 EOF
   export BATS_REPORT_STATE_DIR="$BATS_TEST_TMPDIR/state"
   mkdir -p "$BATS_REPORT_STATE_DIR"
+
+  # Skip the BTS-281 module-manifest pre-warm (~7 min on the full hub
+  # allowlist). Tests of bats-report.sh-as-substrate should always stub
+  # this — otherwise the 4× invocations here would take ~28 min.
+  local stub_cache="$BATS_TEST_TMPDIR/manifest-cache.json"
+  echo '{"coverage":{"covered":0,"total":0},"drift":[],"status":"ok"}' > "$stub_cache"
+  export BTS_MANIFEST_VALIDATE_CACHE="$stub_cache"
+
+  # BTS-497 Step 13: bats-report.sh now invokes otel-flatten.sh after every
+  # --parallel run. AC-11 tests don't care about flatten — give it a
+  # working path against the existing fixture so it succeeds and exits 0.
+  # (Step 14 will land the --no-telemetry flag for a cleaner opt-out.)
+  export BTS_RUN_ID=run-abc
+  export OTEL_FLATTEN_INPUT="$BATS_TEST_DIRNAME/fixtures/raw-traces-sample.jsonl"
+  export OTEL_FLATTEN_OUTPUT="$BATS_TEST_TMPDIR/test-runs.jsonl"
 }
 
 # =========================================================================
