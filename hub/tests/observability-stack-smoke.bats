@@ -124,3 +124,50 @@ setup() {
   image=$(echo "$cfg" | jq -r '.services.grafana.image')
   [ "$image" = "grafana/grafana:11.4.0" ]
 }
+
+# =========================================================================
+# Step 9 — Collector config structural assertions (AC-1, AC-10)
+# =========================================================================
+
+COLLECTOR_CFG="$BATS_TEST_DIRNAME/../../.ccanvil/observability/otel-collector-config.yaml"
+
+@test "AC-1: collector config declares OTLP receiver on gRPC 4317 + HTTP 4318" {
+  [ -f "$COLLECTOR_CFG" ] || skip "collector config not yet created"
+  grep -qE 'endpoint: 0\.0\.0\.0:4317' "$COLLECTOR_CFG"
+  grep -qE 'endpoint: 0\.0\.0\.0:4318' "$COLLECTOR_CFG"
+}
+
+@test "AC-1: collector declares traces pipeline with receivers=[otlp]" {
+  [ -f "$COLLECTOR_CFG" ] || skip "collector config not yet created"
+  # The traces pipeline must include the otlp receiver.
+  awk '/^  pipelines:/,/^$/' "$COLLECTOR_CFG" | grep -qE 'receivers: \[otlp\]'
+}
+
+@test "AC-1+AC-10: collector traces pipeline exports to both tempo + file" {
+  [ -f "$COLLECTOR_CFG" ] || skip "collector config not yet created"
+  # The traces pipeline must include both otlphttp/tempo and file exporters.
+  local exporters
+  exporters=$(awk '/^  pipelines:/,/^$/' "$COLLECTOR_CFG" | grep -E 'exporters: \[')
+  echo "$exporters" | grep -qE 'otlphttp/tempo'
+  echo "$exporters" | grep -qE '\bfile\b'
+}
+
+@test "AC-10: fileexporter writes to /var/lib/otel/raw-traces.jsonl (mount target)" {
+  [ -f "$COLLECTOR_CFG" ] || skip "collector config not yet created"
+  grep -qE 'path: /var/lib/otel/raw-traces\.jsonl' "$COLLECTOR_CFG"
+}
+
+@test "AC-10: fileexporter declares rotation (operational concern, not contract)" {
+  [ -f "$COLLECTOR_CFG" ] || skip "collector config not yet created"
+  grep -qE 'rotation:' "$COLLECTOR_CFG"
+  grep -qE 'max_megabytes:' "$COLLECTOR_CFG"
+}
+
+@test "AC-2: collector declares health_check extension on port 13133" {
+  [ -f "$COLLECTOR_CFG" ] || skip "collector config not yet created"
+  # Two independent assertions are sufficient — the file structure pins
+  # health_check as the extension name + 13133 as the endpoint port.
+  grep -qE '^  health_check:' "$COLLECTOR_CFG"
+  grep -qE 'endpoint: 0\.0\.0\.0:13133' "$COLLECTOR_CFG"
+  grep -qE '^  extensions: \[health_check\]' "$COLLECTOR_CFG"
+}
