@@ -28,19 +28,97 @@ Catalog of canonical invocation sites in the hub. Drift-guarded by `hub/tests/te
 
 ## Redundancy
 
-Filled in Step 2 (BTS-508 plan).
+Overlap patterns observed during BTS-497 session 57 (the origin incident — ~2+ hours of test-wait time on a single ship) and validated against the audit catalog above.
+
+### Pattern 1: /stasis re-runs manifest validate after /review on the same commit
+
+- **Duplicate sites:** `.claude/commands/review.md` (Step 0) → `.claude/skills/stasis/SKILL.md` (step 12).
+- **Same HEAD, same diff, no code change in between.** /review just emitted the validate envelope; /stasis discards it and re-runs.
+- **Candidate state-key:** `last_manifest_validate_commit == HEAD AND manifest_tracked_files_changed_since_last_validate == 0` → skip the second run, surface the cached result.
+
+### Pattern 2: /recall re-runs manifest validate at session start when /stasis just ran it
+
+- **Duplicate sites:** `.claude/skills/stasis/SKILL.md` (step 12) → `.claude/skills/recall/SKILL.md` (step 11).
+- **Across-session duplicate.** /stasis writes the validate result for the session boundary; /recall ignores it and runs validate again at the next session's start.
+- **Candidate state-key:** `last_manifest_validate_commit == HEAD` after persistence reload → /recall reads the cached envelope.
+
+### Pattern 3: /stasis re-runs full bats suite after /pr just ran it
+
+- **Duplicate sites:** `.claude/commands/pr.md` (Step 2) → `.claude/skills/stasis/SKILL.md` (Tests line).
+- **/pr → /ship → /stasis lifecycle path.** /pr ran the full suite ~5 min ago; main is unchanged between the merge and the stasis snapshot.
+- **Candidate state-key:** `last_full_suite_commit == HEAD AND files_changed_since_last_full_suite == 0` → skip /stasis's re-run.
+
+### Pattern 4 (cross-gate): code-reviewer agent re-reads validate output /review already produced
+
+- **Duplicate sites:** `.claude/commands/review.md` (Step 0) → `.claude/agents/code-reviewer.md` (step 5).
+- **Advisory re-read, not re-invocation** — but the agent's prompt currently instructs it to consult the same envelope structure. As long as `/review` caches the envelope in-process before spawning the agent, no duplicate work fires. Documented here for completeness; the cache pattern is the mitigation.
 
 ## Framework
 
-Filled in Step 2 (BTS-508 plan).
+State + intent + scope drive every test-run decision. The gate table:
+
+| Phase | State | Intent | Scope |
+|-------|-------|--------|-------|
+| TDD-cycle | per-AC commit + targeted file edits | "did my latest change keep the failing test failing / passing" | Only the bats file under active TDD |
+| pre-review | branch-local commits since last manifest-validate run | "is the diff manifest-correct (no orphaned callers, deps, etc.)" | manifest validate, gated on `manifest_tracked_files_changed_since_last_validate > 0` |
+| pre-commit | files in `git diff --cached` | "do touched bats files still pass" | Only the bats files in the staged diff (never full suite) |
+| pre-merge | branch HEAD vs main | "is the full state of the branch shippable" | Full bats suite + manifest validate. THE load-bearing gate. |
+| session-boundary | HEAD of current branch | "record state at boundary; no re-verification" | None. /stasis records, doesn't test. Validate output is documentation, not gating. |
+| post-merge | merged commit on main | "/pr already verified — nothing to re-run" | None. /ship is record-keeping. |
+
+**Universal rule:** if `state == "unchanged since last <substrate> run on this commit"`, skip and surface the cached result. The substrate writes its own success state; consumers read state via `bash .ccanvil/scripts/docs-check.sh test-state`.
 
 ## Decision Tree
 
-Filled in Step 2 (BTS-508 plan).
+### TDD-cycle
+
+```
+files_changed_since_last_touched_bats > 0 ? → run targeted bats file
+otherwise → no-op (file already verified at this content)
+```
+
+### pre-review (/review Step 0)
+
+```
+test-state envelope empty (no prior validate) ? → run manifest validate (fail-safe)
+last_manifest_validate_commit != HEAD ? → run manifest validate (different commit)
+manifest_tracked_files_changed_since_last_validate > 0 ? → run manifest validate
+otherwise → SKIP and emit `SKIP: manifest validate — no manifest-tracked files changed since <SHA>`
+```
+
+### pre-commit
+
+```
+staged diff touches bats files ? → run those bats files
+otherwise → no-op
+```
+
+### pre-merge (/pr Step 2)
+
+```
+ALWAYS run the full bats suite + manifest validate.
+This is the load-bearing gate. No skip path. State writers fire on success
+so downstream phases can skip.
+```
+
+### session-boundary (/stasis)
+
+```
+NO test invocation. Surface cached state from test-state envelope only.
+Validate output rendered as documentation in the Manifest Coverage section.
+```
+
+### post-merge (/ship, /land)
+
+```
+NO test invocation. /pr already verified the merge state.
+```
 
 ## Anti-Patterns
 
-Filled in Step 2 (BTS-508 plan).
+1. **Reflexive full-suite "just to be safe"** after a small change that touched zero suite-relevant files. The full suite already ran (or will run) at the pre-merge gate; mid-session re-runs cost wall time without adding signal.
+2. **Re-running manifest validate at every skill step** that mentions it. The envelope is cacheable per-commit; downstream consumers read state, not re-invoke the substrate.
+3. **Running the full bats suite to verify ONE bats file passes.** Use `bash bats <file>` (or `bats hub/tests/<file>`) directly. The full suite is for pre-merge state-of-the-branch verification, not per-file confirmation.
 
 <!-- NODE-SPECIFIC-START -->
 <!-- Add project-specific content below this line. -->

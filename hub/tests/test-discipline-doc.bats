@@ -53,3 +53,42 @@ DOC="$BATS_TEST_DIRNAME/../../docs/research/test-discipline-research.md"
   grep -qF 'module-manifest.sh validate' "$DOC"
   grep -qF 'test-suite-run' "$DOC"
 }
+
+@test "AC-2: redundancy analysis names >=3 overlap patterns" {
+  set -e
+  local count
+  count=$(awk '/^## Redundancy/{flag=1; next} /^## /{flag=0} flag && /^### Pattern [0-9]+:/' "$DOC" | wc -l | tr -d ' ')
+  [ "$count" -ge 3 ]
+}
+
+@test "AC-2: each redundancy pattern names duplicate sites and a candidate state-key" {
+  set -e
+  awk '/^## Redundancy/{flag=1; next} /^## /{flag=0} flag' "$DOC" > "$BATS_TEST_TMPDIR/red.md"
+  # Each pattern block must reference at least one site path AND a state-key token.
+  grep -qF '.claude/' "$BATS_TEST_TMPDIR/red.md"
+  grep -qE 'last_(full_suite|manifest_validate)_(commit|at)' "$BATS_TEST_TMPDIR/red.md"
+}
+
+@test "AC-3: framework section contains the gate table with all 6 phases" {
+  set -e
+  awk '/^## Framework/{flag=1; next} /^## /{flag=0} flag' "$DOC" > "$BATS_TEST_TMPDIR/fw.md"
+  local phases=(TDD-cycle pre-review pre-commit pre-merge session-boundary post-merge)
+  local p
+  for p in "${phases[@]}"; do
+    grep -qF "$p" "$BATS_TEST_TMPDIR/fw.md" || { echo "missing phase: $p" >&2; return 1; }
+  done
+}
+
+@test "AC-3: framework gate table has state/intent/scope columns" {
+  set -e
+  awk '/^## Framework/{flag=1; next} /^## /{flag=0} flag' "$DOC" > "$BATS_TEST_TMPDIR/fw.md"
+  # Look for a markdown table header row containing all three column names.
+  grep -qE '\| *Phase *\|.*State.*\|.*Intent.*\|.*Scope' "$BATS_TEST_TMPDIR/fw.md"
+}
+
+@test "AC-3: decision tree section has one tree per gate (>=6 gate headers)" {
+  set -e
+  local count
+  count=$(awk '/^## Decision Tree/{flag=1; next} /^## /{flag=0} flag && /^### /' "$DOC" | wc -l | tr -d ' ')
+  [ "$count" -ge 6 ]
+}
