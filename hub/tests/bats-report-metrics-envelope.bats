@@ -64,7 +64,7 @@ seed_bats() {
   BATS_REPORT_HAS_PARALLEL=1 \
   BATS_REPORT_PERF_CORES=12 \
   BATS_REPORT_STATE_DIR="$WORK/state" \
-  run --separate-stderr bash "$REPORT" --json --parallel "$WORK/pass.bats"
+  run --separate-stderr bash "$REPORT" --json --parallel --no-telemetry "$WORK/pass.bats"
   [ "$status" -eq 0 ]
   echo "$output" | jq -e '.jobs == 12'
 }
@@ -131,7 +131,7 @@ seed_bats() {
 
   BATS_REPORT_STATE_DIR="$state_dir" bash "$REPORT" --json "$WORK/pass.bats" >/dev/null
   BATS_REPORT_HAS_PARALLEL=1 BATS_REPORT_PERF_CORES=4 BATS_REPORT_STATE_DIR="$state_dir" \
-    bash "$REPORT" --json --parallel "$WORK/pass.bats" >/dev/null
+    bash "$REPORT" --json --parallel --no-telemetry "$WORK/pass.bats" >/dev/null
 
   jsonl="$state_dir/bats-runs.jsonl"
   serial_line=$(sed -n '1p' "$jsonl")
