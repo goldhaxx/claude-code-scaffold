@@ -8,7 +8,7 @@
 
 ## Summary
 
-ccanvil's development process has NO clearly-defined gates for when test suites run; tests fire ad-hoc with zero awareness of cumulative cost or redundancy. BTS-497 session 57 burned ~2+ hours on redundant test-waits (manifest validate ran 6-8× at ~7min each; full bats suite ran 3× where 1 was load-bearing). This ship audits current invocation sites, codifies a state/intent/logic-driven framework as a project rule, and builds a `docs-check.sh test-state` substrate primitive that skills consult to skip redundant verification. Thesis (operator-locked): full suite + manifest validate run ONCE, as one of the very last steps before merge.
+ccanvil's development process has NO clearly-defined gates for when test suites run; tests fire ad-hoc with zero awareness of cumulative cost or redundancy. BTS-497 session 57 burned \~2+ hours on redundant test-waits (manifest validate ran 6-8× at \~7min each; full bats suite ran 3× where 1 was load-bearing). This ship audits current invocation sites, codifies a state/intent/logic-driven framework as a project rule, and builds a `docs-check.sh test-state` substrate primitive that skills consult to skip redundant verification. Thesis (operator-locked): full suite + manifest validate run ONCE, as one of the very last steps before merge.
 
 ## Job To Be Done
 
@@ -45,7 +45,7 @@ Each criterion is independently testable. Binary pass/fail.
 ## Affected Files
 
 | File | Change |
-|------|--------|
+| -- | -- |
 | `docs/research/test-discipline-research.md` | New — audit catalog + redundancy analysis + framework + decision tree |
 | `.claude/rules/test-discipline.md` | New — atomized rule (BTS-387 pattern); gate table + anti-patterns + anchors.evidence pointer |
 | `.claude/commands/review.md` | Modified — Step 0 consults `test-state`; reference test-discipline.md |
@@ -60,25 +60,25 @@ Each criterion is independently testable. Binary pass/fail.
 
 ## Dependencies
 
-- **Requires:** BTS-507 merged (bats-report-stub-helper eliminates pre-warm trap that would otherwise distort the full-suite state writer's commit-SHA semantics).
-- **Blocked by:** none.
-- **Blocks:** real downstream-velocity work — until gates are clear, every dev cycle inherits the current 2+ hour test-wait tax.
+* **Requires:** BTS-507 merged (bats-report-stub-helper eliminates pre-warm trap that would otherwise distort the full-suite state writer's commit-SHA semantics).
+* **Blocked by:** none.
+* **Blocks:** real downstream-velocity work — until gates are clear, every dev cycle inherits the current 2+ hour test-wait tax.
 
 ## Out of Scope
 
-- **Manifest-validate's own efficiency** (captured separately as BTS-498). State-tracking can skip redundant runs but doesn't make each run faster.
-- **Cross-run test caching** (no parallel-test result memoization across runs, no CI cache integration).
-- **Auto-skip inside the TDD inner loop.** Per-AC running is targeted-file, not full-suite; not in scope for test-state consumption.
-- **Schema versioning of the state file.** Premature; empty-on-missing (AC-9) covers forward-compat.
-- **Migration of every reflexive-run site.** /review is the demonstration consumer (AC-8); rewiring /stasis, /recall, and others is deferred to /plan or follow-up tickets.
+* **Manifest-validate's own efficiency** (captured separately as BTS-498). State-tracking can skip redundant runs but doesn't make each run faster.
+* **Cross-run test caching** (no parallel-test result memoization across runs, no CI cache integration).
+* **Auto-skip inside the TDD inner loop.** Per-AC running is targeted-file, not full-suite; not in scope for test-state consumption.
+* **Schema versioning of the state file.** Premature; empty-on-missing (AC-9) covers forward-compat.
+* **Migration of every reflexive-run site.** /review is the demonstration consumer (AC-8); rewiring /stasis, /recall, and others is deferred to /plan or follow-up tickets.
 
 ## Implementation Notes
 
-- **Atom + research-doc pattern** mirrors BTS-387 verbatim: tier-0 frontmatter + manifest block in the atom; full audit + decision tree in `docs/research/test-discipline-research.md`; atom references via `anchors.evidence`.
-- **State file format** is a flat JSON object with epoch + commit SHA fields; no schema header. The empty-on-missing fail-safe (AC-9) is the forward-compat mechanism.
-- **No live-API risk** — pure local-state substrate; no external contracts.
-- **TDD cadence (per the rule this ship codifies):** during iteration run only `bash bats hub/tests/test-state.bats` plus any directly-touched bats. Full-suite at PR finalize per AC-10.
-- **AC-8 picks `/review` as the first consumer** because it's the lowest-blast-radius skip path — already a documentation-and-review pass, and skipping the validate when nothing changed is a clean win with a clean log message.
+* **Atom + research-doc pattern** mirrors BTS-387 verbatim: tier-0 frontmatter + manifest block in the atom; full audit + decision tree in `docs/research/test-discipline-research.md`; atom references via `anchors.evidence`.
+* **State file format** is a flat JSON object with epoch + commit SHA fields; no schema header. The empty-on-missing fail-safe (AC-9) is the forward-compat mechanism.
+* **No live-API risk** — pure local-state substrate; no external contracts.
+* **TDD cadence (per the rule this ship codifies):** during iteration run only `bash bats hub/tests/test-state.bats` plus any directly-touched bats. Full-suite at PR finalize per AC-10.
+* **AC-8 picks** `/review` **as the first consumer** because it's the lowest-blast-radius skip path — already a documentation-and-review pass, and skipping the validate when nothing changed is a clean win with a clean log message.
 
 <!-- NODE-SPECIFIC-START -->
 <!-- Add project-specific content below this line. -->
