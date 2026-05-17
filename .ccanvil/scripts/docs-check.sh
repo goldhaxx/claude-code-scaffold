@@ -8353,6 +8353,58 @@ cmd_test_state() {
     }'
 }
 
+# @manifest
+# id: cmd_check_skip_validate
+# caller:
+#   - .claude/commands/review.md
+#   - hub/tests/review-skip-validate.bats
+# side-effect: none (read-only decision)
+# depends-on:
+#   - cmd_test_state
+# failure-mode: fail-safe-no-skip-on-empty-state
+# BTS-508 — emits the /review skip decision envelope based on cmd_test_state's
+# output. Shape: `{skip: bool, reason: string, sha?: string}`. Skip fires iff
+# state has a last_manifest_validate_commit matching HEAD AND zero allowlisted
+# files changed. Empty / mismatched / changes-detected paths all return
+# `{skip: false}` so /review runs the validate (fail-safe per AC-9).
+cmd_check_skip_validate() {
+  local project_dir="."
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --project-dir) project_dir="$2"; shift 2 ;;
+      -h|--help)
+        echo "Usage: docs-check.sh check-skip-validate [--project-dir <path>]" >&2
+        return 0
+        ;;
+      *) echo "Usage: docs-check.sh check-skip-validate [--project-dir <path>]" >&2; return 2 ;;
+    esac
+  done
+
+  local state
+  state=$(cmd_test_state --project-dir "$project_dir")
+
+  local last_sha changed head_sha
+  last_sha=$(printf '%s' "$state" | jq -r '.last_manifest_validate_commit // ""')
+  changed=$(printf '%s' "$state" | jq -r '.manifest_tracked_files_changed_since_last_validate // 0')
+  head_sha=$(cd "$project_dir" && git rev-parse HEAD 2>/dev/null || echo "")
+
+  if [[ -z "$last_sha" || -z "$head_sha" ]]; then
+    jq -n '{skip: false, reason: "no-prior-validate"}'
+    return 0
+  fi
+
+  if [[ "$last_sha" != "$head_sha" ]]; then
+    jq -n '{skip: false, reason: "commit-mismatch"}'
+    return 0
+  fi
+
+  if [[ "$changed" == "0" ]]; then
+    jq -n --arg sha "$last_sha" '{skip: true, reason: "no-manifest-tracked-changes", sha: $sha}'
+  else
+    jq -n --argjson n "$changed" '{skip: false, reason: ("files-changed:" + ($n | tostring))}'
+  fi
+}
+
 cmd="${1:-}"
 shift || true
 
@@ -8419,6 +8471,7 @@ case "$cmd" in
   rule-resolve)      cmd_rule_resolve "$@" ;;
   test-suite-run)    cmd_test_suite_run "$@" ;;
   test-state)        cmd_test_state "$@" ;;
+  check-skip-validate) cmd_check_skip_validate "$@" ;;
   *)
     _print_usage
     exit 1
