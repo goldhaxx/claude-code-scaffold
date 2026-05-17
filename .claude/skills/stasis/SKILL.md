@@ -77,7 +77,7 @@ Collect these inputs via scripts — all deterministic, all cheap:
 9. `bash .ccanvil/scripts/context-budget.sh check` (if available) — context budget HEALTHY/WARNING/CRITICAL.
 10. `git log --oneline -20` — recent commit history.
 11. `git show HEAD~1:docs/stasis.md 2>/dev/null || true` — the prior stasis snapshot, if any. If the command fails (no prior), proceed and note "First stasis — no prior state to compare" in the Cross-Session Patterns section.
-12. `bash .ccanvil/scripts/module-manifest.sh validate --json 2>/dev/null` (BTS-239, if `.ccanvil/manifest-allowlist.txt` exists) — capture `{coverage: {covered, total}, drift: [...], status}` for the Manifest Coverage section. When the allowlist is missing or empty, the substrate emits `{coverage:{covered:0,total:0}, drift:[], status:"ok"}` — surface the literal `Manifest coverage: N/A (no allowlist yet).` instead.
+12. `bash .ccanvil/scripts/module-manifest.sh validate --json 2>/dev/null` (BTS-239, if `.ccanvil/manifest-allowlist.txt` exists) — capture `{coverage: {covered, total}, drift: [...], status}` for the Manifest Coverage section. When the allowlist is missing or empty, the substrate emits `{coverage:{covered:0,total:0}, drift:[], status:"ok"}` — surface the literal `Manifest coverage: N/A (no allowlist yet).` instead. Per `.claude/rules/test-discipline.md` session-boundary phase, /stasis records cached state rather than re-running validate; consult `docs-check.sh test-state` first when the prior validate covers the same commit.
 
 ## Determine stasis kind — feature vs session
 

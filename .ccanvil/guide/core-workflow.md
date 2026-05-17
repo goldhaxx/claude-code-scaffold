@@ -101,6 +101,8 @@ flowchart TD
 
 **Live-API validation gate (BTS-171):** when a plan step flags a live-API contract risk ("if the live API rejects, adjust", "exact filter shape may not work", etc.), the implementation must run one live call against the risky endpoint and confirm success BEFORE commit and BEFORE `/review`. Stubs accept any shape; only live calls verify contract. See `.claude/rules/tdd.md#live-api-validation-gate`.
 
+**Test-run discipline (BTS-508):** long-running test substrates (full bats suite, manifest validate) run once at the pre-merge gate, not reflexively mid-cycle. Skills consult `docs-check.sh test-state` to detect when a prior run still covers the current commit + diff and skip redundant verification (fail-safe: empty state → run). Rule: `.claude/rules/test-discipline.md`. Audit + decision trees: `docs/research/test-discipline-research.md`.
+
 ## Closing the feature (merge → auto-complete)
 
 `/pr → merge → docs-check.sh land` transitions the spec archive to `Complete` automatically. No manual `docs-check.sh complete <id>` is needed in the normal flow.

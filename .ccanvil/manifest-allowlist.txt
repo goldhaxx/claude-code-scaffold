@@ -262,3 +262,8 @@
 .claude/commands/review.md
 .claude/commands/security-audit.md
 .ccanvil/observability/otel-flatten.sh
+
+# BTS-508 — test-discipline cluster.
+.ccanvil/scripts/docs-check.sh:cmd_test_state
+.ccanvil/scripts/docs-check.sh:cmd_check_skip_validate
+.claude/rules/test-discipline.md

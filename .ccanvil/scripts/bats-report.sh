@@ -460,6 +460,35 @@ else
   echo "WARN: bats-runs.jsonl append skipped — could not write $jsonl_path" >&2
 fi
 
+# BTS-508 AC-7: write test-state full-suite marker on exit-0 when invoked as
+# the canonical full-suite (gated by BATS_REPORT_FULL_SUITE=1, set by the
+# docs-check.sh test-suite-run dispatcher). Single-file invocations from
+# BTS-507 stub-helper tests and TDD inner loops skip the writer so they
+# never pollute the real state file.
+if [[ "${BATS_REPORT_FULL_SUITE:-0}" == "1" && "$bats_exit" -eq 0 ]]; then
+  ts_file="$state_dir/test-state.json"
+  ts_sha=$(git rev-parse HEAD 2>/dev/null || echo "")
+  if [[ -n "$ts_sha" ]]; then
+    ts_prior="{}"
+    if [[ -f "$ts_file" ]]; then
+      ts_prior=$(cat "$ts_file" 2>/dev/null)
+      if ! printf '%s' "$ts_prior" | jq -e . >/dev/null 2>&1; then
+        ts_prior="{}"
+      fi
+    fi
+    ts_epoch=$(date +%s)
+    mkdir -p "$state_dir" 2>/dev/null
+    if printf '%s' "$ts_prior" | jq --arg sha "$ts_sha" --argjson at "$ts_epoch" \
+      '. + {last_full_suite_commit: $sha, last_full_suite_at: $at}' \
+      > "$ts_file.tmp" 2>/dev/null; then
+      mv "$ts_file.tmp" "$ts_file"
+    else
+      rm -f "$ts_file.tmp"
+      echo "WARN: test-state full-suite write skipped — could not update $ts_file" >&2
+    fi
+  fi
+fi
+
 # BTS-497 AC-12d: invoke otel-flatten.sh after every --parallel run.
 # Exit-code precedence rule: when flatten fails, propagate 78 regardless
 # of bats_exit (flatten failure is the "running blind" signal that AC-2

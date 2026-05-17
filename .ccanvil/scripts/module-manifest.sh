@@ -1033,6 +1033,38 @@ PY
 
   if (( has_block )); then return 2; fi
   if (( has_warn )) && (( strict )); then return 2; fi
+
+  # BTS-508 AC-7: write test-state manifest-validate marker on exit-0 full
+  # validate (skip when changed-only — partial scope shouldn't record as
+  # full validate state). Atomic-by-replace; preserves bats-report.sh's
+  # last_full_suite_* fields when present.
+  if (( changed_only == 0 )); then
+    local ts_state_dir="${BATS_REPORT_STATE_DIR:-.ccanvil/state}"
+    local ts_file="$ts_state_dir/test-state.json"
+    local ts_sha
+    ts_sha=$(git rev-parse HEAD 2>/dev/null || echo "")
+    if [[ -n "$ts_sha" ]]; then
+      local ts_prior="{}"
+      if [[ -f "$ts_file" ]]; then
+        ts_prior=$(cat "$ts_file" 2>/dev/null)
+        if ! printf '%s' "$ts_prior" | jq -e . >/dev/null 2>&1; then
+          ts_prior="{}"
+        fi
+      fi
+      local ts_epoch
+      ts_epoch=$(date +%s)
+      mkdir -p "$ts_state_dir" 2>/dev/null
+      if printf '%s' "$ts_prior" | jq --arg sha "$ts_sha" --argjson at "$ts_epoch" \
+        '. + {last_manifest_validate_commit: $sha, last_manifest_validate_at: $at}' \
+        > "$ts_file.tmp" 2>/dev/null; then
+        mv "$ts_file.tmp" "$ts_file"
+      else
+        rm -f "$ts_file.tmp"
+        echo "WARN: test-state manifest-validate write skipped — could not update $ts_file" >&2
+      fi
+    fi
+  fi
+
   return 0
 }
 

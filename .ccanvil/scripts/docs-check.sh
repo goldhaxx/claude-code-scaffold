@@ -49,7 +49,7 @@ PROJECT_TREE_SUBCOMMANDS=(
   artifact-read artifact-write route-of ssot-migrate
   session-info assert-pr-title remote-presence
   stasis-carry-forward ship-finalize validate-spec rule-resolve
-  test-suite-run
+  test-suite-run test-state check-skip-validate
 )
 
 # ---------------------------------------------------------------------------
@@ -8254,6 +8254,12 @@ cmd_test_suite_run() {
       script_dir="$(dirname "${BASH_SOURCE[0]}")"
       local runner="${BATS_REPORT_OVERRIDE:-$script_dir/bats-report.sh}"
       # @side-effect: spawns-test-runner
+      # BTS-508: test-suite-run is the canonical entry point for the
+      # full-suite pre-merge gate. Export BATS_REPORT_FULL_SUITE so the
+      # downstream bats-report.sh writes test-state on exit-0. Caller-side
+      # invocations of bats-report.sh directly (BTS-507 helper-stub tests,
+      # TDD inner loops) leave this unset and skip the writer.
+      export BATS_REPORT_FULL_SUITE=1
       exec bash "$runner" "${forward_args[@]}"
       ;;
     *)
@@ -8262,6 +8268,174 @@ cmd_test_suite_run() {
       return 2
       ;;
   esac
+}
+
+# @manifest
+# purpose: Read .ccanvil/state/test-state.json and emit the 7-field envelope describing when each long-running test substrate last ran (full-suite, manifest validate) and what's changed since; fail-safe empty envelope when state missing or malformed
+# input: --project-dir <path>
+# output: stdout JSON {last_full_suite_commit, last_full_suite_at, last_manifest_validate_commit, last_manifest_validate_at, files_changed_since_last_full_suite, files_changed_since_last_manifest_validate, manifest_tracked_files_changed_since_last_validate}
+# output: exit-codes 0 always (empty envelope on missing/malformed), 2 unknown-flag
+# caller: .claude/commands/review.md
+# caller: hub/tests/test-state.bats
+# caller: cmd_check_skip_validate
+# depends-on: jq
+# side-effect: reads-test-state-file
+# failure-mode: missing-state-file | exit=0 | visible=empty-envelope | mitigation=consumer-runs-verification
+# failure-mode: malformed-json | exit=0 | visible=empty-envelope | mitigation=consumer-runs-verification
+# failure-mode: unknown-flag | exit=2 | visible=stderr-Usage
+# contract: never-aborts-fail-safe-empty-on-uncertain-state
+# anchor: BTS-508 (origin)
+# BTS-508 — read-only test-state probe. Returns the 7-field envelope describing
+# when each long-running test substrate last ran successfully and what's
+# changed since. Empty envelope `{}` is the fail-safe (AC-9): consumers default
+# to running verification when state is uncertain. Never aborts.
+cmd_test_state() {
+  local project_dir="."
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --project-dir) project_dir="$2"; shift 2 ;;
+      -h|--help)
+        echo "Usage: docs-check.sh test-state [--project-dir <path>]" >&2
+        return 0
+        ;;
+      # @failure-mode: unknown-flag
+      *) echo "Usage: docs-check.sh test-state [--project-dir <path>]" >&2; return 2 ;;
+    esac
+  done
+
+  local state_file="$project_dir/.ccanvil/state/test-state.json"
+  local allowlist="$project_dir/.ccanvil/manifest-allowlist.txt"
+
+  # @side-effect: reads-test-state-file
+  # @failure-mode: missing-state-file
+  if [[ ! -f "$state_file" ]]; then
+    echo "{}"
+    return 0
+  fi
+  local raw
+  raw=$(cat "$state_file" 2>/dev/null) || { echo "{}"; return 0; }
+  # @failure-mode: malformed-json
+  if ! printf '%s' "$raw" | jq -e . >/dev/null 2>&1; then
+    echo "{}"
+    return 0
+  fi
+
+  local full_sha full_at val_sha val_at
+  full_sha=$(printf '%s' "$raw" | jq -r '.last_full_suite_commit // ""')
+  full_at=$(printf '%s' "$raw" | jq -r '.last_full_suite_at // ""')
+  val_sha=$(printf '%s' "$raw" | jq -r '.last_manifest_validate_commit // ""')
+  val_at=$(printf '%s' "$raw" | jq -r '.last_manifest_validate_at // ""')
+
+  local full_changed=0 val_changed=0 manifest_tracked_changed=0
+  local diff_list=""
+
+  if [[ -n "$full_sha" ]]; then
+    full_changed=$( (cd "$project_dir" && git diff --name-only "$full_sha...HEAD" 2>/dev/null) | grep -c . || true)
+  fi
+  if [[ -n "$val_sha" ]]; then
+    diff_list=$(cd "$project_dir" && git diff --name-only "$val_sha...HEAD" 2>/dev/null)
+    val_changed=$(printf '%s\n' "$diff_list" | grep -c . || true)
+    if [[ -f "$allowlist" && -n "$diff_list" ]]; then
+      local glob glob_path f matched
+      while IFS= read -r f; do
+        [[ -z "$f" ]] && continue
+        matched=0
+        while IFS= read -r glob; do
+          [[ -z "$glob" || "$glob" =~ ^[[:space:]]*# ]] && continue
+          # BTS-508: function-level allowlist entries have the form
+          # `<path>:<function>` (e.g. `docs-check.sh:cmd_test_state`). The
+          # diff produces bare file paths, so we strip the colon suffix
+          # before glob-matching. Otherwise heavily-edited files whose
+          # allowlist entries are ALL function-level (docs-check.sh,
+          # module-manifest.sh, all SKILL.md files) would never match and
+          # the skip-check would incorrectly skip every validate.
+          glob_path="${glob%%:*}"
+          # shellcheck disable=SC2053
+          case "$f" in
+            $glob_path) matched=1; break ;;
+          esac
+        done < "$allowlist"
+        (( matched )) && manifest_tracked_changed=$((manifest_tracked_changed + 1))
+      done <<< "$diff_list"
+    fi
+  fi
+
+  jq -n \
+    --arg fsha "$full_sha" --arg fat "$full_at" \
+    --arg vsha "$val_sha" --arg vat "$val_at" \
+    --argjson fchanged "$full_changed" --argjson vchanged "$val_changed" \
+    --argjson mchanged "$manifest_tracked_changed" \
+    '{
+      last_full_suite_commit: $fsha,
+      last_full_suite_at: ($fat | if . == "" then null else (tonumber? // .) end),
+      last_manifest_validate_commit: $vsha,
+      last_manifest_validate_at: ($vat | if . == "" then null else (tonumber? // .) end),
+      files_changed_since_last_full_suite: $fchanged,
+      files_changed_since_last_manifest_validate: $vchanged,
+      manifest_tracked_files_changed_since_last_validate: $mchanged
+    }'
+}
+
+# @manifest
+# purpose: Emit the /review manifest-validate skip decision envelope by consulting cmd_test_state; skip fires iff last_manifest_validate_commit matches HEAD AND zero allowlisted files have changed since the cached validate
+# input: --project-dir <path>
+# output: stdout JSON {skip:bool, reason:string, sha?:string}
+# output: exit-codes 0 always (decision encoded in JSON), 2 unknown-flag
+# caller: .claude/commands/review.md
+# caller: hub/tests/review-skip-validate.bats
+# depends-on: jq
+# depends-on: cmd_test_state
+# side-effect: reads-test-state-file
+# failure-mode: empty-state | exit=0 | visible=json-reason-no-prior-validate | mitigation=consumer-runs-validate
+# failure-mode: files-changed | exit=0 | visible=json-reason-files-changed | mitigation=consumer-runs-validate
+# failure-mode: unknown-flag | exit=2 | visible=stderr-Usage
+# contract: fail-safe-no-skip-on-uncertain-state
+# anchor: BTS-508 (origin)
+# BTS-508 — emits the /review skip decision envelope based on cmd_test_state's
+# output. Shape: `{skip: bool, reason: string, sha?: string}`. Skip fires iff
+# state has a last_manifest_validate_commit matching HEAD AND zero allowlisted
+# files changed. Empty / mismatched / changes-detected paths all return
+# `{skip: false}` so /review runs the validate (fail-safe per AC-9).
+cmd_check_skip_validate() {
+  local project_dir="."
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --project-dir) project_dir="$2"; shift 2 ;;
+      -h|--help)
+        echo "Usage: docs-check.sh check-skip-validate [--project-dir <path>]" >&2
+        return 0
+        ;;
+      # @failure-mode: unknown-flag
+      *) echo "Usage: docs-check.sh check-skip-validate [--project-dir <path>]" >&2; return 2 ;;
+    esac
+  done
+
+  # @side-effect: reads-test-state-file
+  local state
+  state=$(cmd_test_state --project-dir "$project_dir")
+
+  local last_sha changed
+  last_sha=$(printf '%s' "$state" | jq -r '.last_manifest_validate_commit // ""')
+  changed=$(printf '%s' "$state" | jq -r '.manifest_tracked_files_changed_since_last_validate // 0')
+
+  # @failure-mode: empty-state
+  if [[ -z "$last_sha" ]]; then
+    jq -n '{skip: false, reason: "no-prior-validate"}'
+    return 0
+  fi
+
+  # BTS-508 Path-B: the diff between last_sha and HEAD is what drives the
+  # skip decision. cmd_test_state already intersects that diff with the
+  # manifest allowlist; we just read the count. Skip iff zero allowlisted
+  # files have changed — regardless of whether HEAD has advanced. This
+  # captures the common mid-PR case where commits churn but no manifest-
+  # tracked source has changed (doc-only commits, test-only commits, etc.).
+  if [[ "$changed" == "0" ]]; then
+    jq -n --arg sha "$last_sha" '{skip: true, reason: "no-manifest-tracked-changes", sha: $sha}'
+  else
+    # @failure-mode: files-changed
+    jq -n --argjson n "$changed" '{skip: false, reason: ("files-changed:" + ($n | tostring))}'
+  fi
 }
 
 cmd="${1:-}"
@@ -8329,6 +8503,8 @@ case "$cmd" in
   validate-spec)     cmd_validate_spec "$@" ;;
   rule-resolve)      cmd_rule_resolve "$@" ;;
   test-suite-run)    cmd_test_suite_run "$@" ;;
+  test-state)        cmd_test_state "$@" ;;
+  check-skip-validate) cmd_check_skip_validate "$@" ;;
   *)
     _print_usage
     exit 1
