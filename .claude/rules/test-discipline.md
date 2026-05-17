@@ -51,7 +51,7 @@ Long-running test substrates are expensive. Test-run decisions are driven by thr
 2. **Re-running manifest validate** when the prior validate is cached for the same commit AND nothing manifest-tracked has changed.
 3. **Running the full suite to verify ONE file** — use the targeted runner instead.
 
-**SHOULD-I-RUN decision rule:** consult the `test-state` envelope before invoking any long-running substrate. Skip iff the last-run SHA matches HEAD AND zero relevant files have changed. Empty / mismatched / uncertain state → run (fail-safe).
+**SHOULD-I-RUN decision rule:** consult the `test-state` envelope before invoking any long-running substrate. Skip iff zero relevant files have changed since the last successful run (the diff between the cached SHA and HEAD, intersected with the allowlist, is empty). Mid-PR commits that touch only docs, tests, or non-allowlisted code still allow the skip. Empty / uncertain state → run (fail-safe).
 
 For the full audit catalog, redundancy analysis, framework derivation, and per-gate decision trees: see evidence anchor `docs/research/test-discipline-research.md`.
 

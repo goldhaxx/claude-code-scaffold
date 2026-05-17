@@ -33,9 +33,9 @@ Before spawning the code-reviewer agent, run two manifest pre-flight checks.
 bash .ccanvil/scripts/docs-check.sh check-skip-validate --project-dir .
 ```
 
-When the JSON envelope returns `{skip: true, sha: <SHA>}`, the last successful validate ran on the same commit AND zero allowlisted files have changed since. Emit `SKIP: manifest validate — no manifest-tracked files changed since <SHA>` on stdout and proceed directly to Check B. When `skip: false`, run Check A as normal.
+When the JSON envelope returns `{skip: true, sha: <SHA>}`, zero allowlisted files have changed since the last successful validate at `<SHA>` (the diff `<SHA>...HEAD` intersected with the manifest allowlist is empty). HEAD does not need to match `<SHA>` — mid-PR commits touching only docs, tests, or non-allowlisted code still allow the skip. Emit `SKIP: manifest validate — no manifest-tracked files changed since <SHA>` on stdout and proceed directly to Check B. When `skip: false`, run Check A as normal.
 
-The skip is fail-safe: empty state, commit mismatch, or detected changes ALL fall through to running the validate. See `.claude/rules/test-discipline.md` for the rationale.
+The skip is fail-safe: empty state or detected changes fall through to running the validate. See `.claude/rules/test-discipline.md` for the rationale.
 
 **Check A: structural drift (existing state).**
 

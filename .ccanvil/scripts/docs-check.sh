@@ -8277,6 +8277,7 @@ cmd_test_suite_run() {
 # output: exit-codes 0 always (empty envelope on missing/malformed), 2 unknown-flag
 # caller: .claude/commands/review.md
 # caller: hub/tests/test-state.bats
+# caller: .ccanvil/scripts/docs-check.sh:cmd_check_skip_validate
 # depends-on: jq
 # side-effect: reads-test-state-file
 # failure-mode: missing-state-file | exit=0 | visible=empty-envelope | mitigation=consumer-runs-verification
@@ -8335,15 +8336,23 @@ cmd_test_state() {
     diff_list=$(cd "$project_dir" && git diff --name-only "$val_sha...HEAD" 2>/dev/null)
     val_changed=$(printf '%s\n' "$diff_list" | grep -c . || true)
     if [[ -f "$allowlist" && -n "$diff_list" ]]; then
-      local glob f matched
+      local glob glob_path f matched
       while IFS= read -r f; do
         [[ -z "$f" ]] && continue
         matched=0
         while IFS= read -r glob; do
           [[ -z "$glob" || "$glob" =~ ^[[:space:]]*# ]] && continue
+          # BTS-508: function-level allowlist entries have the form
+          # `<path>:<function>` (e.g. `docs-check.sh:cmd_test_state`). The
+          # diff produces bare file paths, so we strip the colon suffix
+          # before glob-matching. Otherwise heavily-edited files whose
+          # allowlist entries are ALL function-level (docs-check.sh,
+          # module-manifest.sh, all SKILL.md files) would never match and
+          # the skip-check would incorrectly skip every validate.
+          glob_path="${glob%%:*}"
           # shellcheck disable=SC2053
           case "$f" in
-            $glob) matched=1; break ;;
+            $glob_path) matched=1; break ;;
           esac
         done < "$allowlist"
         (( matched )) && manifest_tracked_changed=$((manifest_tracked_changed + 1))
@@ -8378,7 +8387,6 @@ cmd_test_state() {
 # depends-on: cmd_test_state
 # side-effect: reads-test-state-file
 # failure-mode: empty-state | exit=0 | visible=json-reason-no-prior-validate | mitigation=consumer-runs-validate
-# failure-mode: commit-mismatch | exit=0 | visible=json-reason-commit-mismatch | mitigation=consumer-runs-validate
 # failure-mode: files-changed | exit=0 | visible=json-reason-files-changed | mitigation=consumer-runs-validate
 # failure-mode: unknown-flag | exit=2 | visible=stderr-Usage
 # contract: fail-safe-no-skip-on-uncertain-state
@@ -8406,23 +8414,22 @@ cmd_check_skip_validate() {
   local state
   state=$(cmd_test_state --project-dir "$project_dir")
 
-  local last_sha changed head_sha
+  local last_sha changed
   last_sha=$(printf '%s' "$state" | jq -r '.last_manifest_validate_commit // ""')
   changed=$(printf '%s' "$state" | jq -r '.manifest_tracked_files_changed_since_last_validate // 0')
-  head_sha=$(cd "$project_dir" && git rev-parse HEAD 2>/dev/null || echo "")
 
   # @failure-mode: empty-state
-  if [[ -z "$last_sha" || -z "$head_sha" ]]; then
+  if [[ -z "$last_sha" ]]; then
     jq -n '{skip: false, reason: "no-prior-validate"}'
     return 0
   fi
 
-  # @failure-mode: commit-mismatch
-  if [[ "$last_sha" != "$head_sha" ]]; then
-    jq -n '{skip: false, reason: "commit-mismatch"}'
-    return 0
-  fi
-
+  # BTS-508 Path-B: the diff between last_sha and HEAD is what drives the
+  # skip decision. cmd_test_state already intersects that diff with the
+  # manifest allowlist; we just read the count. Skip iff zero allowlisted
+  # files have changed — regardless of whether HEAD has advanced. This
+  # captures the common mid-PR case where commits churn but no manifest-
+  # tracked source has changed (doc-only commits, test-only commits, etc.).
   if [[ "$changed" == "0" ]]; then
     jq -n --arg sha "$last_sha" '{skip: true, reason: "no-manifest-tracked-changes", sha: $sha}'
   else

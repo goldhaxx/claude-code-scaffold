@@ -66,7 +66,7 @@ State + intent + scope drive every test-run decision. The gate table:
 | session-boundary | HEAD of current branch | "record state at boundary; no re-verification" | None. /stasis records, doesn't test. Validate output is documentation, not gating. |
 | post-merge | merged commit on main | "/pr already verified — nothing to re-run" | None. /ship is record-keeping. |
 
-**Universal rule:** if `state == "unchanged since last <substrate> run on this commit"`, skip and surface the cached result. The substrate writes its own success state; consumers read state via `bash .ccanvil/scripts/docs-check.sh test-state`.
+**Universal rule:** if `state == "no allowlisted file has changed since the last successful <substrate> run"`, skip and surface the cached result. HEAD does not need to match the cached SHA — only the diff (cached_sha..HEAD ∩ allowlist) needs to be empty. The substrate writes its own success state; consumers read state via `bash .ccanvil/scripts/docs-check.sh test-state` (or its decision-wrapper `check-skip-validate`).
 
 ## Decision Tree
 
@@ -81,10 +81,11 @@ otherwise → no-op (file already verified at this content)
 
 ```
 test-state envelope empty (no prior validate) ? → run manifest validate (fail-safe)
-last_manifest_validate_commit != HEAD ? → run manifest validate (different commit)
-manifest_tracked_files_changed_since_last_validate > 0 ? → run manifest validate
+manifest_tracked_files_changed_since_last_validate > 0 ? → run manifest validate (allowlisted file changed)
 otherwise → SKIP and emit `SKIP: manifest validate — no manifest-tracked files changed since <SHA>`
 ```
+
+Note: HEAD does not need to match the cached commit. The decision is driven by the diff intersected with the allowlist, not by SHA equality.
 
 ### pre-commit
 

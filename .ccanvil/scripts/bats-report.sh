@@ -477,6 +477,7 @@ if [[ "${BATS_REPORT_FULL_SUITE:-0}" == "1" && "$bats_exit" -eq 0 ]]; then
       fi
     fi
     ts_epoch=$(date +%s)
+    mkdir -p "$state_dir" 2>/dev/null
     if printf '%s' "$ts_prior" | jq --arg sha "$ts_sha" --argjson at "$ts_epoch" \
       '. + {last_full_suite_commit: $sha, last_full_suite_at: $at}' \
       > "$ts_file.tmp" 2>/dev/null; then

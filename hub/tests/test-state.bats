@@ -132,10 +132,14 @@ BATS
     BATS_REPORT_STATE_DIR=".ccanvil/state" \
     bash "$REPORT" --no-telemetry "$BATS_TEST_TMPDIR/pass.bats" >/dev/null 2>&1
 
-  # No state file written (or file exists from prior tests but the key absent).
+  # Unconditional assertion: either no state file at all, OR a state file
+  # without last_full_suite_commit populated. The earlier guarded form
+  # passed vacuously when the file was absent and asserted nothing in the
+  # success path.
   if [[ -f .ccanvil/state/test-state.json ]]; then
-    jq -e '.last_full_suite_commit == null or .last_full_suite_commit == ""' \
-      < .ccanvil/state/test-state.json
+    jq -e '(.last_full_suite_commit // "") == ""' < .ccanvil/state/test-state.json
+  else
+    true  # absence is also a valid success
   fi
 }
 
