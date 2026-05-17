@@ -1,11 +1,13 @@
 #!/usr/bin/env bats
 
+load _helpers/bats-report-stub
+
 setup() {
   set -e
+  stub_bats_report_prewarm
   REPO_ROOT="$(cd "$BATS_TEST_DIRNAME/../.." && pwd)"
   FIXTURE_DIR="$REPO_ROOT/hub/tests/fixtures/bats-progress"
   cd "$REPO_ROOT"
-  export BTS_MANIFEST_VALIDATE_CACHE=/tmp/bts-383-failures-test-bypass
 }
 
 @test "AC-2: --json envelope carries failures[] with shape on forced-fail fixture" {

@@ -7,9 +7,12 @@
 # per-test emission; (b) skips the post-run flatten step entirely so a
 # missing/empty raw-traces.jsonl does NOT propagate exit 78.
 
+load _helpers/bats-report-stub
+
 SCRIPT="$BATS_TEST_DIRNAME/../../.ccanvil/scripts/bats-report.sh"
 
 setup() {
+  stub_bats_report_prewarm
   STUB="$BATS_TEST_TMPDIR/stub.bats"
   cat > "$STUB" <<'EOF'
 #!/usr/bin/env bats
@@ -17,9 +20,6 @@ setup() {
 @test "pass two" { true; }
 EOF
   export BATS_REPORT_STATE_DIR="$BATS_TEST_TMPDIR/state"
-  local stub_cache="$BATS_TEST_TMPDIR/manifest-cache.json"
-  echo '{"coverage":{"covered":0,"total":0},"drift":[],"status":"ok"}' > "$stub_cache"
-  export BTS_MANIFEST_VALIDATE_CACHE="$stub_cache"
 }
 
 # =========================================================================

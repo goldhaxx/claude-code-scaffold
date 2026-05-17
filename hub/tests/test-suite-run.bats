@@ -5,6 +5,10 @@
 # fallback, default `bats`) from `.claude/ccanvil.json` and exec's the
 # corresponding runner. Today only `bats` is implemented; other providers
 # exit 2 with an explicit not-yet-implemented stderr.
+#
+# bats-report-stub: exempt — `bats-report.sh` appears here only inside
+# the per-test STUB script path and a `pr.md` content assertion; this file
+# does not invoke the real bats-report.sh.
 
 bats_require_minimum_version 1.5.0
 

@@ -6,10 +6,13 @@
 # Closes the operator-flagged 2026-05-16 visibility gap — previously
 # jobs/cpus/wall_ms only landed in --json mode and bats-runs.jsonl.
 
+load _helpers/bats-report-stub
+
 SCRIPT="$BATS_TEST_DIRNAME/../../.ccanvil/scripts/bats-report.sh"
 
 # Minimal stub bats file: 2 trivial passing tests.
 setup() {
+  stub_bats_report_prewarm
   STUB="$BATS_TEST_TMPDIR/stub.bats"
   cat > "$STUB" <<'EOF'
 #!/usr/bin/env bats
@@ -18,13 +21,6 @@ setup() {
 EOF
   export BATS_REPORT_STATE_DIR="$BATS_TEST_TMPDIR/state"
   mkdir -p "$BATS_REPORT_STATE_DIR"
-
-  # Skip the BTS-281 module-manifest pre-warm (~7 min on the full hub
-  # allowlist). Tests of bats-report.sh-as-substrate should always stub
-  # this — otherwise the 4× invocations here would take ~28 min.
-  local stub_cache="$BATS_TEST_TMPDIR/manifest-cache.json"
-  echo '{"coverage":{"covered":0,"total":0},"drift":[],"status":"ok"}' > "$stub_cache"
-  export BTS_MANIFEST_VALIDATE_CACHE="$stub_cache"
 
   # BTS-497 Step 13: bats-report.sh now invokes otel-flatten.sh after every
   # --parallel run. AC-11 tests don't care about flatten — give it a
