@@ -4,9 +4,12 @@
 
 bats_require_minimum_version 1.5.0
 
+load _helpers/bats-report-stub
+
 REPORT="$BATS_TEST_DIRNAME/../../.ccanvil/scripts/bats-report.sh"
 
 setup() {
+  stub_bats_report_prewarm
   WORK=$(mktemp -d)
 }
 

@@ -7,6 +7,9 @@
 # appearing OUTSIDE an `## Anchored on (...)` block. Emits warn-shape
 # `rule-vocabulary-leak` to info[]. Substrate-scope and hub-only-scope rules
 # are NOT scanned. Tokens inside an anchor block are exempt.
+#
+# bats-report-stub: exempt — `bats-report.sh` appears here only as a string
+# literal inside jq filter assertions; this file does not invoke the script.
 
 bats_require_minimum_version 1.5.0
 

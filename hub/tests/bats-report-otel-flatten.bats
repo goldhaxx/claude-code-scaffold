@@ -12,10 +12,13 @@
 # Collector; OTEL_FLATTEN_INPUT is overridden to a fixture so flatten
 # runs deterministically against known data.
 
+load _helpers/bats-report-stub
+
 SCRIPT="$BATS_TEST_DIRNAME/../../.ccanvil/scripts/bats-report.sh"
 FIXTURE="$BATS_TEST_DIRNAME/fixtures/raw-traces-sample.jsonl"
 
 setup() {
+  stub_bats_report_prewarm
   STUB="$BATS_TEST_TMPDIR/stub.bats"
   cat > "$STUB" <<'EOF'
 #!/usr/bin/env bats
@@ -33,13 +36,6 @@ EOF
   export CCANVIL_TELEMETRY_DISABLED=1
   export BATS_REPORT_STATE_DIR="$BATS_TEST_TMPDIR/state"
   export OTEL_FLATTEN_OUTPUT="$BATS_TEST_TMPDIR/test-runs.jsonl"
-
-  # Skip the BTS-281 module-manifest pre-warm. Each bats-report.sh call would
-  # otherwise spend ~7 min validating the full hub allowlist — irrelevant to
-  # this test surface and would multiply by 6× invocations.
-  local stub_cache="$BATS_TEST_TMPDIR/manifest-cache.json"
-  echo '{"coverage":{"covered":0,"total":0},"drift":[],"status":"ok"}' > "$stub_cache"
-  export BTS_MANIFEST_VALIDATE_CACHE="$stub_cache"
 }
 
 # =========================================================================
