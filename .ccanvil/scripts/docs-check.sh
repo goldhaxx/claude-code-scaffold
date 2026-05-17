@@ -8264,6 +8264,95 @@ cmd_test_suite_run() {
   esac
 }
 
+# @manifest
+# id: cmd_test_state
+# caller:
+#   - .claude/commands/review.md
+#   - hub/tests/test-state.bats
+# side-effect: none (read-only state probe)
+# depends-on:
+#   - .ccanvil/state/test-state.json
+#   - .ccanvil/manifest-allowlist.txt
+# failure-mode: empty-envelope-on-missing-or-malformed-state
+# BTS-508 — read-only test-state probe. Returns the 7-field envelope describing
+# when each long-running test substrate last ran successfully and what's
+# changed since. Empty envelope `{}` is the fail-safe (AC-9): consumers default
+# to running verification when state is uncertain. Never aborts.
+cmd_test_state() {
+  local project_dir="."
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --project-dir) project_dir="$2"; shift 2 ;;
+      -h|--help)
+        echo "Usage: docs-check.sh test-state [--project-dir <path>]" >&2
+        return 0
+        ;;
+      *) echo "Usage: docs-check.sh test-state [--project-dir <path>]" >&2; return 2 ;;
+    esac
+  done
+
+  local state_file="$project_dir/.ccanvil/state/test-state.json"
+  local allowlist="$project_dir/.ccanvil/manifest-allowlist.txt"
+
+  if [[ ! -f "$state_file" ]]; then
+    echo "{}"
+    return 0
+  fi
+  local raw
+  raw=$(cat "$state_file" 2>/dev/null) || { echo "{}"; return 0; }
+  if ! printf '%s' "$raw" | jq -e . >/dev/null 2>&1; then
+    echo "{}"
+    return 0
+  fi
+
+  local full_sha full_at val_sha val_at
+  full_sha=$(printf '%s' "$raw" | jq -r '.last_full_suite_commit // ""')
+  full_at=$(printf '%s' "$raw" | jq -r '.last_full_suite_at // ""')
+  val_sha=$(printf '%s' "$raw" | jq -r '.last_manifest_validate_commit // ""')
+  val_at=$(printf '%s' "$raw" | jq -r '.last_manifest_validate_at // ""')
+
+  local full_changed=0 val_changed=0 manifest_tracked_changed=0
+  local diff_list=""
+
+  if [[ -n "$full_sha" ]]; then
+    full_changed=$( (cd "$project_dir" && git diff --name-only "$full_sha...HEAD" 2>/dev/null) | grep -c . || true)
+  fi
+  if [[ -n "$val_sha" ]]; then
+    diff_list=$(cd "$project_dir" && git diff --name-only "$val_sha...HEAD" 2>/dev/null)
+    val_changed=$(printf '%s\n' "$diff_list" | grep -c . || true)
+    if [[ -f "$allowlist" && -n "$diff_list" ]]; then
+      local glob f matched
+      while IFS= read -r f; do
+        [[ -z "$f" ]] && continue
+        matched=0
+        while IFS= read -r glob; do
+          [[ -z "$glob" || "$glob" =~ ^[[:space:]]*# ]] && continue
+          # shellcheck disable=SC2053
+          case "$f" in
+            $glob) matched=1; break ;;
+          esac
+        done < "$allowlist"
+        (( matched )) && manifest_tracked_changed=$((manifest_tracked_changed + 1))
+      done <<< "$diff_list"
+    fi
+  fi
+
+  jq -n \
+    --arg fsha "$full_sha" --arg fat "$full_at" \
+    --arg vsha "$val_sha" --arg vat "$val_at" \
+    --argjson fchanged "$full_changed" --argjson vchanged "$val_changed" \
+    --argjson mchanged "$manifest_tracked_changed" \
+    '{
+      last_full_suite_commit: $fsha,
+      last_full_suite_at: ($fat | if . == "" then null else (tonumber? // .) end),
+      last_manifest_validate_commit: $vsha,
+      last_manifest_validate_at: ($vat | if . == "" then null else (tonumber? // .) end),
+      files_changed_since_last_full_suite: $fchanged,
+      files_changed_since_last_manifest_validate: $vchanged,
+      manifest_tracked_files_changed_since_last_validate: $mchanged
+    }'
+}
+
 cmd="${1:-}"
 shift || true
 
@@ -8329,6 +8418,7 @@ case "$cmd" in
   validate-spec)     cmd_validate_spec "$@" ;;
   rule-resolve)      cmd_rule_resolve "$@" ;;
   test-suite-run)    cmd_test_suite_run "$@" ;;
+  test-state)        cmd_test_state "$@" ;;
   *)
     _print_usage
     exit 1
