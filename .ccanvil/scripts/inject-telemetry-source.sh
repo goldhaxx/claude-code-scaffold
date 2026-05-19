@@ -110,6 +110,7 @@ _classify_file() {
     no-no-yes-yes)  echo "C" ;;
     yes-no-yes-no)  echo "E" ;;
     yes-yes-no-no)  echo "F" ;;
+    no-no-no-yes)   echo "G" ;;
     # @failure-mode: unclassified-shape
     *)              echo "UNCLASSIFIED" ;;
   esac
@@ -276,6 +277,7 @@ _wire_cat_b() { _wire_with_directives "$1"  no no yes no  yes yes no  yes ; }
 _wire_cat_c() { _wire_with_directives "$1"  no yes yes no yes yes no  no  ; }
 _wire_cat_e() { _wire_with_directives "$1"  yes no yes no no  yes no  yes ; }
 _wire_cat_f() { _wire_with_directives "$1"  yes no no yes  no  no  yes yes ; }
+_wire_cat_g() { _wire_with_directives "$1"  no yes no no   yes yes yes no  ; }
 
 # @side-effect: rewrites-bats-files-in-place
 cmd_wire_single() {
@@ -303,8 +305,9 @@ cmd_wire_single() {
     C) _wire_cat_c "$file" ;;
     E) _wire_cat_e "$file" ;;
     F) _wire_cat_f "$file" ;;
+    G) _wire_cat_g "$file" ;;
     UNCLASSIFIED)
-      echo "UNCLASSIFIED: $file: shape does not match any of A|B|C|E|F" >&2
+      echo "UNCLASSIFIED: $file: shape does not match any of A|B|C|E|F|G" >&2
       exit 3
       ;;
   esac
@@ -346,6 +349,7 @@ cmd_all() {
       C) _wire_cat_c "$f"; wired=$((wired + 1)) ;;
       E) _wire_cat_e "$f"; wired=$((wired + 1)) ;;
       F) _wire_cat_f "$f"; wired=$((wired + 1)) ;;
+      G) _wire_cat_g "$f"; wired=$((wired + 1)) ;;
       UNCLASSIFIED)
         # --all leaves stderr clean; unclassified_files in the JSON envelope
         # is the authoritative report. Single-file mode (cmd_wire_single)

@@ -76,6 +76,12 @@ FIX="$BATS_TEST_DIRNAME/fixtures/inject-telemetry"
   [ "$output" = "F" ]
 }
 
+@test "AC-3: classify cat-g fixture → G" {
+  run bash "$SCRIPT" classify "$FIX/cat-g.bats"
+  [ "$status" -eq 0 ]
+  [ "$output" = "G" ]
+}
+
 @test "AC-3: classify all-hooks fixture → UNCLASSIFIED" {
   run bash "$SCRIPT" classify "$FIX/all-hooks-unclassified.bats"
   [ "$status" -eq 0 ]
@@ -281,6 +287,33 @@ _setup_copy() {
 
 @test "AC-1 (Cat F): post-wiring file still parses as valid bats" {
   target=$(_setup_copy f)
+  bash "$SCRIPT" "$target"
+  CCANVIL_TELEMETRY_DISABLED=1 run bats "$target"
+  [ "$status" -eq 0 ]
+}
+
+# Cat G — teardown() only → PREPEND telemetry_teardown; ADD setup_file/teardown_file/setup.
+@test "AC-1 (Cat G): telemetry_teardown PREPENDED to existing teardown body" {
+  target=$(_setup_copy g)
+  run bash "$SCRIPT" "$target"
+  [ "$status" -eq 0 ]
+  teardown_open=$(grep -n '^teardown()' "$target" | head -1 | cut -d: -f1)
+  telemetry_line=$(grep -n '^[[:space:]]*telemetry_teardown[[:space:]]*$' "$target" | head -1 | cut -d: -f1)
+  unset_line=$(grep -n 'unset EXAMPLE_VAR' "$target" | head -1 | cut -d: -f1)
+  [ "$telemetry_line" -gt "$teardown_open" ]
+  [ "$telemetry_line" -lt "$unset_line" ]
+}
+
+@test "AC-1 (Cat G): ADD setup_file + teardown_file + setup wrappers" {
+  target=$(_setup_copy g)
+  bash "$SCRIPT" "$target"
+  grep -qE '^setup_file\(\)[[:space:]]*\{.*telemetry_setup_file' "$target"
+  grep -qE '^teardown_file\(\)[[:space:]]*\{.*telemetry_teardown_file' "$target"
+  grep -qE '^setup\(\)[[:space:]]*\{.*telemetry_setup' "$target"
+}
+
+@test "AC-1 (Cat G): post-wiring file still parses as valid bats" {
+  target=$(_setup_copy g)
   bash "$SCRIPT" "$target"
   CCANVIL_TELEMETRY_DISABLED=1 run bats "$target"
   [ "$status" -eq 0 ]
