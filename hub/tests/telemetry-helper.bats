@@ -94,6 +94,46 @@ setup() {
 }
 
 # =========================================================================
+# BTS-504 follow-up: otel-cli invoked with --start/--end so span timeline
+# reflects actual test wall time (was point-in-time → all spans <1ms).
+# =========================================================================
+
+@test "BTS-504 follow-up: telemetry_teardown invokes otel-cli with --start AND --end (non-zero duration)" {
+  [ -n "${CCANVIL_TELEMETRY_DISABLED:-}" ] && skip "incompatible with --no-telemetry"
+  # Shim otel-cli to log its args, exit 0 without contacting any endpoint.
+  local shim_dir="$BATS_TEST_TMPDIR/shim"
+  mkdir -p "$shim_dir"
+  cat > "$shim_dir/otel-cli" <<'SHIM'
+#!/bin/bash
+echo "$@" > "${BATS_TEST_TMPDIR}/otel-cli.argv"
+exit 0
+SHIM
+  chmod +x "$shim_dir/otel-cli"
+  # Run telemetry_setup + 100ms sleep + telemetry_teardown in a subshell.
+  PATH="$shim_dir:$PATH" \
+  BATS_TEST_DESCRIPTION="regression: span has measurable duration" \
+  BATS_TEST_COMPLETED=1 \
+  BATS_TEST_FILENAME="$BATS_TEST_DIRNAME/telemetry-helper.bats" \
+  bash -c "source '$HELPER' && telemetry_setup && sleep 0.1 && telemetry_teardown"
+  # Verify shim was called AND captured --start/--end with a measurable delta.
+  [ -f "$BATS_TEST_TMPDIR/otel-cli.argv" ]
+  local argv; argv=$(cat "$BATS_TEST_TMPDIR/otel-cli.argv")
+  echo "$argv" | grep -qE -- '--start'
+  echo "$argv" | grep -qE -- '--end'
+  # Extract start/end epochs; compute delta in milliseconds.
+  local start end
+  start=$(echo "$argv" | awk -F '--start ' '{print $2}' | awk '{print $1}')
+  end=$(echo "$argv"   | awk -F '--end '   '{print $2}' | awk '{print $1}')
+  # Use awk for floating-point arithmetic — bash arithmetic can't do floats.
+  local delta_ms
+  delta_ms=$(awk -v s="$start" -v e="$end" 'BEGIN { printf "%d", (e - s) * 1000 }')
+  # Sleep 0.1s + overhead → expect delta_ms >= 80 (allow some slack for
+  # CI / shim startup variance).
+  [ "$delta_ms" -ge 80 ] \
+    || { echo "delta_ms=$delta_ms (expected >=80); argv=$argv" >&2; return 1; }
+}
+
+# =========================================================================
 # Step 12 — attribute resolution (no live deps)
 # =========================================================================
 

@@ -126,6 +126,10 @@ telemetry_setup() {
   # Step 12 expands this: record test start in nanoseconds for the
   # test.duration_ms attribute computed in teardown.
   export BTS_TELEMETRY_TEST_START_NS="$(date +%s%N 2>/dev/null || echo 0)"
+  # BTS-504 follow-up: also capture epoch.fraction for otel-cli's --start
+  # flag so the SPAN's actual duration (end - start) reflects test wall
+  # time. Without this, every span lands as point-in-time (duration=0).
+  export BTS_TELEMETRY_TEST_START_EPOCH="$(date +%s.%N 2>/dev/null || echo 0)"
 }
 
 telemetry_teardown() {
@@ -170,11 +174,18 @@ telemetry_teardown() {
   # Status code follows outcome: error on fail, unset on pass/skip.
   local status_code="unset"
   [[ "$outcome" == "fail" ]] && status_code="error"
+  # BTS-504 follow-up: pass --start/--end so the span's actual timeline
+  # reflects test wall time. Default would be --start=now --end=now =
+  # duration 0, making Grafana show every test as <1ms with no end time.
+  local end_epoch; end_epoch="$(date +%s.%N 2>/dev/null || echo 0)"
+  local start_epoch="${BTS_TELEMETRY_TEST_START_EPOCH:-$end_epoch}"
   otel-cli span \
     --endpoint "${BTS_TELEMETRY_ENDPOINT:-http://127.0.0.1:4318}" \
     --protocol http/protobuf \
     --service ccanvil-test \
     --name "${BATS_TEST_DESCRIPTION:-unknown}" \
+    --start "$start_epoch" \
+    --end "$end_epoch" \
     --status-code "$status_code" \
     --attrs "$attrs" \
     --timeout 2s \
