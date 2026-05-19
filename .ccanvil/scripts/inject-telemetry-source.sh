@@ -311,8 +311,65 @@ cmd_wire_single() {
 }
 
 cmd_all() {
-  echo "ERROR: --all not yet implemented (BTS-504 Step 7)" >&2
-  exit 3
+  local root="hub/tests"
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --root) shift; root="$1"; shift ;;
+      *)      echo "Usage: --all [--root <dir>]" >&2; exit 2 ;;
+    esac
+  done
+  if [[ ! -d "$root" ]]; then
+    echo "Usage: --root: directory not found: $root" >&2
+    exit 2
+  fi
+
+  local wired=0 already=0 skipped=0 unclassified=0
+  local unclassified_files=()
+  local f base cat
+
+  # Iterate via shell glob — deterministic alphabetical order.
+  shopt -s nullglob
+  for f in "$root"/*.bats; do
+    base="$(basename "$f")"
+    if _is_skip_listed "$base"; then
+      skipped=$((skipped + 1))
+      continue
+    fi
+    if _is_wired "$f"; then
+      already=$((already + 1))
+      continue
+    fi
+    cat="$(_classify_file "$f")"
+    case "$cat" in
+      A) _wire_cat_a "$f"; wired=$((wired + 1)) ;;
+      B) _wire_cat_b "$f"; wired=$((wired + 1)) ;;
+      C) _wire_cat_c "$f"; wired=$((wired + 1)) ;;
+      E) _wire_cat_e "$f"; wired=$((wired + 1)) ;;
+      F) _wire_cat_f "$f"; wired=$((wired + 1)) ;;
+      UNCLASSIFIED)
+        # --all leaves stderr clean; unclassified_files in the JSON envelope
+        # is the authoritative report. Single-file mode (cmd_wire_single)
+        # is what surfaces the UNCLASSIFIED stderr line per AC-7.
+        unclassified=$((unclassified + 1))
+        unclassified_files+=("$f")
+        ;;
+    esac
+  done
+  shopt -u nullglob
+
+  # JSON envelope.
+  jq -n \
+    --arg root "$root" \
+    --argjson wired "$wired" \
+    --argjson already "$already" \
+    --argjson skipped "$skipped" \
+    --argjson unclassified "$unclassified" \
+    --argjson unclassified_files "$(printf '%s\n' "${unclassified_files[@]+"${unclassified_files[@]}"}" | jq -R . | jq -s .)" \
+    '{root: $root, wired: $wired, already_wired: $already, skipped: $skipped, unclassified: $unclassified, unclassified_files: $unclassified_files}'
+
+  if (( unclassified > 0 )); then
+    exit 3
+  fi
 }
 
 main() {

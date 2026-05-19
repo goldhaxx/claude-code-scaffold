@@ -323,3 +323,76 @@ _setup_copy() {
   post_sha=$(shasum -a 256 "$target" | awk '{print $1}')
   [ "$pre_sha" = "$post_sha" ]
 }
+
+# ---------------------------------------------------------------------------
+# Step 7 — Bulk --all + JSON report (AC-4, AC-5).
+# ---------------------------------------------------------------------------
+
+_setup_bulk_root() {
+  # Build a tmp root with one fixture per category + skip-listed + unclassified.
+  local root="$BATS_TEST_TMPDIR/bulk"
+  mkdir -p "$root"
+  cp "$FIX/cat-a.bats" "$root/cat-a.bats"
+  cp "$FIX/cat-b.bats" "$root/cat-b.bats"
+  cp "$FIX/cat-c.bats" "$root/cat-c.bats"
+  cp "$FIX/cat-e.bats" "$root/cat-e.bats"
+  cp "$FIX/cat-f.bats" "$root/cat-f.bats"
+  cp "$FIX/cat-a.bats" "$root/telemetry-helper.bats"  # skip-listed
+  echo "$root"
+}
+
+@test "AC-4: --all clean root → wires every cat fixture, exits 0, reports counts" {
+  root=$(_setup_bulk_root)
+  run bash "$SCRIPT" --all --root "$root"
+  [ "$status" -eq 0 ]
+  # JSON report — parse and check each count.
+  wired=$(echo "$output" | jq -r '.wired')
+  already=$(echo "$output" | jq -r '.already_wired')
+  skipped=$(echo "$output" | jq -r '.skipped')
+  unclassified=$(echo "$output" | jq -r '.unclassified')
+  [ "$wired" -eq 5 ]
+  [ "$already" -eq 0 ]
+  [ "$skipped" -eq 1 ]
+  [ "$unclassified" -eq 0 ]
+  # Skip-listed file MUST remain unwired.
+  ! grep -qE '^source.*telemetry\.bash' "$root/telemetry-helper.bats"
+  # All 5 cat files MUST now contain the sourceline.
+  for f in cat-a cat-b cat-c cat-e cat-f; do
+    grep -qE '^source.*telemetry\.bash' "$root/$f.bats" \
+      || { echo "$f.bats missing sourceline" >&2; return 1; }
+  done
+}
+
+@test "AC-4: --all is idempotent (re-running counts every file as already_wired)" {
+  root=$(_setup_bulk_root)
+  bash "$SCRIPT" --all --root "$root" >/dev/null
+  run bash "$SCRIPT" --all --root "$root"
+  [ "$status" -eq 0 ]
+  wired=$(echo "$output" | jq -r '.wired')
+  already=$(echo "$output" | jq -r '.already_wired')
+  [ "$wired" -eq 0 ]
+  [ "$already" -eq 5 ]
+}
+
+@test "AC-4: --all with UNCLASSIFIED file → exits non-zero AND wires other files (accumulate-then-exit)" {
+  root=$(_setup_bulk_root)
+  cp "$FIX/all-hooks-unclassified.bats" "$root/all-hooks.bats"
+  run bash "$SCRIPT" --all --root "$root"
+  [ "$status" -ne 0 ]
+  unclassified=$(echo "$output" | jq -r '.unclassified')
+  wired=$(echo "$output" | jq -r '.wired')
+  [ "$unclassified" -ge 1 ]
+  [ "$wired" -eq 5 ]
+  # The other (Cat) files were still wired despite the one UNCLASSIFIED.
+  grep -qE '^source.*telemetry\.bash' "$root/cat-a.bats"
+  # The UNCLASSIFIED file was left untouched.
+  ! grep -qE '^source.*telemetry\.bash' "$root/all-hooks.bats"
+}
+
+@test "AC-4: --all reports unclassified file paths in the JSON envelope" {
+  root=$(_setup_bulk_root)
+  cp "$FIX/all-hooks-unclassified.bats" "$root/all-hooks.bats"
+  run bash "$SCRIPT" --all --root "$root"
+  unclassified_files=$(echo "$output" | jq -r '.unclassified_files[]')
+  echo "$unclassified_files" | grep -qE 'all-hooks\.bats'
+}
