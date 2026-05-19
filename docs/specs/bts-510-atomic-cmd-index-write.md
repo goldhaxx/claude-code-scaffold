@@ -4,7 +4,7 @@
 > Work: linear:BTS-510
 > Created: 1779146173
 > Subject: Atomic cmd_index write under --parallel
-> Status: In Progress
+> Status: Complete
 
 ## Summary
 

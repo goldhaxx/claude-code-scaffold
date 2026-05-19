@@ -8,7 +8,7 @@
 
 ## Summary
 
-`cmd_index` in `.ccanvil/scripts/module-manifest.sh` regenerates `.ccanvil/state/manifests.json` from source-dir walks. It writes to a fixed intermediate filename `$out.tmp` then `mv`s to `$out`. Under `bats --jobs 12`, multiple test workers invoke `cmd_index` concurrently (transitively, via `cmd_graph` and `cmd_validate`). All workers race on the SAME `$out.tmp` filename — one's partial write clobbers another's, and the surviving `mv` propagates corrupted JSON. A reader (`cmd_graph`'s downstream lookups) sees zero cross-cluster edges instead of the expected ≥1, producing the BTS-510 flake (1 in ~2462 tests, observed at BTS-508 pre-merge gate).
+`cmd_index` in `.ccanvil/scripts/module-manifest.sh` regenerates `.ccanvil/state/manifests.json` from source-dir walks. It writes to a fixed intermediate filename `$out.tmp` then `mv`s to `$out`. Under `bats --jobs 12`, multiple test workers invoke `cmd_index` concurrently (transitively, via `cmd_graph` and `cmd_validate`). All workers race on the SAME `$out.tmp` filename — one's partial write clobbers another's, and the surviving `mv` propagates corrupted JSON. A reader (`cmd_graph`'s downstream lookups) sees zero cross-cluster edges instead of the expected ≥1, producing the BTS-510 flake (1 in \~2462 tests, observed at BTS-508 pre-merge gate).
 
 Fix: replace the fixed `$out.tmp` filename with a per-invocation `mktemp "$out.XXXXXX"`. Each writer produces its own complete tmp; the final `mv` is atomic per writer; readers see either the pre-state or a complete post-state — never a partial write.
 
@@ -31,27 +31,27 @@ Fix: replace the fixed `$out.tmp` filename with a per-invocation `mktemp "$out.X
 ## Affected Files
 
 | File | Change |
-|------|--------|
+| -- | -- |
 | `.ccanvil/scripts/module-manifest.sh` | Modified — `cmd_index` uses `mktemp` for intermediate; manifest contract anchor updated |
 | `hub/tests/module-manifest-parallel.bats` | New — parallel-stress test exercising AC-2/AC-3 |
 
 ## Dependencies
 
-- **Requires:** Nothing. `mktemp` is POSIX, available everywhere bats runs.
-- **Blocked by:** Nothing. Pre-existing substrate bug, independent ship.
+* **Requires:** Nothing. `mktemp` is POSIX, available everywhere bats runs.
+* **Blocked by:** Nothing. Pre-existing substrate bug, independent ship.
 
 ## Out of Scope
 
-- Auditing other `cmd_*` functions in `module-manifest.sh` for the same shared-tmp pattern. The drift surfaced once in `cmd_index`; broader sweep is a separate ticket if more flakes appear.
-- Refactoring `cmd_index` further (e.g., dedup writers via filelock). The mktemp fix is sufficient because writers are deterministic — concurrent overwrites converge on identical content.
-- Adding instrumentation to confirm the hypothesis (the original DIAGNOSE first-ship). AC-2 + AC-3 verification under parallel-stress doubles as the diagnostic confirmation: if the fix eliminates the flake, the hypothesis was correct.
+* Auditing other `cmd_*` functions in `module-manifest.sh` for the same shared-tmp pattern. The drift surfaced once in `cmd_index`; broader sweep is a separate ticket if more flakes appear.
+* Refactoring `cmd_index` further (e.g., dedup writers via filelock). The mktemp fix is sufficient because writers are deterministic — concurrent overwrites converge on identical content.
+* Adding instrumentation to confirm the hypothesis (the original DIAGNOSE first-ship). AC-2 + AC-3 verification under parallel-stress doubles as the diagnostic confirmation: if the fix eliminates the flake, the hypothesis was correct.
 
 ## Implementation Notes
 
-- Same shape as the BTS-508 state writers (`bats-report.sh` and `module-manifest.sh validate` writers): `tmp=$(mktemp "$out.XXXXXX") || return <rc>; … > "$tmp"; mv "$tmp" "$out"`. Keep the existing `mkdir -p "$(dirname "$out")"` line above the mktemp.
-- The existing `RETURN` trap that cleans up `$tmp` (line 1280) needs to expand to cover the new intermediate too — either add it to the trap list or rely on the new mktemp variable being captured before any `return` paths.
-- `mktemp` on macOS creates the file with mode 0600; not a concern (state dir is operator-private).
-- Parallel-stress test pattern: spawn N background `cmd_index` calls in setup; in main test phase, repeatedly read `$out` and `jq -e .` each snapshot; assert zero parse failures. Keep N≤12 to match the production bats jobslot.
+* Same shape as the BTS-508 state writers (`bats-report.sh` and `module-manifest.sh validate` writers): `tmp=$(mktemp "$out.XXXXXX") || return <rc>; … > "$tmp"; mv "$tmp" "$out"`. Keep the existing `mkdir -p "$(dirname "$out")"` line above the mktemp.
+* The existing `RETURN` trap that cleans up `$tmp` (line 1280) needs to expand to cover the new intermediate too — either add it to the trap list or rely on the new mktemp variable being captured before any `return` paths.
+* `mktemp` on macOS creates the file with mode 0600; not a concern (state dir is operator-private).
+* Parallel-stress test pattern: spawn N background `cmd_index` calls in setup; in main test phase, repeatedly read `$out` and `jq -e .` each snapshot; assert zero parse failures. Keep N≤12 to match the production bats jobslot.
 
 <!-- NODE-SPECIFIC-START -->
 <!-- Add project-specific content below this line. -->
