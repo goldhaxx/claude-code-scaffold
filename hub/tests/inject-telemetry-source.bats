@@ -367,16 +367,25 @@ _setup_copy() {
   [ "$pre_sha" = "$post_sha" ]
 }
 
+@test "AC-2 (Cat G): idempotency on PREPEND-to-teardown path" {
+  target=$(_setup_copy g)
+  bash "$SCRIPT" "$target"
+  pre_sha=$(shasum -a 256 "$target" | awk '{print $1}')
+  bash "$SCRIPT" "$target"
+  post_sha=$(shasum -a 256 "$target" | awk '{print $1}')
+  [ "$pre_sha" = "$post_sha" ]
+}
+
 # ---------------------------------------------------------------------------
 # Step 6 — UNCLASSIFIED error path (AC-7).
 # ---------------------------------------------------------------------------
 
-@test "AC-7: UNCLASSIFIED file → exit non-zero + stderr UNCLASSIFIED + file unchanged" {
+@test "AC-7: UNCLASSIFIED file → exit 3 + stderr UNCLASSIFIED + file unchanged" {
   target="$BATS_TEST_TMPDIR/all-hooks.bats"
   cp "$FIX/all-hooks-unclassified.bats" "$target"
   pre_sha=$(shasum -a 256 "$target" | awk '{print $1}')
   run bash "$SCRIPT" "$target"
-  [ "$status" -ne 0 ]
+  [ "$status" -eq 3 ]
   echo "$output" | grep -qE '^UNCLASSIFIED:'
   post_sha=$(shasum -a 256 "$target" | awk '{print $1}')
   [ "$pre_sha" = "$post_sha" ]
@@ -395,6 +404,7 @@ _setup_bulk_root() {
   cp "$FIX/cat-c.bats" "$root/cat-c.bats"
   cp "$FIX/cat-e.bats" "$root/cat-e.bats"
   cp "$FIX/cat-f.bats" "$root/cat-f.bats"
+  cp "$FIX/cat-g.bats" "$root/cat-g.bats"
   cp "$FIX/cat-a.bats" "$root/telemetry-helper.bats"  # skip-listed
   echo "$root"
 }
@@ -408,14 +418,14 @@ _setup_bulk_root() {
   already=$(echo "$output" | jq -r '.already_wired')
   skipped=$(echo "$output" | jq -r '.skipped')
   unclassified=$(echo "$output" | jq -r '.unclassified')
-  [ "$wired" -eq 5 ]
+  [ "$wired" -eq 6 ]
   [ "$already" -eq 0 ]
   [ "$skipped" -eq 1 ]
   [ "$unclassified" -eq 0 ]
   # Skip-listed file MUST remain unwired.
   ! grep -qE '^source.*telemetry\.bash' "$root/telemetry-helper.bats"
-  # All 5 cat files MUST now contain the sourceline.
-  for f in cat-a cat-b cat-c cat-e cat-f; do
+  # All 6 cat files MUST now contain the sourceline.
+  for f in cat-a cat-b cat-c cat-e cat-f cat-g; do
     grep -qE '^source.*telemetry\.bash' "$root/$f.bats" \
       || { echo "$f.bats missing sourceline" >&2; return 1; }
   done
@@ -429,18 +439,18 @@ _setup_bulk_root() {
   wired=$(echo "$output" | jq -r '.wired')
   already=$(echo "$output" | jq -r '.already_wired')
   [ "$wired" -eq 0 ]
-  [ "$already" -eq 5 ]
+  [ "$already" -eq 6 ]
 }
 
 @test "AC-4: --all with UNCLASSIFIED file → exits non-zero AND wires other files (accumulate-then-exit)" {
   root=$(_setup_bulk_root)
   cp "$FIX/all-hooks-unclassified.bats" "$root/all-hooks.bats"
   run bash "$SCRIPT" --all --root "$root"
-  [ "$status" -ne 0 ]
+  [ "$status" -eq 3 ]
   unclassified=$(echo "$output" | jq -r '.unclassified')
   wired=$(echo "$output" | jq -r '.wired')
   [ "$unclassified" -ge 1 ]
-  [ "$wired" -eq 5 ]
+  [ "$wired" -eq 6 ]
   # The other (Cat) files were still wired despite the one UNCLASSIFIED.
   grep -qE '^source.*telemetry\.bash' "$root/cat-a.bats"
   # The UNCLASSIFIED file was left untouched.

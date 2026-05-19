@@ -16,7 +16,7 @@
 # input: positional <subcommand> [args]
 # input: subcommands = classify <file> | --help | -h | --all [--root <dir>] | print-skip-list | <file>
 # output: stdout JSON report on --all (counts: wired, already_wired, skipped, unclassified)
-# output: stdout classification letter on classify (A|B|C|E|F|SKIP|UNCLASSIFIED)
+# output: stdout classification letter on classify (A|B|C|E|F|G|SKIP|UNCLASSIFIED)
 # output: stdout newline-delimited filenames on print-skip-list
 # output: stderr UNCLASSIFIED: <file>: <reason> per unsupported shape
 # output: exit-codes 0 ok, 2 usage-error, 3 unclassified-file-in-bulk-mode|unclassified-file-in-single-mode
@@ -52,7 +52,7 @@ usage() {
 Usage: inject-telemetry-source.sh <subcommand> [args]
 
 Subcommands:
-  classify <file>      Print one of A|B|C|E|F|SKIP|UNCLASSIFIED to stdout.
+  classify <file>      Print one of A|B|C|E|F|G|SKIP|UNCLASSIFIED to stdout.
   print-skip-list      Print one filename per line for documented skip-list entries.
   --all [--root <d>]   Walk every hub/tests/*.bats (root defaults to hub/tests/);
                        inject wiring per-category; emit JSON report.

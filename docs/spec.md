@@ -8,7 +8,7 @@
 
 ## Summary
 
-BTS-497 ships the test-observability foundation with a 10-file sample proving the wiring template works across the 6 setup-function categories found in `hub/tests/*.bats`. 165 bats files remain unwired, so AC-7's "every test emits a span" coverage is at \~7%. This feature lands a deterministic injector script that applies the per-category template across the remaining files in one atomic rollout, plus a drift-guard test that fails fast if any future `.bats` file lands unwired.
+BTS-497 ships the test-observability foundation with a 10-file sample proving the wiring template works across the 6 setup-function categories found in `hub/tests/*.bats`. 165 bats files remain unwired, so AC-7's "every test emits a span" coverage is at ~7%. This feature lands a deterministic injector script that applies the per-category template across the remaining files in one atomic rollout, plus a drift-guard test that fails fast if any future `.bats` file lands unwired.
 
 ## Job To Be Done
 
@@ -33,47 +33,47 @@ Each criterion is independently testable. Binary pass/fail.
 ## Affected Files
 
 | File | Change |
-| -- | -- |
+|------|--------|
 | `.ccanvil/scripts/inject-telemetry-source.sh` | New |
 | `hub/tests/inject-telemetry-source.bats` | New (unit tests for the injector) |
 | `hub/tests/telemetry-coverage.bats` | New (drift-guard) |
-| `hub/tests/*.bats` (\~165 files) | Modified — wiring applied by injector |
+| `hub/tests/*.bats` (~165 files) | Modified — wiring applied by injector |
 | `.ccanvil/manifest-allowlist.txt` | Modified — add new scripts/tests |
 
 ## Dependencies
 
-* **Requires:** BTS-497 (telemetry foundation, helper at `hub/tests/_helpers/telemetry.bash`) — shipped.
-* **Requires:** BTS-507 (bats-report stub helper) — shipped; ensures the rollout suite runs without the \~7-min pre-warm toll.
-* **Blocked by:** Nothing.
+- **Requires:** BTS-497 (telemetry foundation, helper at `hub/tests/_helpers/telemetry.bash`) — shipped.
+- **Requires:** BTS-507 (bats-report stub helper) — shipped; ensures the rollout suite runs without the ~7-min pre-warm toll.
+- **Blocked by:** Nothing.
 
 ## Out of Scope
 
-* BTS-281 pre-warm optimization for `bats-report.sh` invocations from inside test fixtures (separate ticket).
-* BTS-499 Stage-2 distillation of the helper to pytest/vitest nodes.
-* Per-test `test.error_excerpt` capture on failed spans (bats does not expose a structured fail-message env var; requires per-test stderr-wrap, separate ticket).
-* Use of bats 1.10+ `setup_suite.bash` (Path 3 in BTS-504 body) — complementary, not a replacement; not part of this rollout.
-* `bats_load_library`-based wiring (Path 2 in BTS-504 body) — rejected due to silent-override failure mode.
+- BTS-281 pre-warm optimization for `bats-report.sh` invocations from inside test fixtures (separate ticket).
+- BTS-499 Stage-2 distillation of the helper to pytest/vitest nodes.
+- Per-test `test.error_excerpt` capture on failed spans (bats does not expose a structured fail-message env var; requires per-test stderr-wrap, separate ticket).
+- Use of bats 1.10+ `setup_suite.bash` (Path 3 in BTS-504 body) — complementary, not a replacement; not part of this rollout.
+- `bats_load_library`-based wiring (Path 2 in BTS-504 body) — rejected due to silent-override failure mode.
 
 ## Implementation Notes
 
-* **Path 1 chosen** per BTS-504 body recommendation. Path 2 risks silent override when files define their own `setup()`; Path 3 cannot replace per-file wiring.
-* **Category detection** is line-leading regex against the top of each file. The classifier evaluates 4 booleans — `has_setup_file`, `has_teardown_file`, `has_setup`, `has_teardown` — and dispatches via this truth table. The `load` directive is orthogonal to classification (the wiring action never touches `load`); BTS-504's body distinguishes Cat C from Cat D by `load` presence, but they share identical wiring and both map to Cat C here:
+- **Path 1 chosen** per BTS-504 body recommendation. Path 2 risks silent override when files define their own `setup()`; Path 3 cannot replace per-file wiring.
+- **Category detection** is line-leading regex against the top of each file. The classifier evaluates 4 booleans — `has_setup_file`, `has_teardown_file`, `has_setup`, `has_teardown` — and dispatches via this truth table. The `load` directive is orthogonal to classification (the wiring action never touches `load`); BTS-504's body distinguishes Cat C from Cat D by `load` presence, but they share identical wiring and both map to Cat C here:
 
   | Cat | `setup_file` | `teardown_file` | `setup` | `teardown` | Wiring action |
-  | -- | -- | -- | -- | -- | -- |
-  | A** |  |  |  |  | urce helper + add all 4 lifecycle wrappers (`telemetry_setup_file`/`telemetry_teardown_file`/`telemetry_setup`/`telemetry_teardown`). |
-  | B** |  |  | s |  | pend `telemetry_setup` to existing `setup`; add `setup_file`/`teardown_file`/`teardown`. |
-  | C** |  |  | s | s | pend `telemetry_setup` to `setup`; PREPEND `telemetry_teardown` to `teardown` (bats state vars must be pristine when read); add `setup_file`/`teardown_file`. Covers BTS-504's Cat C and Cat D — `load` directive is non-conflicting. |
-  | E** | s |  | s |  | epend `telemetry_setup_file` to `setup_file` (healthcheck before expensive init); append `telemetry_setup` to `setup`; add `teardown`/`teardown_file`. |
-  | F** | s | s |  |  | urce helper; add `setup`/`teardown`; prepend `telemetry_setup_file` to `setup_file`; append `telemetry_teardown_file` to `teardown_file`. |
-  | G** |  |  |  | s | EPEND `telemetry_teardown` to `teardown`; add `setup_file`/`teardown_file`/`setup`. Surfaced during Step 9 rollout (3 teardown-only files); BTS-504's 6-category survey missed this shape. |
+  |-----|:---:|:---:|:---:|:---:|---|
+  | **A** | no | no | no | no | Source helper + add all 4 lifecycle wrappers (`telemetry_setup_file`/`telemetry_teardown_file`/`telemetry_setup`/`telemetry_teardown`). |
+  | **B** | no | no | yes | no | Append `telemetry_setup` to existing `setup`; add `setup_file`/`teardown_file`/`teardown`. |
+  | **C** | no | no | yes | yes | Append `telemetry_setup` to `setup`; PREPEND `telemetry_teardown` to `teardown` (bats state vars must be pristine when read); add `setup_file`/`teardown_file`. Covers BTS-504's Cat C and Cat D — `load` directive is non-conflicting. |
+  | **E** | yes | no | yes | no | Prepend `telemetry_setup_file` to `setup_file` (healthcheck before expensive init); append `telemetry_setup` to `setup`; add `teardown`/`teardown_file`. |
+  | **F** | yes | yes | no | no | Source helper; add `setup`/`teardown`; prepend `telemetry_setup_file` to `setup_file`; append `telemetry_teardown_file` to `teardown_file`. |
+  | **G** | no | no | no | yes | PREPEND `telemetry_teardown` to `teardown`; add `setup_file`/`teardown_file`/`setup`. Surfaced during Step 9 rollout (3 teardown-only files); BTS-504's 6-category survey missed this shape. |
 
   Any 4-tuple outside these 6 rows (e.g., `teardown_file=yes` with `setup_file=no`, or `setup_file=yes` + all other hooks present) → `UNCLASSIFIED` (AC-7). The 6 rows partition disjointly, so multi-match is structurally impossible. Reference output: `hub/tests/lifecycle-state.bats` (Cat C) and `hub/tests/canonical-fixtures.bats` (Cat A).
-* **Wiring template** per category lives at the top of the injector as a documented constant; mirrors the wiring in the BTS-497 sample (e.g., `hub/tests/lifecycle-state.bats:9-12,21,25`, `hub/tests/canonical-fixtures.bats:12-17`).
-* **Idempotency marker** — detect `source.*_helpers/telemetry.bash` at column 0 in the file's top 20 lines. Already-wired files short-circuit without re-parsing.
-* **Drift-guard test** runs in the standard suite, so it gates every PR and `/ccanvil-pull` automatically — no separate cron needed.
-* **Rollout commit** is the second commit on the feature branch (after injector + tests land green); applied by running `--all` and committing the resulting diff atomically.
-* **Failure-mode preference:** `--all` is accumulate-then-exit (per AC-4): the injector iterates every non-skip-listed file, leaves UNCLASSIFIED files unmodified (per AC-7), and exits non-zero only after walking the full set. "Halt the rollout" means: with non-zero exit, the operator does NOT commit the resulting diff — corrupt files remain untouched, and the operator hand-wires the residual UNCLASSIFIED set (expected count ≤5 based on BTS-497 sample survey) before retrying.
+- **Wiring template** per category lives at the top of the injector as a documented constant; mirrors the wiring in the BTS-497 sample (e.g., `hub/tests/lifecycle-state.bats:9-12,21,25`, `hub/tests/canonical-fixtures.bats:12-17`).
+- **Idempotency marker** — detect `source.*_helpers/telemetry.bash` at column 0 in the file's top 20 lines. Already-wired files short-circuit without re-parsing.
+- **Drift-guard test** runs in the standard suite, so it gates every PR and `/ccanvil-pull` automatically — no separate cron needed.
+- **Rollout commit** is the second commit on the feature branch (after injector + tests land green); applied by running `--all` and committing the resulting diff atomically.
+- **Failure-mode preference:** `--all` is accumulate-then-exit (per AC-4): the injector iterates every non-skip-listed file, leaves UNCLASSIFIED files unmodified (per AC-7), and exits non-zero only after walking the full set. "Halt the rollout" means: with non-zero exit, the operator does NOT commit the resulting diff — corrupt files remain untouched, and the operator hand-wires the residual UNCLASSIFIED set (expected count ≤5 based on BTS-497 sample survey) before retrying.
 
 <!-- NODE-SPECIFIC-START -->
 <!-- Add project-specific content below this line. -->
