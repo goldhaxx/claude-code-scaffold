@@ -51,6 +51,16 @@ telemetry_setup_file() {
 
   export BTS_TELEMETRY_ENDPOINT="${CCANVIL_OTLP_ENDPOINT:-http://127.0.0.1:4318}"
   _telemetry_cache_invariants
+  # BTS-504 follow-up: per-file span — opens here, closes in teardown_file.
+  # Each bats file gets a unique span_id, parent = suite root span id (when
+  # bats-report.sh wraps the invocation). Per-test spans (telemetry_teardown)
+  # then set parent_span_id = this file span id, forming the
+  # suite → file → test hierarchy.
+  if command -v openssl >/dev/null 2>&1; then
+    export BTS_TELEMETRY_FILE_SPAN_ID="$(openssl rand -hex 8 2>/dev/null)"
+  fi
+  export BTS_TELEMETRY_FILE_START_EPOCH="$(date +%s.%N 2>/dev/null || date +%s)"
+  export BTS_TELEMETRY_FILE_PATH="${BATS_TEST_FILENAME:-${BATS_FILE_NAME:-unknown}}"
 }
 
 # Pure-bash invariant cache (no live deps). Exposed so unit tests can
@@ -129,10 +139,41 @@ _telemetry_compose_attrs() {
 }
 
 telemetry_teardown_file() {
-  # No background process to clean up — emission is per-test direct OTLP.
-  # Kept as a public no-op for symmetric setup/teardown pairing and so a
-  # future flush hook can land without touching every .bats file.
-  return 0
+  if [[ -n "${CCANVIL_TELEMETRY_DISABLED:-}" ]]; then
+    return 0
+  fi
+  # BTS-504 follow-up: emit the FILE span here, now that every test in the
+  # file has finished. Parent = suite root span (if set by bats-report.sh);
+  # otherwise top-level under the trace_id.
+  if [[ -z "${BTS_TELEMETRY_FILE_SPAN_ID:-}" ]]; then
+    return 0
+  fi
+  if ! command -v otel-cli >/dev/null 2>&1; then
+    return 0
+  fi
+  local file_end_epoch file_basename file_path
+  file_end_epoch="$(date +%s.%N 2>/dev/null || date +%s)"
+  file_path="${BTS_TELEMETRY_FILE_PATH:-unknown}"
+  file_basename="$(basename "$file_path")"
+  local parent_args=()
+  [[ -n "${BTS_TELEMETRY_SUITE_SPAN_ID:-}" ]] \
+    && parent_args=(--force-parent-span-id "$BTS_TELEMETRY_SUITE_SPAN_ID")
+  local trace_args=()
+  [[ -n "${BTS_TELEMETRY_TRACE_ID:-}" ]] \
+    && trace_args=(--force-trace-id "$BTS_TELEMETRY_TRACE_ID")
+  otel-cli span \
+    --endpoint "${BTS_TELEMETRY_ENDPOINT:-http://127.0.0.1:4318}" \
+    --protocol http/protobuf \
+    --service ccanvil-test \
+    --name "file: $file_basename" \
+    --start "${BTS_TELEMETRY_FILE_START_EPOCH:-$file_end_epoch}" \
+    --end "$file_end_epoch" \
+    --attrs "test.file=$file_path,worker.id=${BTS_TELEMETRY_WORKER_ID:-0},runner.kind=bats,run.id=${BTS_TELEMETRY_RUN_ID:-unknown},git.sha=${BTS_TELEMETRY_GIT_SHA:-unknown}" \
+    --force-span-id "$BTS_TELEMETRY_FILE_SPAN_ID" \
+    "${trace_args[@]+"${trace_args[@]}"}" \
+    "${parent_args[@]+"${parent_args[@]}"}" \
+    --timeout 2s \
+    >/dev/null 2>&1 || true
 }
 
 telemetry_setup() {
@@ -196,9 +237,14 @@ telemetry_teardown() {
   local end_epoch; end_epoch="$(date +%s.%N 2>/dev/null || echo 0)"
   local start_epoch="${BTS_TELEMETRY_TEST_START_EPOCH:-$end_epoch}"
   # BTS-504 follow-up: --force-trace-id ties every test span to the shared
-  # suite trace_id so Grafana renders the whole run as one waterfall.
+  # suite trace_id; --force-parent-span-id links the test as a child of its
+  # file span (set in telemetry_setup_file), forming the suite→file→test
+  # hierarchy Grafana renders as a nested waterfall.
   local trace_args=()
   [[ -n "${BTS_TELEMETRY_TRACE_ID:-}" ]] && trace_args=(--force-trace-id "$BTS_TELEMETRY_TRACE_ID")
+  local parent_args=()
+  [[ -n "${BTS_TELEMETRY_FILE_SPAN_ID:-}" ]] \
+    && parent_args=(--force-parent-span-id "$BTS_TELEMETRY_FILE_SPAN_ID")
   otel-cli span \
     --endpoint "${BTS_TELEMETRY_ENDPOINT:-http://127.0.0.1:4318}" \
     --protocol http/protobuf \
@@ -209,6 +255,7 @@ telemetry_teardown() {
     --status-code "$status_code" \
     --attrs "$attrs" \
     "${trace_args[@]+"${trace_args[@]}"}" \
+    "${parent_args[@]+"${parent_args[@]}"}" \
     --timeout 2s \
     >/dev/null 2>&1 || true
 }

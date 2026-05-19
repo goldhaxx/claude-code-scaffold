@@ -98,6 +98,70 @@ setup() {
 # reflects actual test wall time (was point-in-time → all spans <1ms).
 # =========================================================================
 
+@test "BTS-504 follow-up: hierarchy — test span has parent_span_id = file span_id" {
+  [ -n "${CCANVIL_TELEMETRY_DISABLED:-}" ] && skip "incompatible with --no-telemetry"
+  local shim_dir="$BATS_TEST_TMPDIR/shim"
+  mkdir -p "$shim_dir"
+  cat > "$shim_dir/otel-cli" <<'SHIM'
+#!/bin/bash
+echo "$@" >> "${BATS_TEST_TMPDIR}/otel-cli.argv"
+exit 0
+SHIM
+  chmod +x "$shim_dir/otel-cli"
+  PATH="$shim_dir:$PATH" \
+  BATS_TEST_FILENAME="$BATS_TEST_DIRNAME/telemetry-helper.bats" \
+  bash -c "
+    source '$HELPER'
+    BATS_TEST_DESCRIPTION='file-1' BATS_TEST_COMPLETED=1 telemetry_setup_file
+    BATS_TEST_DESCRIPTION='test-1' BATS_TEST_COMPLETED=1 telemetry_setup && telemetry_teardown
+    BATS_TEST_DESCRIPTION='test-2' BATS_TEST_COMPLETED=1 telemetry_setup && telemetry_teardown
+    telemetry_teardown_file
+    echo \"FILE_SPAN_ID=\$BTS_TELEMETRY_FILE_SPAN_ID\"
+  " > "$BATS_TEST_TMPDIR/run.out" 2>&1
+  local file_span_id
+  file_span_id=$(grep '^FILE_SPAN_ID=' "$BATS_TEST_TMPDIR/run.out" | cut -d= -f2)
+  [ -n "$file_span_id" ]
+  # Extract --force-parent-span-id values: each test span should set it
+  # AND each value should equal the file span_id.
+  local parents
+  parents=$(grep -oE -- '--force-parent-span-id [0-9a-f]{16}' "$BATS_TEST_TMPDIR/otel-cli.argv" \
+            | awk '{print $2}' | sort -u)
+  # There are 2 test spans, both should carry parent = file_span_id.
+  # The file span itself emits with --force-parent-span-id = $BTS_TELEMETRY_SUITE_SPAN_ID
+  # IF set; in this subshell SUITE_SPAN_ID is empty so the file span has no parent.
+  echo "$parents" | grep -qFx "$file_span_id" \
+    || { echo "expected parent=$file_span_id; got: $parents" >&2; cat "$BATS_TEST_TMPDIR/otel-cli.argv" >&2; return 1; }
+}
+
+@test "BTS-504 follow-up: hierarchy — file span has --force-span-id set" {
+  [ -n "${CCANVIL_TELEMETRY_DISABLED:-}" ] && skip "incompatible with --no-telemetry"
+  local shim_dir="$BATS_TEST_TMPDIR/shim"
+  mkdir -p "$shim_dir"
+  cat > "$shim_dir/otel-cli" <<'SHIM'
+#!/bin/bash
+echo "$@" >> "${BATS_TEST_TMPDIR}/otel-cli.argv"
+exit 0
+SHIM
+  chmod +x "$shim_dir/otel-cli"
+  PATH="$shim_dir:$PATH" \
+  BATS_TEST_FILENAME="$BATS_TEST_DIRNAME/telemetry-helper.bats" \
+  bash -c "
+    source '$HELPER'
+    BATS_TEST_DESCRIPTION='probe' BATS_TEST_COMPLETED=1 telemetry_setup_file
+    BATS_TEST_DESCRIPTION='probe-test' BATS_TEST_COMPLETED=1 telemetry_setup && telemetry_teardown
+    telemetry_teardown_file
+    echo \"FILE_SPAN_ID=\$BTS_TELEMETRY_FILE_SPAN_ID\"
+  " > "$BATS_TEST_TMPDIR/run.out" 2>&1
+  local file_span_id
+  file_span_id=$(grep '^FILE_SPAN_ID=' "$BATS_TEST_TMPDIR/run.out" | cut -d= -f2)
+  # The file teardown emits a span carrying --force-span-id $file_span_id.
+  grep -qE -- "--force-span-id $file_span_id" "$BATS_TEST_TMPDIR/otel-cli.argv" \
+    || { echo "expected file span_id ($file_span_id) on argv"; cat "$BATS_TEST_TMPDIR/otel-cli.argv" >&2; return 1; }
+  # The file span's name is "file: <basename>".
+  grep -qE -- '--name file: telemetry-helper.bats' "$BATS_TEST_TMPDIR/otel-cli.argv" \
+    || { echo "expected file: telemetry-helper.bats name"; cat "$BATS_TEST_TMPDIR/otel-cli.argv" >&2; return 1; }
+}
+
 @test "BTS-504 follow-up: trace-id shared across spans (single waterfall)" {
   [ -n "${CCANVIL_TELEMETRY_DISABLED:-}" ] && skip "incompatible with --no-telemetry"
   # Shim otel-cli to log argv per invocation.

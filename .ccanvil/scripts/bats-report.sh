@@ -195,6 +195,14 @@ export BTS_RUN_ID="${BTS_RUN_ID:-$(date +%s)-$$}"
 if [[ -z "${BTS_TELEMETRY_TRACE_ID:-}" ]] && command -v openssl >/dev/null 2>&1; then
   export BTS_TELEMETRY_TRACE_ID="$(openssl rand -hex 16 2>/dev/null)"
 fi
+# Suite-level root span: bats-report owns the suite root; per-file spans
+# (telemetry_setup_file/teardown_file) become its children; per-test spans
+# become grandchildren via the file span. The hierarchy renders in Tempo /
+# Grafana as a proper drill-down waterfall.
+if [[ -z "${BTS_TELEMETRY_SUITE_SPAN_ID:-}" ]] && command -v openssl >/dev/null 2>&1; then
+  export BTS_TELEMETRY_SUITE_SPAN_ID="$(openssl rand -hex 8 2>/dev/null)"
+fi
+export BTS_TELEMETRY_SUITE_START_EPOCH="$(date +%s.%N 2>/dev/null || date +%s)"
 
 # BTS-281: pre-warm module-manifest validate JSON ONCE before the suite runs,
 # expose via env var. The 4 bats files that need this read the cached path
@@ -507,6 +515,35 @@ fi
 # regardless of which code is propagated, so JSON consumers can still
 # distinguish test-failure runs even when 78 is the exit code.
 final_exit="$bats_exit"
+
+# BTS-504 follow-up: emit the SUITE root span now that bats is done. All
+# file + test spans emitted during the run share this trace_id; the suite
+# span is their common parent (file spans set parent_span_id =
+# $BTS_TELEMETRY_SUITE_SPAN_ID; test spans set parent_span_id =
+# $BTS_TELEMETRY_FILE_SPAN_ID). Grafana then renders the trace as a
+# nested hierarchical waterfall: suite → files → tests.
+if (( no_telemetry == 0 )) \
+   && [[ -n "${BTS_TELEMETRY_TRACE_ID:-}" ]] \
+   && [[ -n "${BTS_TELEMETRY_SUITE_SPAN_ID:-}" ]] \
+   && command -v otel-cli >/dev/null 2>&1; then
+  suite_end_epoch="$(date +%s.%N 2>/dev/null || date +%s)"
+  suite_status="unset"
+  (( bats_exit != 0 )) && suite_status="error"
+  otel-cli span \
+    --endpoint "${CCANVIL_OTLP_ENDPOINT:-http://127.0.0.1:4318}" \
+    --protocol http/protobuf \
+    --service ccanvil-test \
+    --name "bats suite ($BTS_RUN_ID)" \
+    --start "$BTS_TELEMETRY_SUITE_START_EPOCH" \
+    --end "$suite_end_epoch" \
+    --status-code "$suite_status" \
+    --force-trace-id "$BTS_TELEMETRY_TRACE_ID" \
+    --force-span-id "$BTS_TELEMETRY_SUITE_SPAN_ID" \
+    --attrs "suite.kind=bats,suite.parallel=${parallel_mode},suite.jobs=${jobs:-1},suite.total=${total:-0},suite.passed=${ok:-0},suite.failed=${not_ok:-0},run.id=$BTS_RUN_ID,git.sha=$(git rev-parse HEAD 2>/dev/null || echo unknown)" \
+    --timeout 5s \
+    >/dev/null 2>&1 || true
+fi
+
 if (( parallel_mode == 1 )) && (( no_telemetry == 0 )); then
   # @side-effect: invokes-otel-flatten
   # CCANVIL_TELEMETRY_DISABLED gates only the bats HELPER's per-test

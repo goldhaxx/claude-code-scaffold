@@ -1,0 +1,111 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": null,
+  "links": [],
+  "liveNow": true,
+  "panels": [
+    {
+      "datasource": { "type": "tempo", "uid": "tempo-bts-497" },
+      "gridPos": { "h": 12, "w": 24, "x": 0, "y": 0 },
+      "id": 1,
+      "title": "Live test feed — spans as they arrive",
+      "description": "Real-time stream of test spans from all in-flight bats runs. Auto-refresh every 5s. Sort by Start time descending to see newest first; sort by Duration to see slowest.",
+      "type": "table",
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm"
+      },
+      "targets": [
+        {
+          "datasource": { "type": "tempo", "uid": "tempo-bts-497" },
+          "queryType": "traceql",
+          "query": "{ resource.service.name=\"ccanvil-test\" && name != \"\" }",
+          "tableType": "spans",
+          "limit": 200,
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "tempo", "uid": "tempo-bts-497" },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 12 },
+      "id": 2,
+      "title": "Recent suite roots — click trace_id → waterfall",
+      "description": "Each row is one bats suite run (root span name starts with 'bats suite'). Click the trace ID to open the full nested waterfall (suite → file → test).",
+      "type": "table",
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm"
+      },
+      "targets": [
+        {
+          "datasource": { "type": "tempo", "uid": "tempo-bts-497" },
+          "queryType": "traceql",
+          "query": "{ name =~ \"^bats suite\" }",
+          "tableType": "spans",
+          "limit": 20,
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "tempo", "uid": "tempo-bts-497" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 20 },
+      "id": 3,
+      "title": "Slowest tests (last hour)",
+      "description": "Top test spans by duration in the last hour. Quick triage for slow tests.",
+      "type": "table",
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm"
+      },
+      "targets": [
+        {
+          "datasource": { "type": "tempo", "uid": "tempo-bts-497" },
+          "queryType": "traceql",
+          "query": "{ resource.service.name=\"ccanvil-test\" && .runner.kind=\"bats\" && duration > 1s }",
+          "tableType": "spans",
+          "limit": 30,
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "tempo", "uid": "tempo-bts-497" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 20 },
+      "id": 4,
+      "title": "Failed tests (last hour)",
+      "description": "Spans with status=error. Drill in to find which file / run.",
+      "type": "table",
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm"
+      },
+      "targets": [
+        {
+          "datasource": { "type": "tempo", "uid": "tempo-bts-497" },
+          "queryType": "traceql",
+          "query": "{ resource.service.name=\"ccanvil-test\" && status = error }",
+          "tableType": "spans",
+          "limit": 50,
+          "refId": "A"
+        }
+      ]
+    }
+  ],
+  "refresh": "5s",
+  "schemaVersion": 39,
+  "tags": ["ccanvil", "tests", "bts-504", "live"],
+  "templating": { "list": [] },
+  "time": { "from": "now-30m", "to": "now" },
+  "timepicker": {
+    "refresh_intervals": ["5s", "10s", "30s", "1m", "5m"]
+  },
+  "timezone": "browser",
+  "title": "ccanvil — Live test runs",
+  "uid": "ccanvil-live-runs",
+  "version": 1
+}
