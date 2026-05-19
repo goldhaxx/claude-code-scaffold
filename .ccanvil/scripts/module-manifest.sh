@@ -1264,20 +1264,37 @@ cmd_query() {
 # depends-on: jq
 # side-effect: writes-manifests-json
 # failure-mode: extract-failed | exit=2 | visible=propagated-from-cmd_extract
+# failure-mode: final-write-mktemp-failed | exit=2 | visible=stderr-distinct-id
+# failure-mode: accumulator-mktemp-failed | exit=2 | visible=stderr-distinct-id
 # contract: deterministic-lexicographically-sorted-keys
 # contract: empty-object-when-no-sources
-# contract: atomic-write-via-mv
+# contract: atomic-write-via-mktemp-and-mv
 # anchor: BTS-239 (origin)
+# anchor: BTS-510 (concurrent-safe mktemp swap)
 cmd_index() {
   local out=".ccanvil/state/manifests.json"
   local src_dirs=(".ccanvil/scripts" ".claude/hooks" ".claude/hooks/_lib")
 
   mkdir -p "$(dirname "$out")"
 
+  # BTS-510: per-invocation unique intermediate so concurrent workers
+  # cannot clobber a shared $out.tmp filename mid-write.
+  local out_tmp
+  out_tmp=$(mktemp "$out.XXXXXX") || {
+    # @failure-mode: final-write-mktemp-failed
+    echo "module-manifest: final-write-mktemp-failed (intermediate for $out)" >&2
+    return 2
+  }
+
   local tmp
-  tmp=$(mktemp)
+  tmp=$(mktemp) || {
+    # @failure-mode: accumulator-mktemp-failed
+    echo "module-manifest: accumulator-mktemp-failed" >&2
+    rm -f "$out_tmp"
+    return 2
+  }
   # shellcheck disable=SC2064
-  trap "rm -f '$tmp' '$tmp.merged'" RETURN
+  trap "rm -f '$tmp' '$tmp.merged' '$out_tmp'" RETURN
 
   : > "$tmp"
 
@@ -1319,12 +1336,12 @@ cmd_index() {
   done
 
   if [[ ! -s "$tmp" ]]; then
-    printf '{}\n' > "$out.tmp"
+    printf '{}\n' > "$out_tmp"
   else
-    jq -s 'map({(.key): .val}) | add | to_entries | sort_by(.key) | from_entries' < "$tmp" > "$out.tmp"
+    jq -s 'map({(.key): .val}) | add | to_entries | sort_by(.key) | from_entries' < "$tmp" > "$out_tmp"
   fi
   # @side-effect: writes-manifests-json
-  mv "$out.tmp" "$out"
+  mv "$out_tmp" "$out"
 }
 
 # @manifest
