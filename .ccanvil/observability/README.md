@@ -151,6 +151,7 @@ Useful when iterating on substrate that itself touches the helper, when running 
 | `grafana/provisioning/dashboards/test-runs.yaml` | Dashboard provider config. |
 | `grafana/provisioning/dashboards/ccanvil-test-observability.json` | The dashboard — NOW / SLOW / DIDN'T PASS / TREND sections. |
 | `otel-flatten.sh` | Deterministic OTLP → flat JSONL normalizer (AC-10, AC-12). |
+| `otel-span.sh` | Generic OTel span helper library — sourceable; any script can emit spans (BTS-543). |
 | `SCHEMA.md` | Span schema + flat record schema contract (v1.0.0). |
 | `.gitignore` | Excludes the live `raw-traces.jsonl` from git. |
 | `raw-traces.jsonl` | Local-only Collector output (gitignored). |
