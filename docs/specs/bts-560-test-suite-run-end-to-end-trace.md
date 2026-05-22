@@ -4,7 +4,7 @@
 > Work: linear:BTS-560
 > Created: 1779473997
 > Subject: test-suite-run end-to-end trace
-> Status: In Progress
+> Status: Complete
 
 ## Summary
 
