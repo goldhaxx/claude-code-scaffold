@@ -39,15 +39,15 @@ STUB_EOF
 }
 
 # ---------------------------------------------------------------------------
-# AC-3: unimplemented-provider error path
+# Provider dispatch error paths — pytest missing-config + vitest unimplemented
 # ---------------------------------------------------------------------------
-@test "test-suite-run: pytest provider exits 2 with not-yet-implemented stderr" {
+@test "AC-4: pytest provider with no test-command exits 2 naming the missing key" {
   cat > "$PROJECT_DIR/.claude/ccanvil.json" <<'JSON'
 {"test-provider": "pytest"}
 JSON
   run --separate-stderr bash "$DC" test-suite-run --project-dir "$PROJECT_DIR"
   [ "$status" -eq 2 ]
-  [[ "$stderr" == *"test-provider 'pytest' dispatcher not yet implemented"* ]]
+  [[ "$stderr" == *"test-command"* ]]
 }
 
 @test "test-suite-run: vitest provider exits 2 with not-yet-implemented stderr" {
@@ -57,6 +57,109 @@ JSON
   run --separate-stderr bash "$DC" test-suite-run --project-dir "$PROJECT_DIR"
   [ "$status" -eq 2 ]
   [[ "$stderr" == *"vitest"* && "$stderr" == *"not yet implemented"* ]]
+}
+
+# ---------------------------------------------------------------------------
+# BTS-558 — pytest dispatcher arm behavior
+#
+# Tests stub the node's `test-command` with a script that records its argv
+# and exits with a controlled code. The config IS the injection seam — no
+# BATS_REPORT_OVERRIDE-style env var needed for pytest.
+# ---------------------------------------------------------------------------
+
+# Write a pytest stub at $1 that echoes "PYTEST-ARGS: [<argv>]" and exits $2.
+_write_pytest_stub() {
+  local path="$1" code="$2"
+  cat > "$path" <<EOF
+#!/usr/bin/env bash
+echo "PYTEST-ARGS: [\$*]"
+exit $code
+EOF
+  chmod +x "$path"
+}
+
+# BTS-127 strict-mode: bats 1.13 only fails a test on `[ ]`, `grep`, and
+# regular-command non-zero exits — a mid-test `[[ ]]` is silently skipped.
+# Substring assertions below use `grep` so they are enforced regardless of
+# position in the test body.
+
+@test "pytest AC-1: runs test-command, exits 0 on success, appends test-path" {
+  PYSTUB="$BATS_TEST_TMPDIR/stub-pytest.sh"
+  _write_pytest_stub "$PYSTUB" 0
+  cat > "$PROJECT_DIR/.claude/ccanvil.json" <<JSON
+{"test-provider": "pytest", "test-command": "$PYSTUB", "test-path": "src/"}
+JSON
+  run bash "$DC" test-suite-run --project-dir "$PROJECT_DIR"
+  [ "$status" -eq 0 ]
+  echo "$output" | grep -qF 'PYTEST-ARGS: [src/]'
+}
+
+@test "pytest AC-1: no test-path key runs test-command with no path arg" {
+  PYSTUB="$BATS_TEST_TMPDIR/stub-pytest.sh"
+  _write_pytest_stub "$PYSTUB" 0
+  cat > "$PROJECT_DIR/.claude/ccanvil.json" <<JSON
+{"test-provider": "pytest", "test-command": "$PYSTUB"}
+JSON
+  run bash "$DC" test-suite-run --project-dir "$PROJECT_DIR"
+  [ "$status" -eq 0 ]
+  echo "$output" | grep -qF 'PYTEST-ARGS: []'
+}
+
+@test "pytest AC-2: a failing pytest test makes the dispatcher exit non-zero" {
+  PYSTUB="$BATS_TEST_TMPDIR/stub-pytest.sh"
+  _write_pytest_stub "$PYSTUB" 1
+  cat > "$PROJECT_DIR/.claude/ccanvil.json" <<JSON
+{"test-provider": "pytest", "test-command": "$PYSTUB"}
+JSON
+  run bash "$DC" test-suite-run --project-dir "$PROJECT_DIR"
+  [ "$status" -ne 0 ]
+}
+
+@test "pytest AC-5: no tests collected (exit 5) normalizes to exit 1 with a clear message" {
+  PYSTUB="$BATS_TEST_TMPDIR/stub-pytest.sh"
+  _write_pytest_stub "$PYSTUB" 5
+  cat > "$PROJECT_DIR/.claude/ccanvil.json" <<JSON
+{"test-provider": "pytest", "test-command": "$PYSTUB"}
+JSON
+  run --separate-stderr bash "$DC" test-suite-run --project-dir "$PROJECT_DIR"
+  [ "$status" -eq 1 ]
+  echo "$stderr" | grep -qF 'no tests collected'
+}
+
+@test "pytest AC-3: --parallel translates to -n auto (literal --parallel not forwarded)" {
+  PYSTUB="$BATS_TEST_TMPDIR/stub-pytest.sh"
+  _write_pytest_stub "$PYSTUB" 0
+  cat > "$PROJECT_DIR/.claude/ccanvil.json" <<JSON
+{"test-provider": "pytest", "test-command": "$PYSTUB"}
+JSON
+  run bash "$DC" test-suite-run --project-dir "$PROJECT_DIR" --parallel
+  [ "$status" -eq 0 ]
+  ! echo "$output" | grep -qF -- '--parallel'
+  echo "$output" | grep -qF -- '-n auto'
+}
+
+@test "pytest AC-8: bats-only flags are dropped, never forwarded to pytest" {
+  PYSTUB="$BATS_TEST_TMPDIR/stub-pytest.sh"
+  _write_pytest_stub "$PYSTUB" 0
+  cat > "$PROJECT_DIR/.claude/ccanvil.json" <<JSON
+{"test-provider": "pytest", "test-command": "$PYSTUB"}
+JSON
+  run bash "$DC" test-suite-run --project-dir "$PROJECT_DIR" \
+    --json --timings --progress --no-telemetry --slow-top 5
+  [ "$status" -eq 0 ]
+  echo "$output" | grep -qF 'PYTEST-ARGS: []'
+}
+
+@test "pytest: positional/post-double-dash args reach pytest verbatim" {
+  PYSTUB="$BATS_TEST_TMPDIR/stub-pytest.sh"
+  _write_pytest_stub "$PYSTUB" 0
+  cat > "$PROJECT_DIR/.claude/ccanvil.json" <<JSON
+{"test-provider": "pytest", "test-command": "$PYSTUB"}
+JSON
+  run bash "$DC" test-suite-run --project-dir "$PROJECT_DIR" --parallel -- -k foo
+  [ "$status" -eq 0 ]
+  echo "$output" | grep -qF -- '-n auto'
+  echo "$output" | grep -qF -- '-k foo'
 }
 
 # ---------------------------------------------------------------------------

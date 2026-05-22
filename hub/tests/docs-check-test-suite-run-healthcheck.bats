@@ -75,3 +75,24 @@ EOF
   # avoid coupling to an external service.
   skip "covered by the --no-telemetry inverse test above"
 }
+
+# =========================================================================
+# BTS-558 AC-6 — the healthcheck is gated to the bats provider. A pytest
+# node has no OTel stack, so the dispatcher must NOT run the healthcheck
+# for it. (BTS-559 re-enables the healthcheck for all providers once
+# non-bats OTel tooling exists.)
+# =========================================================================
+
+@test "AC-6: pytest provider skips the OTel healthcheck (BTS-559 carve-out)" {
+  local proj="$BATS_TEST_TMPDIR/pyproj"
+  mkdir -p "$proj/.claude"
+  echo '{"test-provider":"pytest"}' > "$proj/.claude/ccanvil.json"
+  # Unreachable Collector — if the healthcheck ran for pytest it would fire.
+  CCANVIL_TELEMETRY_URL="http://127.0.0.1:1" \
+    run bash "$SCRIPT" test-suite-run --project-dir "$proj"
+  # Exit 2 = the pytest arm was reached (missing test-command) — i.e. control
+  # passed the healthcheck rather than aborting in it.
+  [ "$status" -eq 2 ]
+  # The healthcheck error must be absent for a non-bats provider.
+  ! echo "$output" | grep -qE 'Collector|healthcheck|unreachable'
+}

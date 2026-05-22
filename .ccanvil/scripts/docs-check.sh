@@ -8176,12 +8176,13 @@ PY
 # id: cmd_test_suite_run
 # purpose: Provider-aware test-suite dispatcher. Reads `.test-provider` (or `.stacks[0]` fallback, default `bats`) from `<project-dir>/.claude/ccanvil.json` and exec's the matching runner. First concrete instance of the BTS-460 "hub describes behavior, node describes implementation" pattern — lets `/pr` invoke a generic verb instead of hardcoding `bats-report.sh`, so the same skill works on bats/pytest/vitest nodes once each provider's dispatcher lands.
 # input: --project-dir <path> (optional, defaults to .)
-# input: --parallel | --json | --timings | --progress | --no-telemetry | --slow-top N | --help | -h (forwarded to the active runner; bats-only flags today)
-# input: -- <bats-args>... (passthrough boundary)
-# input: env BATS_REPORT_OVERRIDE (test-injection point; mirrors LINEAR_QUERY_OVERRIDE — BTS-203 pattern)
-# output: stdout: runner's stdout (e.g. bats-report.sh's pass/fail tail)
+# input: --parallel | --json | --timings | --progress | --no-telemetry | --slow-top N | --help | -h (bats: forwarded to bats-report.sh; pytest: --parallel translates to -n auto, the rest are recognized no-ops)
+# input: -- <runner-args>... (passthrough boundary)
+# input: env BATS_REPORT_OVERRIDE (bats test-injection point; mirrors LINEAR_QUERY_OVERRIDE — BTS-203 pattern)
+# input: node config keys test-command (required by the pytest arm) + test-path (optional) read from <project-dir>/.claude/ccanvil.json
+# output: stdout: runner's stdout (e.g. bats-report.sh's pass/fail tail; pytest's own output)
 # output: stderr: runner's stderr OR substrate Usage/ERROR on dispatch-time failure
-# output: exit: runner's exit (bats path) | 2 (unimplemented provider | unknown flag | no-args trap)
+# output: exit: runner's exit (bats path) | pytest's exit with 5 normalized to 1 (pytest path) | 2 (unimplemented provider | unknown flag | no-args trap | missing test-command)
 # caller: skill:/pr
 # depends-on: jq
 # depends-on: bats-report.sh
@@ -8191,9 +8192,14 @@ PY
 # failure-mode: missing-slow-top-arg | exit=2 | visible=stderr-Usage | mitigation=pass-non-negative-integer-after-slow-top
 # failure-mode: no-args | exit=2 | visible=stderr-Usage | mitigation=pass-at-least-one-forwarding-flag-or-target-also-prevents-silent-full-suite-recursion-and-applies-to-future-pytest-vitest-dispatchers
 # failure-mode: collector-unreachable | exit=1 | visible=stderr-error | mitigation=start-the-docker-compose-stack-or-pass-no-telemetry-bypass-flag
+# failure-mode: missing-test-command | exit=2 | visible=stderr-error | mitigation=add-a-test-command-key-to-the-node-claude-ccanvil-json
+# failure-mode: pytest-no-tests-collected | exit=1 | visible=stderr-error | mitigation=point-test-path-at-a-directory-that-contains-collectable-tests
 # contract: provider-resolution-order-test-provider-then-stacks-zero-then-bats-default
 # contract: bats-path-execs-bats-report-sh-via-BATS_REPORT_OVERRIDE-or-script-dir-resolution
+# contract: pytest-path-runs-node-test-command-in-project-dir-with-translated-forward-args
+# contract: otel-healthcheck-gated-to-bats-provider-BTS-559-carve-out
 # anchor: BTS-460
+# anchor: BTS-558
 cmd_test_suite_run() {
   local project_dir="."
   local -a forward_args=()
@@ -8226,18 +8232,23 @@ cmd_test_suite_run() {
   # Collector being reachable so the suite fails fast at the dispatcher
   # layer rather than per-file in every setup_file. --no-telemetry skips
   # the gate (substrate self-tests, offline runs).
-  local has_no_telemetry=0
-  for __arg in "${forward_args[@]+"${forward_args[@]}"}"; do
-    [[ "$__arg" == "--no-telemetry" ]] && { has_no_telemetry=1; break; }
-  done
-  if (( has_no_telemetry == 0 )); then
-    local hc_url="${CCANVIL_TELEMETRY_URL:-http://127.0.0.1:13133}"
-    # @failure-mode: collector-unreachable
-    if ! curl -fsS --max-time 2 "$hc_url" >/dev/null 2>&1; then
-      echo "ERROR: OTel Collector healthcheck unreachable at $hc_url" >&2
-      echo "Start: docker compose -f .ccanvil/observability/docker-compose.yml up -d" >&2
-      echo "Or bypass: docs-check.sh test-suite-run --no-telemetry ..." >&2
-      return 1
+  # BTS-559: the healthcheck is gated to the bats provider — pytest (and
+  # other non-bats) nodes have no OTel stack yet. Temporary carve-out;
+  # BTS-559 builds non-bats OTel tooling and re-enables this for all providers.
+  if [[ "$provider" == bats ]]; then
+    local has_no_telemetry=0
+    for __arg in "${forward_args[@]+"${forward_args[@]}"}"; do
+      [[ "$__arg" == "--no-telemetry" ]] && { has_no_telemetry=1; break; }
+    done
+    if (( has_no_telemetry == 0 )); then
+      local hc_url="${CCANVIL_TELEMETRY_URL:-http://127.0.0.1:13133}"
+      # @failure-mode: collector-unreachable
+      if ! curl -fsS --max-time 2 "$hc_url" >/dev/null 2>&1; then
+        echo "ERROR: OTel Collector healthcheck unreachable at $hc_url" >&2
+        echo "Start: docker compose -f .ccanvil/observability/docker-compose.yml up -d" >&2
+        echo "Or bypass: docs-check.sh test-suite-run --no-telemetry ..." >&2
+        return 1
+      fi
     fi
   fi
 
@@ -8261,6 +8272,59 @@ cmd_test_suite_run() {
       # TDD inner loops) leave this unset and skip the writer.
       export BATS_REPORT_FULL_SUITE=1
       exec bash "$runner" "${forward_args[@]}"
+      ;;
+    pytest)
+      # BTS-558: pytest dispatcher arm. The interpreter path and test dir
+      # are node-specific, so `test-command` (and optional `test-path`)
+      # come from the node's .claude/ccanvil.json — the hub describes
+      # behavior, the node describes implementation.
+      local test_command
+      test_command=$(jq -r '.["test-command"] // ""' "$config" 2>/dev/null || echo "")
+      if [[ -z "$test_command" ]]; then
+        # @failure-mode: missing-test-command
+        echo "ERROR: test-provider 'pytest' requires a 'test-command' key in $config" >&2
+        echo "Example: \"test-command\": \".venv/bin/python -m pytest\"" >&2
+        return 2
+      fi
+      local test_path
+      test_path=$(jq -r '.["test-path"] // ""' "$config" 2>/dev/null || echo "")
+      # Intentional word-split: test-command is a multi-word operator string.
+      # shellcheck disable=SC2206
+      local -a cmd_argv=($test_command)
+      # Interpret forward_args for pytest — the bats arm forwards them
+      # verbatim because bats-report.sh understands them; pytest does not.
+      # --parallel → pytest-xdist; bats-only flags are recognized no-ops.
+      # Post-`--` passthrough is already flattened into bare elements by the
+      # top-level arg parser, so it falls through to the *) verbatim case.
+      local -a pytest_argv=()
+      local __fa_i=0 __fa_n="${#forward_args[@]:-0}"
+      while (( __fa_i < __fa_n )); do
+        case "${forward_args[$__fa_i]}" in
+          --parallel) pytest_argv+=(-n auto) ;;
+          --json|--timings|--progress|--no-telemetry|--help|-h) : ;;
+          --slow-top) __fa_i=$(( __fa_i + 1 )) ;;
+          *) pytest_argv+=("${forward_args[$__fa_i]}") ;;
+        esac
+        __fa_i=$(( __fa_i + 1 ))
+      done
+      [[ -n "$test_path" ]] && pytest_argv+=("$test_path")
+      # @side-effect: spawns-test-runner
+      # set -euo pipefail is on — capture rc via the if-form so a non-zero
+      # pytest exit does not abort the function before rc is read.
+      local rc
+      if ( cd "$project_dir" && "${cmd_argv[@]}" "${pytest_argv[@]+"${pytest_argv[@]}"}" ); then
+        rc=0
+      else
+        rc=$?
+      fi
+      if (( rc == 5 )); then
+        # @failure-mode: pytest-no-tests-collected
+        # pytest exit 5 = no tests collected. Normalize to a loud failure so
+        # /pr never reads it as a (false) green.
+        echo "ERROR: pytest reported no tests collected (exit 5) — treating as failure" >&2
+        rc=1
+      fi
+      return "$rc"
       ;;
     *)
       # @failure-mode: unimplemented-provider
