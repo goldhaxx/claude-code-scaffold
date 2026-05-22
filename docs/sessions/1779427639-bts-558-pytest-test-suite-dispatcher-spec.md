@@ -40,7 +40,7 @@ Each criterion is independently testable. Binary pass/fail.
 ## Affected Files
 
 | File | Change |
-|------|--------|
+| -- | -- |
 | `.ccanvil/scripts/docs-check.sh` | Modified — `cmd_test_suite_run`: add `pytest)` arm; gate the OTel healthcheck to `provider == bats`; update the `# @manifest` block + `# @failure-mode:` code markers |
 | `hub/tests/test-suite-run.bats` | Modified — replace the obsolete `pytest provider exits 2` test with pytest-arm behavior tests (AC-1/2/3/4/5/8); keep the `vitest` exit-2 test |
 | `hub/tests/docs-check-test-suite-run-healthcheck.bats` | Modified — add AC-6 test: pytest provider skips the healthcheck |
@@ -48,26 +48,26 @@ Each criterion is independently testable. Binary pass/fail.
 
 ## Dependencies
 
-- **Requires:** BTS-460 (`cmd_test_suite_run` dispatcher) — already shipped.
-- **Blocked by:** nothing.
-- **Blocks:** fieldnation-toolbox BTS-552 (the node-side `test-provider: pytest` config flip).
+* **Requires:** BTS-460 (`cmd_test_suite_run` dispatcher) — already shipped.
+* **Blocked by:** nothing.
+* **Blocks:** fieldnation-toolbox BTS-552 (the node-side `test-provider: pytest` config flip).
 
 ## Out of Scope
 
-- A hub-shipped `pytest-report.sh` analog — decided against (config-driven seam chosen).
-- Mapping `--json` to a structured pytest envelope — v1 documents it as a no-op.
-- The `vitest` dispatcher arm — stays unimplemented (exit 2).
-- The bats-arm no-args trap is NOT replicated for pytest — a zero-arg pytest call runs the node's full suite, which is intended.
-- Re-enabling the OTel healthcheck for pytest (and other non-bats providers) — that needs the cross-language test-observability tooling tracked in BTS-559.
+* A hub-shipped `pytest-report.sh` analog — decided against (config-driven seam chosen).
+* Mapping `--json` to a structured pytest envelope — v1 documents it as a no-op.
+* The `vitest` dispatcher arm — stays unimplemented (exit 2).
+* The bats-arm no-args trap is NOT replicated for pytest — a zero-arg pytest call runs the node's full suite, which is intended.
+* Re-enabling the OTel healthcheck for pytest (and other non-bats providers) — that needs the cross-language test-observability tooling tracked in BTS-559.
 
 ## Implementation Notes
 
-- Follow the existing `bats)` arm shape in `cmd_test_suite_run` (`docs-check.sh:8244`).
-- `test-command` is a multi-word operator-supplied string (e.g. `.venv/bin/python -m pytest`); run it word-split inside `project_dir` so relative venv/test paths resolve. `test-path` (e.g. `src/`) is appended when present; absent → pytest's own default discovery.
-- The pytest arm interprets `forward_args` itself rather than forwarding them blindly — the bats arm forwards verbatim because `bats-report.sh` understands the flags; pytest does not. Per token: `--parallel` → append `-n auto`; `--json` / `--timings` / `--progress` / `--no-telemetry` → drop (recognized no-op); `--slow-top` → drop the flag and its following value (2-token no-op); everything after a `--` separator → forward to pytest verbatim; bare positional args → forward verbatim.
-- pytest exit codes: `0` pass → `0`; `1` tests failed → pass through; `5` no tests collected → normalize to `1` + the AC-5 message; any other non-zero → pass through.
-- The OTel healthcheck block (`docs-check.sh:8225-8242`) currently runs before the `case` for every provider. Guard it with `[[ "$provider" == bats ]]` (or move it into the `bats)` arm) so only bats runs it. Mark the gate with a `# BTS-559:` comment — this carve-out is temporary; BTS-559 re-enables the healthcheck for all providers once non-bats OTel tooling exists.
-- Keep the `# @manifest` block in sync: add `failure-mode` lines for `missing-test-command` and `pytest-no-tests-collected`, and matching `# @failure-mode:` code markers — the BTS-268 drift-guard blocks the PR otherwise.
+* Follow the existing `bats)` arm shape in `cmd_test_suite_run` (`docs-check.sh:8244`).
+* `test-command` is a multi-word operator-supplied string (e.g. `.venv/bin/python -m pytest`); run it word-split inside `project_dir` so relative venv/test paths resolve. `test-path` (e.g. `src/`) is appended when present; absent → pytest's own default discovery.
+* The pytest arm interprets `forward_args` itself rather than forwarding them blindly — the bats arm forwards verbatim because `bats-report.sh` understands the flags; pytest does not. Per token: `--parallel` → append `-n auto`; `--json` / `--timings` / `--progress` / `--no-telemetry` → drop (recognized no-op); `--slow-top` → drop the flag and its following value (2-token no-op); everything after a `--` separator → forward to pytest verbatim; bare positional args → forward verbatim.
+* pytest exit codes: `0` pass → `0`; `1` tests failed → pass through; `5` no tests collected → normalize to `1` + the AC-5 message; any other non-zero → pass through.
+* The OTel healthcheck block (`docs-check.sh:8225-8242`) currently runs before the `case` for every provider. Guard it with `[[ "$provider" == bats ]]` (or move it into the `bats)` arm) so only bats runs it. Mark the gate with a `# BTS-559:` comment — this carve-out is temporary; BTS-559 re-enables the healthcheck for all providers once non-bats OTel tooling exists.
+* Keep the `# @manifest` block in sync: add `failure-mode` lines for `missing-test-command` and `pytest-no-tests-collected`, and matching `# @failure-mode:` code markers — the BTS-268 drift-guard blocks the PR otherwise.
 
 <!-- NODE-SPECIFIC-START -->
 <!-- Add project-specific content below this line. -->
