@@ -112,7 +112,19 @@ Hub rule cites the verb, not the tool:
 Run `bash .ccanvil/scripts/docs-check.sh test-suite-run --project-dir . --parallel --progress`.
 ```
 
-Dispatcher (`cmd_test_suite_run` in `docs-check.sh`) resolves the provider and exec's the runner. Today only `bats` is implemented (`exec bash bats-report.sh ...`); other providers exit 2 with an explicit `dispatcher not yet implemented` message — the contract is intentionally fail-loud so missing implementations surface at /pr time rather than silently no-op'ing.
+Dispatcher (`cmd_test_suite_run` in `docs-check.sh`) resolves the provider and runs the runner. `bats` and `pytest` are implemented; remaining providers exit 2 with an explicit `dispatcher not yet implemented` message — the contract is intentionally fail-loud so missing implementations surface at /pr time rather than silently no-op'ing.
+
+**pytest nodes** set `test-provider: pytest` plus two node-local keys — the interpreter path and test directory are node-specific, so they cannot live in the hub:
+
+```jsonc
+{
+  "test-provider": "pytest",
+  "test-command": ".venv/bin/python -m pytest",  // required — how this node runs pytest
+  "test-path": "src/"                             // optional — where its tests live
+}
+```
+
+`test-command` runs inside the project dir (so relative venv/test paths resolve); `test-path` is appended when present, else pytest uses its own discovery. `test-command` is word-split on whitespace into the interpreter + arguments, so its tokens (including the interpreter path) must not themselves contain spaces. The dispatcher translates `--parallel` to pytest-xdist's `-n auto` and treats the bats-only flags (`--json`, `--timings`, `--progress`, `--slow-top`, `--no-telemetry`) as no-ops. A missing `test-command` is a loud exit-2 dispatch error; pytest exit 5 (no tests collected) is normalized to a failing exit so the /pr gate never reads it as a false green. The OTel healthcheck is currently gated to the `bats` provider — BTS-559 extends it to pytest once non-bats test-observability tooling exists.
 
 **Leak-site inventory (captured follow-up).** As of BTS-460's ship, the following hub-shared content still references tool names directly. Each is a candidate for the same indirection treatment when the friction surfaces:
 
