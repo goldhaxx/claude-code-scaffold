@@ -39,6 +39,7 @@
 # side-effect: writes-stderr-warn-on-missing-parallel
 # side-effect: writes-bats-runs-jsonl
 # side-effect: invokes-otel-flatten
+# side-effect: emits-otel-spans
 # failure-mode: invalid-slow-top | exit=2 | visible=stderr-error | mitigation=pass-non-negative-integer
 # failure-mode: bats-suite-failed | exit=passthrough | visible=stdout-not-ok-lines | mitigation=fix-failing-test
 # failure-mode: jsonl-append-failed | exit=passthrough | visible=stderr-warn | mitigation=ensure-state-dir-writable
@@ -48,12 +49,14 @@
 # contract: counts-derived-from-single-capture
 # contract: metrics-envelope-includes-wall_ms-jobs-cpus
 # contract: exit-78-on-flatten-failure-supersedes-bats-exit
+# contract: span-emission-never-alters-exit-code
 # anchor: BTS-118 (origin)
 # anchor: BTS-137 (--timings / --slow-top)
 # anchor: BTS-251 (manifest seed)
 # anchor: BTS-277 (perf-core default + metrics envelope + bats-runs.jsonl)
 # anchor: BTS-383 (--progress per-file orchestration + heartbeat + per-failure detail)
 # anchor: BTS-497 (post-run otel-flatten + exit-78 precedence + --no-telemetry escape hatch)
+# anchor: BTS-560 (test-suite-run end-to-end trace — root + phase spans)
 #
 # Usage:
 #   bats-report.sh [--parallel] [--json] [--timings] [--slow-top N] [--] [<bats-args>...]
@@ -202,18 +205,68 @@ fi
 if [[ -z "${BTS_TELEMETRY_SUITE_SPAN_ID:-}" ]] && command -v openssl >/dev/null 2>&1; then
   export BTS_TELEMETRY_SUITE_SPAN_ID="$(openssl rand -hex 8 2>/dev/null)"
 fi
+# BTS-560: capture the run-trace start BEFORE the suite start so the
+# test-suite-run root span fully wraps the bats-suite span in the waterfall.
+export BTS_TELEMETRY_RUN_START_EPOCH="$(date +%s.%N 2>/dev/null || date +%s)"
 export BTS_TELEMETRY_SUITE_START_EPOCH="$(date +%s.%N 2>/dev/null || date +%s)"
+
+# BTS-560: end-to-end run trace. Source otel-span.sh once so every phase span
+# (manifest pre-warm, bats suite, otel-flatten) and the test-suite-run root
+# span emit through the shared helper. A missing/broken helper must never
+# corrupt the suite exit code — the whole trace is best-effort.
+_otel_span_ready=0
+_otel_span_lib="$(dirname "${BASH_SOURCE[0]}")/../observability/otel-span.sh"
+if [[ -f "$_otel_span_lib" ]] && source "$_otel_span_lib" 2>/dev/null; then
+  _otel_span_ready=1
+fi
+# Run-trace root span id — every phase span parents under it. Honors an
+# externally-set value (mirrors BTS_TELEMETRY_TRACE_ID / _SUITE_SPAN_ID).
+# BTS_TELEMETRY_RUN_START_EPOCH is captured earlier, beside the suite start.
+if [[ -z "${BTS_TELEMETRY_RUN_SPAN_ID:-}" ]] && command -v openssl >/dev/null 2>&1; then
+  export BTS_TELEMETRY_RUN_SPAN_ID="$(openssl rand -hex 8 2>/dev/null)"
+fi
+
+# Gate shared by every phase/root span emission below. Honors the OTEL_SPAN_CLI
+# test seam so the recording-stub harness works without a real otel-cli on PATH.
+_otel_trace_live() {
+  (( no_telemetry == 0 )) \
+    && (( _otel_span_ready == 1 )) \
+    && [[ -n "${BTS_TELEMETRY_TRACE_ID:-}" ]] \
+    && [[ -n "${BTS_TELEMETRY_RUN_SPAN_ID:-}" ]] \
+    && command -v "${OTEL_SPAN_CLI:-otel-cli}" >/dev/null 2>&1
+}
 
 # BTS-281: pre-warm module-manifest validate JSON ONCE before the suite runs,
 # expose via env var. The 4 bats files that need this read the cached path
 # instead of re-running validate. Skip when caller already set the env var
 # (allows opt-out + lets bats files run standalone with their own cache).
+# BTS-560: wrap the pre-warm in a `manifest pre-warm` phase span so the
+# (often multi-minute) validate is visible in the end-to-end run trace.
 if [[ -z "${BTS_MANIFEST_VALIDATE_CACHE:-}" ]] && [[ -x .ccanvil/scripts/module-manifest.sh ]]; then
+  _prewarm_start_epoch="$(date +%s.%N 2>/dev/null || date +%s)"
   __mm_cache=$(mktemp -t bts-281-manifest-validate.XXXXXX)
   if bash .ccanvil/scripts/module-manifest.sh validate --json > "$__mm_cache" 2>/dev/null; then
     export BTS_MANIFEST_VALIDATE_CACHE="$__mm_cache"
   else
     rm -f "$__mm_cache" 2>/dev/null
+  fi
+  if _otel_trace_live; then
+    # BTS-560: emit in a subshell so otel_span_init's env exports
+    # (OTEL_SPAN_INIT_DONE / OTEL_SPAN_LIVE) do NOT leak into the bats
+    # subprocess that runs next — leaked init state would defeat the
+    # telemetry-disabled / Collector-unreachable paths in the test suite. The
+    # suite/root span emits run AFTER bats, so only this one needs isolation.
+    (
+      otel_span_emit \
+        --service ccanvil-test \
+        --name "manifest pre-warm" \
+        --start "$_prewarm_start_epoch" \
+        --end "$(date +%s.%N 2>/dev/null || date +%s)" \
+        --trace-id "$BTS_TELEMETRY_TRACE_ID" \
+        --parent-id "$BTS_TELEMETRY_RUN_SPAN_ID" \
+        --attrs "phase=manifest-prewarm,run.id=$BTS_RUN_ID" \
+        --timeout 5s
+    )
   fi
 fi
 
@@ -522,29 +575,23 @@ final_exit="$bats_exit"
 # $BTS_TELEMETRY_SUITE_SPAN_ID; test spans set parent_span_id =
 # $BTS_TELEMETRY_FILE_SPAN_ID). Grafana then renders the trace as a
 # nested hierarchical waterfall: suite → files → tests.
-if (( no_telemetry == 0 )) \
-   && [[ -n "${BTS_TELEMETRY_TRACE_ID:-}" ]] \
-   && [[ -n "${BTS_TELEMETRY_SUITE_SPAN_ID:-}" ]] \
-   && command -v otel-cli >/dev/null 2>&1; then
+if _otel_trace_live && [[ -n "${BTS_TELEMETRY_SUITE_SPAN_ID:-}" ]]; then
   suite_end_epoch="$(date +%s.%N 2>/dev/null || date +%s)"
   suite_status="unset"
   (( bats_exit != 0 )) && suite_status="error"
-  # BTS-543: emit the suite-root span via the shared otel-span.sh helper.
-  # The source is guarded — a missing or broken helper must never corrupt the
-  # suite exit code (the suite span is best-effort, as the prior `|| true` was).
-  _otel_span_lib="$(dirname "${BASH_SOURCE[0]}")/../observability/otel-span.sh"
-  if [[ -f "$_otel_span_lib" ]] && source "$_otel_span_lib" 2>/dev/null; then
-    otel_span_emit \
-      --service ccanvil-test \
-      --name "bats suite ($BTS_RUN_ID)" \
-      --start "$BTS_TELEMETRY_SUITE_START_EPOCH" \
-      --end "$suite_end_epoch" \
-      --status "$suite_status" \
-      --trace-id "$BTS_TELEMETRY_TRACE_ID" \
-      --span-id "$BTS_TELEMETRY_SUITE_SPAN_ID" \
-      --attrs "suite.kind=bats,suite.parallel=${parallel_mode},suite.jobs=${jobs:-1},suite.total=${total:-0},suite.passed=${ok:-0},suite.failed=${not_ok:-0},run.id=$BTS_RUN_ID,git.sha=$(git rev-parse HEAD 2>/dev/null || echo unknown)" \
-      --timeout 5s
-  fi
+  # BTS-543: emit via the shared otel-span.sh helper (sourced once up top).
+  # BTS-560: the bats-suite phase span parents under the test-suite-run root.
+  otel_span_emit \
+    --service ccanvil-test \
+    --name "bats suite ($BTS_RUN_ID)" \
+    --start "$BTS_TELEMETRY_SUITE_START_EPOCH" \
+    --end "$suite_end_epoch" \
+    --status "$suite_status" \
+    --trace-id "$BTS_TELEMETRY_TRACE_ID" \
+    --span-id "$BTS_TELEMETRY_SUITE_SPAN_ID" \
+    --parent-id "$BTS_TELEMETRY_RUN_SPAN_ID" \
+    --attrs "phase=bats-suite,suite.kind=bats,suite.parallel=${parallel_mode},suite.jobs=${jobs:-1},suite.total=${total:-0},suite.passed=${ok:-0},suite.failed=${not_ok:-0},run.id=$BTS_RUN_ID,git.sha=$(git rev-parse HEAD 2>/dev/null || echo unknown)" \
+    --timeout 5s
 fi
 
 if (( parallel_mode == 1 )) && (( no_telemetry == 0 )); then
@@ -554,14 +601,54 @@ if (( parallel_mode == 1 )) && (( no_telemetry == 0 )); then
   # directly and may operate on data from external sources). The
   # --no-telemetry flag (Step 14) is the proper opt-out for both layers.
   flatten_script=".ccanvil/observability/otel-flatten.sh"
+  _flatten_start_epoch="$(date +%s.%N 2>/dev/null || date +%s)"
+  _flatten_status="unset"
   if [[ -x "$flatten_script" ]]; then
     if ! bash "$flatten_script" "$BTS_RUN_ID" >&2; then
       # @failure-mode: flatten-failed
       final_exit=78
+      _flatten_status="error"
     fi
   else
     echo "WARN: $flatten_script missing — flatten step skipped" >&2
+    # BTS-560: a missing flatten script means the phase did not complete —
+    # record error, not unset (unset would read as "ran fine" in Tempo).
+    _flatten_status="error"
   fi
+  # BTS-560: emit the otel-flatten phase span under the test-suite-run root.
+  if _otel_trace_live; then
+    otel_span_emit \
+      --service ccanvil-test \
+      --name "otel-flatten" \
+      --start "$_flatten_start_epoch" \
+      --end "$(date +%s.%N 2>/dev/null || date +%s)" \
+      --status "$_flatten_status" \
+      --trace-id "$BTS_TELEMETRY_TRACE_ID" \
+      --parent-id "$BTS_TELEMETRY_RUN_SPAN_ID" \
+      --attrs "phase=otel-flatten,run.id=$BTS_RUN_ID" \
+      --timeout 5s
+  fi
+fi
+
+# BTS-560: emit the test-suite-run ROOT span — the common parent of the
+# manifest-prewarm / bats-suite / otel-flatten phase spans. Emitted last (its
+# true wall-clock duration is known only now); the trace id + run span id were
+# established before the pre-warm so every phase span could nest under it.
+if _otel_trace_live; then
+  run_end_epoch="$(date +%s.%N 2>/dev/null || date +%s)"
+  run_status="unset"
+  (( bats_exit != 0 )) && run_status="error"
+  # @side-effect: emits-otel-spans
+  otel_span_emit \
+    --service ccanvil-test \
+    --name "test-suite-run" \
+    --start "$BTS_TELEMETRY_RUN_START_EPOCH" \
+    --end "$run_end_epoch" \
+    --status "$run_status" \
+    --trace-id "$BTS_TELEMETRY_TRACE_ID" \
+    --span-id "$BTS_TELEMETRY_RUN_SPAN_ID" \
+    --attrs "run.id=$BTS_RUN_ID,git.sha=$(git rev-parse HEAD 2>/dev/null || echo unknown),suite.total=${total:-0},suite.passed=${ok:-0},suite.failed=${not_ok:-0}" \
+    --timeout 5s
 fi
 
 exit "$final_exit"

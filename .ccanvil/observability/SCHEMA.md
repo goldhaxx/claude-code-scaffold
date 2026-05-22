@@ -1,6 +1,6 @@
 # Test Observability — Schema Contract
 
-Runner-neutral schema for ccanvil's test-observability stack. Versioned `v1.0.0`. Two schemas live here: the OTel **span schema** (emitted by every test runner via OTel-compatible exporters) and the **flat JSONL record schema** (derived by `otel-flatten.sh` from the OTel Collector's `fileexporter` output for agent-readable per-test queries).
+Runner-neutral schema for ccanvil's test-observability stack. Versioned `v1.0.0`. Two schemas live here: the OTel **span schema** (emitted by every test runner via OTel-compatible exporters) and the **flat JSONL record schema** (derived by `otel-flatten.sh` from the OTel Collector's `fileexporter` output for agent-readable per-test queries). A third section — the **run & phase span schema** (BTS-560) — documents the rooted end-to-end trace `bats-report.sh` emits; those spans are Tempo-only and carry no `schema_version`, so they do not affect the `v1.0.0` contract above.
 
 The schema is single-source for both ccanvil's bats runner (Stage 1) and downstream-node distillation to pytest / vitest / go-test / cargo (Stage 2, per BTS-499). Any future runner emits the same shape; `runner.kind` discriminates.
 
@@ -58,6 +58,33 @@ No API, container, or running Collector is required at read time.
 ### Idempotency key
 
 The flatten step (AC-12) uses `(run_id, span_id)` as the unique identity. On each invocation, `otel-flatten.sh` builds a hash-set of existing `(run_id, span_id)` pairs from the sidecar via O(1) jq object lookup, then filters new candidates against that set — only previously-unseen pairs are appended. Byte-equality of JSON lines is NOT the idempotency key (the OTel Collector may reorder spans across batches, producing semantically-equivalent but byte-different lines for the same span).
+
+## Run & Phase Span Schema
+
+Added by BTS-560. These spans are Tempo-only and carry no `schema_version` field — they are not part of the versioned `v1.0.0` contract above.
+
+A `test-suite-run` invocation (`bats-report.sh`) emits one **rooted trace** that wraps every phase of the run. These spans live in Tempo only — they are not flattened to `test-runs.jsonl` and carry no `schema_version` field (that field is on flat test records only).
+
+**Root span.** One per run, `name = "test-suite-run"`, service `ccanvil-test`, no parent span. Its time window covers the whole invocation — from before the manifest pre-warm to after the otel-flatten step.
+
+**Phase spans.** Children of the root span, one per phase:
+
+| Span name | Phase | Emitted when |
+|---|---|---|
+| `manifest pre-warm` | the BTS-281 `module-manifest.sh validate` pre-warm | the pre-warm block runs (skipped when `BTS_MANIFEST_VALIDATE_CACHE` is preset) |
+| `bats suite (<run-id>)` | the bats invocation itself | always, telemetry enabled — the per-file / per-test spans nest under it |
+| `otel-flatten` | the post-run `otel-flatten.sh` step | parallel mode only |
+
+| Attribute | Type | Required | Description |
+|---|---|---|---|
+| `phase` | enum (string) | required on phase spans | One of `manifest-prewarm`, `bats-suite`, `otel-flatten`. Absent on the root span. |
+| `run.id` | string | required | The suite-run identifier — same value as the test-span `run.id`. |
+| `git.sha` | string | required on root + `bats-suite` | Full git SHA of HEAD at suite-start. |
+| `suite.total` / `suite.passed` / `suite.failed` | number | optional | Test counts; present on the root and `bats-suite` spans. |
+
+All four spans share the run's single `trace_id`, as do the per-file and per-test spans — the whole run renders as one waterfall: `test-suite-run → bats suite → file → test`, with `manifest pre-warm` and `otel-flatten` alongside the suite.
+
+The root span record is emitted at run completion (its true wall-clock duration is known only then); the trace id and root span id are established before the pre-warm so every phase span can nest under the root. Span emission is best-effort: a down Collector, a missing `otel-cli`, or `--no-telemetry` all degrade to a silent no-op without altering the suite exit code.
 
 ## Schema evolution
 

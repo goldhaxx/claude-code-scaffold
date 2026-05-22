@@ -40,7 +40,9 @@ actually have, in four stacked sections:
 
 **To see the full waterfall of a run:** in the *Recent suite roots* (or *Suite
 history*) panel, click the **Span ID** link. Grafana opens the Tempo trace view
-showing the nested `suite → file → test` hierarchy with per-span timing bars.
+showing the nested `test-suite-run → bats suite → file → test` hierarchy — with
+`manifest pre-warm` and `otel-flatten` phase spans alongside the suite — and
+per-span timing bars (BTS-560).
 
 ### Tempo query modes (Explore → Tempo)
 
