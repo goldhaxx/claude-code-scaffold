@@ -223,6 +223,8 @@
 .claude/hooks/protect-files.sh
 .claude/hooks/protect-main.sh
 .claude/hooks/session-boundary.sh
+.claude/hooks/session-otel-close.sh
+.claude/hooks/session-otel-open.sh
 
 # BTS-252 — Session 9: markdown skills + rules.
 # Batch 1 — skills (8).

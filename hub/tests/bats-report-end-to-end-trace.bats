@@ -293,3 +293,60 @@ EOF
   [ -n "$(_span_line "test-suite-run")" ]
   [ -n "$(_span_line "bats suite (run-bts560)")" ]
 }
+
+# =========================================================================
+# BTS-544 AC-5 — bats suite linkage: when a session-trace.json is present,
+# test-suite-run and bats suite spans carry session.id + claude_session_id as
+# attrs, but keep their OWN trace_id (link, not merge).
+# =========================================================================
+
+@test "BTS-544 AC-5: suite spans carry session.id + claude_session_id when state file present" {
+  # Pre-seed a session-trace.json into the state dir bats-report.sh reads.
+  mkdir -p "$BATS_REPORT_STATE_DIR"
+  local session_trace_id="999999999999999999999999999999ff"
+  jq -n \
+    --arg trace_id "$session_trace_id" \
+    --arg root_span_id "9999999999999999" \
+    --arg started_at_epoch "1779000000.000000000" \
+    --arg session_id "74-1779000000" \
+    --arg claude_session_id "claude-uuid-aaa-bbb" \
+    '{trace_id:$trace_id, root_span_id:$root_span_id, started_at_epoch:$started_at_epoch, session_id:$session_id, claude_session_id:$claude_session_id}' \
+    > "$BATS_REPORT_STATE_DIR/session-trace.json"
+
+  _run_instrumented "$STUB_BATS"
+  [ "$status" -eq 0 ]
+
+  local root_line suite_line root_attrs suite_attrs
+  root_line=$(_span_line "test-suite-run")
+  suite_line=$(_span_line "bats suite (run-bts560)")
+  [ -n "$root_line" ]
+  [ -n "$suite_line" ]
+
+  # Suite trace_id is the bats-report's OWN (pinned via env), NOT the session's.
+  [ "$(_flag_val "$root_line"  --force-trace-id)" = "$TRACE_ID" ]
+  [ "$(_flag_val "$suite_line" --force-trace-id)" = "$TRACE_ID" ]
+  [ "$(_flag_val "$root_line"  --force-trace-id)" != "$session_trace_id" ]
+
+  # Both spans carry session.id + claude_session_id in attrs.
+  root_attrs="$(_flag_val "$root_line"  --attrs)"
+  suite_attrs="$(_flag_val "$suite_line" --attrs)"
+  echo "$root_attrs"  | grep -qF "session.id=74-1779000000"
+  echo "$root_attrs"  | grep -qF "claude_session_id=claude-uuid-aaa-bbb"
+  echo "$suite_attrs" | grep -qF "session.id=74-1779000000"
+  echo "$suite_attrs" | grep -qF "claude_session_id=claude-uuid-aaa-bbb"
+}
+
+@test "BTS-544 AC-5: no state file → suite spans carry NO session.id / claude_session_id" {
+  # No pre-seed — confirm omit-when-empty for both attrs.
+  [ ! -f "$BATS_REPORT_STATE_DIR/session-trace.json" ]
+
+  _run_instrumented "$STUB_BATS"
+  [ "$status" -eq 0 ]
+  local root_attrs suite_attrs
+  root_attrs="$(_flag_val "$(_span_line "test-suite-run")"        --attrs)"
+  suite_attrs="$(_flag_val "$(_span_line "bats suite (run-bts560)")" --attrs)"
+  ! echo "$root_attrs"  | grep -qF "session.id="
+  ! echo "$root_attrs"  | grep -qF "claude_session_id="
+  ! echo "$suite_attrs" | grep -qF "session.id="
+  ! echo "$suite_attrs" | grep -qF "claude_session_id="
+}

@@ -226,6 +226,19 @@ if [[ -z "${BTS_TELEMETRY_RUN_SPAN_ID:-}" ]] && command -v openssl >/dev/null 2>
   export BTS_TELEMETRY_RUN_SPAN_ID="$(openssl rand -hex 8 2>/dev/null)"
 fi
 
+# BTS-544: read .ccanvil/state/session-trace.json (when present) so the
+# test-suite-run + bats-suite spans can carry session.id + claude_session_id
+# as attrs — linking the suite trace to the rooted ccanvil-session trace
+# without merging them. Fail-soft: a missing/malformed file leaves both vars
+# empty; the omit-when-empty append pattern below drops the attrs entirely.
+_bts_session_state_file="${BATS_REPORT_STATE_DIR:-.ccanvil/state}/session-trace.json"
+BTS_SESSION_ID=""
+BTS_CLAUDE_SESSION_ID=""
+if [[ -f "$_bts_session_state_file" ]]; then
+  BTS_SESSION_ID="$(jq -r '.session_id // ""' < "$_bts_session_state_file" 2>/dev/null)"
+  BTS_CLAUDE_SESSION_ID="$(jq -r '.claude_session_id // ""' < "$_bts_session_state_file" 2>/dev/null)"
+fi
+
 # Gate shared by every phase/root span emission below. Honors the OTEL_SPAN_CLI
 # test seam so the recording-stub harness works without a real otel-cli on PATH.
 _otel_trace_live() {
@@ -590,7 +603,7 @@ if _otel_trace_live && [[ -n "${BTS_TELEMETRY_SUITE_SPAN_ID:-}" ]]; then
     --trace-id "$BTS_TELEMETRY_TRACE_ID" \
     --span-id "$BTS_TELEMETRY_SUITE_SPAN_ID" \
     --parent-id "$BTS_TELEMETRY_RUN_SPAN_ID" \
-    --attrs "phase=bats-suite,suite.kind=bats,suite.parallel=${parallel_mode},suite.jobs=${jobs:-1},suite.total=${total:-0},suite.passed=${ok:-0},suite.failed=${not_ok:-0},run.id=$BTS_RUN_ID,git.sha=$(git rev-parse HEAD 2>/dev/null || echo unknown)" \
+    --attrs "phase=bats-suite,suite.kind=bats,suite.parallel=${parallel_mode},suite.jobs=${jobs:-1},suite.total=${total:-0},suite.passed=${ok:-0},suite.failed=${not_ok:-0},run.id=$BTS_RUN_ID,git.sha=$(git rev-parse HEAD 2>/dev/null || echo unknown)${BTS_SESSION_ID:+,session.id=$BTS_SESSION_ID}${BTS_CLAUDE_SESSION_ID:+,claude_session_id=$BTS_CLAUDE_SESSION_ID}" \
     --timeout 5s
 fi
 
@@ -647,7 +660,7 @@ if _otel_trace_live; then
     --status "$run_status" \
     --trace-id "$BTS_TELEMETRY_TRACE_ID" \
     --span-id "$BTS_TELEMETRY_RUN_SPAN_ID" \
-    --attrs "run.id=$BTS_RUN_ID,git.sha=$(git rev-parse HEAD 2>/dev/null || echo unknown),suite.total=${total:-0},suite.passed=${ok:-0},suite.failed=${not_ok:-0}" \
+    --attrs "run.id=$BTS_RUN_ID,git.sha=$(git rev-parse HEAD 2>/dev/null || echo unknown),suite.total=${total:-0},suite.passed=${ok:-0},suite.failed=${not_ok:-0}${BTS_SESSION_ID:+,session.id=$BTS_SESSION_ID}${BTS_CLAUDE_SESSION_ID:+,claude_session_id=$BTS_CLAUDE_SESSION_ID}" \
     --timeout 5s
 fi
 
