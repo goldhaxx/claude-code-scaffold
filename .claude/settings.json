@@ -222,6 +222,24 @@
             "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/session-boundary.sh"
           }
         ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/session-otel-open.sh"
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/session-otel-close.sh"
+          }
+        ]
       }
     ],
     "PermissionRequest": [

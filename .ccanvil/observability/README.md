@@ -158,6 +158,56 @@ Useful when iterating on substrate that itself touches the helper, when running 
 | `.gitignore` | Excludes the live `raw-traces.jsonl` from git. |
 | `raw-traces.jsonl` | Local-only Collector output (gitignored). |
 
+## Live smoke — ccanvil-session (BTS-544)
+
+The `session-otel-open.sh` / `session-otel-close.sh` SessionStart/SessionEnd hooks emit one rooted `ccanvil-session` span per Claude Code session. Reproduce the live trace manually:
+
+```bash
+# 1. Bring up the stack.
+docker compose -f .ccanvil/observability/docker-compose.yml up -d
+
+# 2. Simulate a session — run in a temp project dir so the live state file
+# does not pollute your real `.ccanvil/state/`.
+tmp=$(mktemp -d)
+mkdir -p "$tmp/.ccanvil/state"
+echo "1" > "$tmp/.ccanvil/state/session-counter"
+
+CLAUDE_PROJECT_DIR="$tmp" bash .claude/hooks/session-otel-open.sh \
+  <<<'{"hook_event_name":"SessionStart","session_id":"'"$(uuidgen)"'","source":"startup"}'
+
+# 3. Close after a few seconds so the span has a non-zero duration.
+sleep 3
+CLAUDE_PROJECT_DIR="$tmp" bash .claude/hooks/session-otel-close.sh < /dev/null
+
+# 4. Confirm the span landed in Tempo. (Allow ~3s for ingestion.)
+sleep 3
+curl -s 'http://127.0.0.1:3200/api/search?q=%7B%20name%3D%22ccanvil-session%22%20%7D&limit=5' \
+  | jq '.traces[] | {traceID, rootServiceName, durationMs}'
+
+# Expected: at least one trace with rootServiceName="ccanvil-session" and a
+# non-zero durationMs from the past minute.
+```
+
+**Reaper exercise** — invoke the open hook twice without a close in between to simulate an abnormal exit. The second invocation finds the stale state file and emits a best-effort reaper span using the first session's trace_id (with attr `reaper=true`) before overwriting the state:
+
+```bash
+tmp=$(mktemp -d) ; mkdir -p "$tmp/.ccanvil/state" ; echo "1" > "$tmp/.ccanvil/state/session-counter"
+
+CLAUDE_PROJECT_DIR="$tmp" bash .claude/hooks/session-otel-open.sh \
+  <<<'{"session_id":"first-uuid"}'
+first_trace=$(jq -r '.trace_id' "$tmp/.ccanvil/state/session-trace.json")
+
+sleep 2
+CLAUDE_PROJECT_DIR="$tmp" bash .claude/hooks/session-otel-open.sh \
+  <<<'{"session_id":"second-uuid"}'
+
+# Query the FIRST session's trace_id — it now appears in Tempo as a reaper-marked
+# rooted span emitted by the second open's reaper branch.
+sleep 3
+curl -s "http://127.0.0.1:3200/api/traces/$first_trace" \
+  | jq '.batches[0].scopeSpans[0].spans[0] | {name, attributes}'
+```
+
 ## Reference
 
 - Spec: `docs/specs/bts-497-test-otel-stack.md` (Linear: BTS-497).
