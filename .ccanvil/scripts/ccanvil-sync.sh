@@ -4689,17 +4689,17 @@ cmd_drift_watchdog_preflight() {
 # failure-mode: verify-failed-launchctl-print-rc | exit=3 | visible=stdout-error-verify-failed | mitigation=inspect-launchctl-output
 # failure-mode: no-state-in-print-output | exit=3 | visible=stdout-error-no-state-in-print-output | mitigation=manual-launchctl-load
 # contract: idempotent-on-already-installed
-# contract: workspace-fence-bypass-required
 # anchor: BTS-244 (manifest seed)
+# anchor: BTS-602 (retired bypass contract; cp+launchctl run unfenced)
 cmd_drift_watchdog_launchd_install() {
   # BTS-199: idempotent install/reload of the drift-watchdog launchd entry.
   # Wraps the four-step recipe (generate + lint + optional unload + cp + load
   # + verify) into one atomic call. Replaces operator prose that was
   # reformulated by hand 4 separate times during BTS-21 activation.
   #
-  # NOTE: writes to ~/Library/LaunchAgents/ which is OUTSIDE the workspace.
-  # Operators must invoke with ALLOW_OUTSIDE_WORKSPACE=1 so the workspace-
-  # fence hook (guard-workspace.sh) does not block the cp + launchctl steps.
+  # NOTE: writes to ~/Library/LaunchAgents/ which is outside the project
+  # tree. BTS-602 retired the PreToolUse fence, so the cp + launchctl steps
+  # no longer require an ALLOW_OUTSIDE_WORKSPACE=1 prefix.
   #
   # Exit codes:
   #   0 — installed + verified
