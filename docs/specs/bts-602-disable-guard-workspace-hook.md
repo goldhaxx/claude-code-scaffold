@@ -4,7 +4,7 @@
 > Work: linear:BTS-602
 > Created: 1780341642
 > Subject: Disable guard-workspace.sh workspace-fence hook
-> Status: In Progress
+> Status: Complete
 
 ## Summary
 

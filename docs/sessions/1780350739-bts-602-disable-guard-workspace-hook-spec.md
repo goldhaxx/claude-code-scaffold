@@ -1,9 +1,9 @@
-# Feature: Disable guard-workspace.sh workspace-fence hook
+# Feature: Disable [guard-workspace.sh](<http://guard-workspace.sh>) workspace-fence hook
 
 > Feature: bts-602-disable-guard-workspace-hook
 > Work: linear:BTS-602
 > Created: 1780341642
-> Subject: Disable guard-workspace.sh workspace-fence hook
+> Subject: Disable [guard-workspace.sh](<http://guard-workspace.sh>) workspace-fence hook
 > Status: In Progress
 
 ## Summary
@@ -34,7 +34,7 @@ Remove `.claude/hooks/guard-workspace.sh` and all infrastructure that maintains 
 ## Affected Files
 
 | File | Change |
-|------|--------|
+| -- | -- |
 | `.claude/hooks/guard-workspace.sh` | Deleted |
 | `.claude/settings.json` | Modified — drop PreToolUse Bash block at line 174 |
 | `hub/tests/guard-workspace-slashword-exemption.bats` | Deleted |
@@ -46,27 +46,27 @@ Remove `.claude/hooks/guard-workspace.sh` and all infrastructure that maintains 
 | `.ccanvil/scripts/ccanvil-sync.sh` | Modified — clean up workspace-fence references near lines 4692 + 4702 |
 | `.ccanvil/guide/hooks.md` | Modified — drop hook-table row |
 | `.ccanvil/guide/configuration.md` | Modified — line 159 prose update |
-| `.claude/permissions-log.json` | Modified — re-derive ~13 rationales citing guard-workspace as structural gate |
+| `.claude/permissions-log.json` | Modified — re-derive \~13 rationales citing guard-workspace as structural gate |
 | `.claude/hooks/guard-destructive.sh` | Modified — drop comment references at lines 28, 145 |
 
 ## Dependencies
 
-- **Requires:** none. Self-contained hub-side change.
-- **Blocked by:** none.
+* **Requires:** none. Self-contained hub-side change.
+* **Blocked by:** none.
 
 ## Out of Scope
 
-- Removing `guard-destructive.sh`, `guard-force-push.sh`, or `protect-main.sh` — those gate genuinely catastrophic operations and stay in place.
-- Designing a successor read-fence for exfiltration risk (BTS-150 / BTS-153 problem space). If a successor is warranted, scope it in a separate spec.
-- Removing the `ALLOW_OUTSIDE_WORKSPACE=1` env-prefix permission from `.claude/settings.json` — becomes a no-op token but harmless to retain for in-flight scripts; deferred to a follow-up sweep.
-- BTS-603 (settings.json consolidation) — runs separately; this change may incidentally reduce settings.json size, but that is not its acceptance criterion.
-- Downstream node propagation beyond verifying one pull dry-run; each node owns its own `ccanvil-pull` cadence.
+* Removing `guard-destructive.sh`, `guard-force-push.sh`, or `protect-main.sh` — those gate genuinely catastrophic operations and stay in place.
+* Designing a successor read-fence for exfiltration risk (BTS-150 / BTS-153 problem space). If a successor is warranted, scope it in a separate spec.
+* Removing the `ALLOW_OUTSIDE_WORKSPACE=1` env-prefix permission from `.claude/settings.json` — becomes a no-op token but harmless to retain for in-flight scripts; deferred to a follow-up sweep.
+* BTS-603 (settings.json consolidation) — runs separately; this change may incidentally reduce settings.json size, but that is not its acceptance criterion.
+* Downstream node propagation beyond verifying one pull dry-run; each node owns its own `ccanvil-pull` cadence.
 
 ## Implementation Notes
 
-- **Carve-out anchors retire with the hook.** The BTS-151/153/157/169/173/210/234 carve-outs disappear. The `@anchor: BTS-157 (sort -o gate — handled in guard-workspace)` comment in `guard-destructive.sh:28` becomes false; either flip it to acknowledge `sort -o` is an unmitigated gap, or capture a fresh BTS for that gap and link.
-- **Permissions-log re-derivation is a bulk pass.** Wording should be consistent across all affected entries. The new shape: "Pre-allowed; the operator/operator-vigilance + git-as-recovery-substrate are the boundary, not a workspace-fence hook. Catastrophic forms remain gated by guard-destructive.sh."
-- **Manifest drift convergence is one cycle.** Removing the hook + allowlist entry should converge in a single `module-manifest.sh validate` pass — no inline marker churn because the markers leave with the file.
-- **Test-count delta to verify in AC-10:** dedicated files contribute 54 tests; the `guard-hooks.bats` workspace-fence subset is ~52 by current grep, exact count to be confirmed during implementation. Expected total drop: ~106 (suite 2572 → ~2466).
-- **Rollback contingency.** The hook + tests stay in git history; a future re-enable restores from the pre-removal commit. No data migration involved.
-- **TDD posture.** This is a deletion spec; tests are removed, not added. The TDD cycle for each AC is: confirm the test-or-reference exists pre-change → delete → confirm absence + suite green. The `/plan` step will decompose this into per-file TDD-shaped steps.
+* **Carve-out anchors retire with the hook.** The BTS-151/153/157/169/173/210/234 carve-outs disappear. The `@anchor: BTS-157 (sort -o gate — handled in guard-workspace)` comment in `guard-destructive.sh:28` becomes false; either flip it to acknowledge `sort -o` is an unmitigated gap, or capture a fresh BTS for that gap and link.
+* **Permissions-log re-derivation is a bulk pass.** Wording should be consistent across all affected entries. The new shape: "Pre-allowed; the operator/operator-vigilance + git-as-recovery-substrate are the boundary, not a workspace-fence hook. Catastrophic forms remain gated by [guard-destructive.sh](<http://guard-destructive.sh>)."
+* **Manifest drift convergence is one cycle.** Removing the hook + allowlist entry should converge in a single `module-manifest.sh validate` pass — no inline marker churn because the markers leave with the file.
+* **Test-count delta to verify in AC-10:** dedicated files contribute 54 tests; the `guard-hooks.bats` workspace-fence subset is \~52 by current grep, exact count to be confirmed during implementation. Expected total drop: \~106 (suite 2572 → \~2466).
+* **Rollback contingency.** The hook + tests stay in git history; a future re-enable restores from the pre-removal commit. No data migration involved.
+* **TDD posture.** This is a deletion spec; tests are removed, not added. The TDD cycle for each AC is: confirm the test-or-reference exists pre-change → delete → confirm absence + suite green. The `/plan` step will decompose this into per-file TDD-shaped steps.
