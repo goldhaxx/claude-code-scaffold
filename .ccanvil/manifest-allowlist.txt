@@ -216,7 +216,6 @@
 .claude/hooks/format-on-write.sh
 .claude/hooks/guard-destructive.sh
 .claude/hooks/guard-force-push.sh
-.claude/hooks/guard-workspace.sh
 .claude/hooks/lint-on-write.sh
 .claude/hooks/permission-request-suppress-redundant.sh
 .claude/hooks/post-compact-marker.sh
