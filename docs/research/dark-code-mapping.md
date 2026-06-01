@@ -102,7 +102,7 @@ ccanvil already has:
 - `security-audit.sh` — deterministic secret/PII scan.
 - `bats-report.sh` — single-invocation test verification.
 - `permissions-audit.sh` — DANGER classification with `accept_danger` rationale tracking.
-- Hub guards: `protect-main.sh`, `guard-workspace.sh`, `guard-destructive.sh` — refuse-by-default for blast-radius operations.
+- Hub guards: `protect-main.sh`, `guard-force-push.sh`, `guard-destructive.sh` — refuse-by-default for blast-radius operations. (BTS-602 retired `guard-workspace.sh`, the path-locality fence, when the cost-benefit on its false-positive carve-out tail inverted.)
 
 **Where it leaks:**
 1. **All gates are file-shaped.** None ask "what new architectural risks does this PR introduce?" or "are we creating new monolithic coupling?" The reviewer agent is good at "this function lacks error handling" — not at "this function couples X to Y in a way the system has been deliberately avoiding."
